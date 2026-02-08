@@ -187,6 +187,22 @@ class TestUpsertThread:
         finally:
             await db.close()
 
+    async def test_upsert_updates_url(self):
+        """Thread URL should be updated when the thread is re-crawled."""
+        db = await _get_db()
+        try:
+            await upsert_thread(db, "100", "Thread", "https://example.com/t/100",
+                                None, None, "ongoing")
+            await db.commit()
+            await upsert_thread(db, "100", "Thread", "https://example.com/t/100?moved=1",
+                                None, None, "ongoing")
+            await db.commit()
+            cursor = await db.execute("SELECT url FROM threads WHERE id = '100'")
+            row = await cursor.fetchone()
+            assert row["url"] == "https://example.com/t/100?moved=1"
+        finally:
+            await db.close()
+
 
 class TestGetCharacterThreads:
     async def test_categorizes_threads(self):
@@ -320,6 +336,7 @@ class TestAddQuote:
             await db.commit()
             result = await add_quote(db, "42", "I am Iron Man")
             await db.commit()
+            assert result is False
             quotes = await get_all_quotes(db, "42")
             assert len(quotes) == 1
         finally:

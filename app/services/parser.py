@@ -75,7 +75,7 @@ def parse_search_results(html: str) -> tuple[list[ParsedThread], list[str]]:
         template_url = re.sub(r"\?st=\d+&", "?", template_url)
         template_url = re.sub(r"\?st=\d+$", "", template_url)
         sep = "&" if "?" in template_url else "?"
-        for st in range(0, max_st + 1, 25):
+        for st in range(25, max_st + 1, 25):
             page_urls.append(f"{template_url}{sep}st={st}")
 
     # Parse thread results from tableborder divs (JCink search result format)

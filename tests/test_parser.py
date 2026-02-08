@@ -267,6 +267,27 @@ class TestParseSearchResults:
         threads, _ = parse_search_results(html)
         assert threads[0].url.startswith("https://")
 
+    def test_pagination_excludes_first_page(self):
+        """page_urls should not include st=0 since the first page is already parsed."""
+        html = """
+        <html>
+        <div class="pagination">
+            <a href="/index.php?act=Search&CODE=show&searchid=abc&st=0">1</a>
+            <a href="/index.php?act=Search&CODE=show&searchid=abc&st=25">2</a>
+            <a href="/index.php?act=Search&CODE=show&searchid=abc&st=50">3</a>
+        </div>
+        <div class="tableborder">
+            <a href="/index.php?showtopic=100">Thread One</a>
+        </div>
+        </html>
+        """
+        threads, page_urls = parse_search_results(html)
+        # page_urls should only contain st=25 and st=50, not st=0
+        assert len(page_urls) == 2
+        assert all("st=0" not in url for url in page_urls)
+        assert any("st=25" in url for url in page_urls)
+        assert any("st=50" in url for url in page_urls)
+
     def test_preserves_absolute_urls(self):
         html = """
         <html>
