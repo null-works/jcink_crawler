@@ -13,12 +13,8 @@ Server-side web crawler and caching service for JCink forum data. Replaces heavy
 ### Option 1: Quick Install (Recommended)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/null-works/jcink_crawler/main/install.sh | bash
-```
-
-Or if you've already cloned the repo:
-
-```bash
+git clone https://github.com/null-works/jcink_crawler.git
+cd jcink_crawler
 ./install.sh
 ```
 
