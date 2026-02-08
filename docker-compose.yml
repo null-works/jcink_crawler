@@ -20,4 +20,4 @@ services:
       - REQUEST_DELAY_SECONDS=2
       - BOT_USERNAME=Watcher
       - BOT_PASSWORD=5Qc43y$$K7651035Qc43y$$K765103
-      - CRAWLER_URL=http://imagehut.ch:8943
+      - CRAWLER_URL=http://localhost:8000
