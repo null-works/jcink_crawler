@@ -1,0 +1,27 @@
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    forum_base_url: str = "https://therewasanidea.jcink.net"
+    forum_complete_id: str = "49"
+    forum_incomplete_id: str = "59"
+    forum_comms_id: str = "31"
+    forums_excluded: str = "4,5,6,7,8,9,10,11,12,14,15,16,18,52,56,57,58,60,63,69,85,86,87,88,90,91,92,95"
+    crawl_threads_interval_minutes: int = 60
+    crawl_profiles_interval_minutes: int = 1440
+    crawl_quotes_batch_size: int = 5
+    quote_min_words: int = 3
+    request_delay_seconds: float = 2.0
+    database_path: str = "/app/data/crawler.db"
+    bot_username: str = ""
+    bot_password: str = ""
+
+    @property
+    def excluded_forum_ids(self) -> set[str]:
+        return set(self.forums_excluded.split(","))
+
+    class Config:
+        env_prefix = ""
+
+
+settings = Settings()
