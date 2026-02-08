@@ -81,11 +81,11 @@ info "Waiting for service to start..."
 MAX_RETRIES=15
 RETRY_DELAY=2
 for i in $(seq 1 "$MAX_RETRIES"); do
-    if curl -sf http://localhost:8943/health &>/dev/null; then
+    if curl -sf http://imagehut.ch:8943/health &>/dev/null; then
         echo ""
         info "Service is running!"
         echo ""
-        echo "  Crawler API:    http://localhost:8943/health"
+        echo "  Crawler API:    http://imagehut.ch:8943/health"
         echo ""
         echo "  Service status: docker exec -it jcink-crawler python cli.py status"
         echo "  Register user:  docker exec -it jcink-crawler python cli.py register <user_id>"
