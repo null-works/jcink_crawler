@@ -20,3 +20,16 @@ services:
       - REQUEST_DELAY_SECONDS=2
       - BOT_USERNAME=Watcher
       - BOT_PASSWORD=5Qc43y$$K7651035Qc43y$$K765103
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+volumes:
+  portainer_data:
