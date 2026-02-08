@@ -326,7 +326,22 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
             continue
 
         # Find bold elements in post body
+        # First check inside .pr-wrap (some themes nest it)
         post_body = post_container.select_one(".pr-body, .postcolor")
+        if not post_body:
+            # In most JCink themes, .pr-body/.postcolor is a sibling of .pr-wrap,
+            # not a child — walk siblings to find the post content
+            for sibling in post_container.find_next_siblings():
+                # Stop at the next post's author block to avoid cross-post matches
+                if sibling.select_one(".pr-name") or "pr-wrap" in sibling.get("class", []):
+                    break
+                if "postcolor" in sibling.get("class", []) or "pr-body" in sibling.get("class", []):
+                    post_body = sibling
+                    break
+                found = sibling.select_one(".postcolor")
+                if found:
+                    post_body = found
+                    break
         if not post_body:
             continue
 

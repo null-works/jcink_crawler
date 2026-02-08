@@ -539,6 +539,79 @@ class TestExtractQuotesExtended:
         assert len(quotes) == 1
 
 
+class TestExtractQuotesSiblingBody:
+    """Test quote extraction when .pr-body/.postcolor is a sibling of .pr-wrap (typical JCink layout)."""
+
+    def test_postcolor_as_sibling(self):
+        """Post body is a sibling of .pr-wrap, not nested inside it."""
+        html = """
+        <div class="post-row">
+            <div class="pr-wrap">
+                <div class="pr-name">Tony Stark</div>
+            </div>
+            <div class="postcolor">
+                <b>"I am Iron Man and I have things to say"</b>
+            </div>
+        </div>
+        """
+        quotes = extract_quotes_from_html(html, "Tony Stark")
+        assert len(quotes) == 1
+        assert quotes[0]["text"] == "I am Iron Man and I have things to say"
+
+    def test_pr_body_wrapping_postcolor_as_sibling(self):
+        """.pr-body wraps .postcolor, both siblings of .pr-wrap."""
+        html = """
+        <div class="post-row">
+            <div class="pr-wrap">
+                <div class="pr-name">Tony Stark</div>
+            </div>
+            <div class="pr-body">
+                <div class="postcolor">
+                    <b>"Genius billionaire playboy philanthropist that is me"</b>
+                </div>
+            </div>
+        </div>
+        """
+        quotes = extract_quotes_from_html(html, "Tony Stark")
+        assert len(quotes) == 1
+
+    def test_sibling_layout_skips_other_characters(self):
+        """Multiple posts with sibling layout — only extracts from the right author."""
+        html = """
+        <div class="pr-wrap">
+            <div class="pr-name">Tony Stark</div>
+        </div>
+        <div class="postcolor">
+            <b>"Tony's quote is long enough here"</b>
+        </div>
+        <div class="pr-wrap">
+            <div class="pr-name">Steve Rogers</div>
+        </div>
+        <div class="postcolor">
+            <b>"Steve's quote is long enough here"</b>
+        </div>
+        """
+        quotes = extract_quotes_from_html(html, "Tony Stark")
+        assert len(quotes) == 1
+        assert "Tony" in quotes[0]["text"]
+
+    def test_sibling_layout_no_cross_post_bleed(self):
+        """Should not grab the next post's body if current post has no body."""
+        html = """
+        <div class="pr-wrap">
+            <div class="pr-name">Tony Stark</div>
+        </div>
+        <div class="pr-wrap">
+            <div class="pr-name">Steve Rogers</div>
+        </div>
+        <div class="postcolor">
+            <b>"This belongs to Steve not Tony"</b>
+        </div>
+        """
+        quotes = extract_quotes_from_html(html, "Tony Stark")
+        assert len(quotes) == 0
+
+
 class TestBoardMessageExtended:
     def test_no_title_tag(self):
         html = "<html><body>No title</body></html>"
