@@ -275,3 +275,89 @@ async def register_character(user_id: str, db_path: str) -> dict:
         "profile": profile_result,
         "threads": thread_result,
     }
+
+
+async def discover_characters(db_path: str) -> dict:
+    """Auto-discover characters by iterating through user IDs starting from 1.
+
+    Fetches each profile page sequentially. If a profile returns a valid
+    character name, it gets registered. Stops after consecutive misses.
+
+    Returns:
+        Summary dict with counts
+    """
+    base_url = settings.forum_base_url
+    max_id = settings.discovery_max_user_id
+    consecutive_misses = 0
+    max_consecutive_misses = 20
+
+    print(f"[Crawler] Starting auto-discovery from ID 1 to {max_id}")
+
+    new_count = 0
+    existing_count = 0
+    skipped_count = 0
+
+    for user_id in range(1, max_id + 1):
+        uid = str(user_id)
+
+        # Skip if already tracked
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            existing = await get_character(db, uid)
+
+        if existing:
+            existing_count += 1
+            consecutive_misses = 0
+            continue
+
+        # Fetch profile page
+        profile_url = f"{base_url}/index.php?showuser={uid}"
+        html = await fetch_page_with_delay(profile_url)
+
+        if not html or is_board_message(html):
+            consecutive_misses += 1
+            skipped_count += 1
+            if consecutive_misses >= max_consecutive_misses:
+                print(f"[Crawler] {max_consecutive_misses} consecutive misses at ID {uid}, stopping discovery")
+                break
+            continue
+
+        # Check if the profile actually has a character name
+        profile = parse_profile_page(html, uid)
+        if not profile.name or profile.name == "Unknown":
+            consecutive_misses += 1
+            skipped_count += 1
+            continue
+
+        consecutive_misses = 0
+        print(f"[Crawler] Discovered: {profile.name} (ID {uid})")
+
+        try:
+            # Save the profile we already fetched
+            async with aiosqlite.connect(db_path) as db:
+                db.row_factory = aiosqlite.Row
+                await upsert_character(
+                    db,
+                    character_id=uid,
+                    name=profile.name,
+                    profile_url=profile_url,
+                    group_name=profile.group_name,
+                    avatar_url=profile.avatar_url,
+                )
+                for key, value in profile.fields.items():
+                    await upsert_profile_field(db, uid, key, value)
+                await update_character_crawl_time(db, uid, "profile")
+                await db.commit()
+
+            # Crawl their threads
+            await crawl_character_threads(uid, db_path)
+            new_count += 1
+        except Exception as e:
+            print(f"[Crawler] Error registering {profile.name}: {e}")
+
+    print(f"[Crawler] Discovery complete: {new_count} new, {existing_count} existing, {skipped_count} skipped")
+    return {
+        "new_registered": new_count,
+        "already_tracked": existing_count,
+        "skipped": skipped_count,
+    }

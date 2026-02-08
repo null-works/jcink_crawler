@@ -4,7 +4,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 import aiosqlite
 
 from app.config import settings
-from app.services.crawler import crawl_character_threads, crawl_character_profile
+from app.services.crawler import crawl_character_threads, crawl_character_profile, discover_characters
 
 
 _scheduler: AsyncIOScheduler | None = None
@@ -57,10 +57,30 @@ async def _crawl_all_profiles():
     print("[Scheduler] Scheduled profile crawl complete")
 
 
+async def _discover_all_characters():
+    """Auto-discover new characters from the forum member list."""
+    print("[Scheduler] Starting scheduled character discovery")
+    try:
+        result = await discover_characters(settings.database_path)
+        print(f"[Scheduler] Discovery complete: {result}")
+    except Exception as e:
+        print(f"[Scheduler] Error during character discovery: {e}")
+
+
 def start_scheduler():
     """Start the APScheduler with configured intervals."""
     global _scheduler
     _scheduler = AsyncIOScheduler()
+
+    # Run discovery immediately on startup, then on interval
+    _scheduler.add_job(
+        _discover_all_characters,
+        trigger=IntervalTrigger(minutes=settings.crawl_discovery_interval_minutes),
+        id="discover_characters",
+        name="Auto-discover characters from member list",
+        replace_existing=True,
+        next_run_time=None,  # Will be scheduled; immediate run is separate
+    )
 
     _scheduler.add_job(
         _crawl_all_threads,
@@ -79,7 +99,11 @@ def start_scheduler():
     )
 
     _scheduler.start()
-    print(f"[Scheduler] Started - threads every {settings.crawl_threads_interval_minutes}min, profiles every {settings.crawl_profiles_interval_minutes}min")
+
+    # Trigger discovery immediately on startup
+    asyncio.get_event_loop().create_task(_discover_all_characters())
+
+    print(f"[Scheduler] Started - discovery every {settings.crawl_discovery_interval_minutes}min, threads every {settings.crawl_threads_interval_minutes}min, profiles every {settings.crawl_profiles_interval_minutes}min")
 
 
 def stop_scheduler():

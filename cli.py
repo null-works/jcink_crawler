@@ -28,7 +28,7 @@ from rich import box
 
 console = Console()
 
-DEFAULT_BASE = "http://localhost:8943"
+DEFAULT_BASE = "http://imagehut.ch:8943"
 
 
 class CrawlerClient:
@@ -114,7 +114,7 @@ class CrawlerClient:
 
 @click.group()
 @click.option("--url", default=DEFAULT_BASE, envvar="CRAWLER_URL",
-              help="Crawler service URL (default: http://localhost:8943)")
+              help="Crawler service URL (default: http://imagehut.ch:8943)")
 @click.pass_context
 def cli(ctx, url):
     """JCink Crawler CLI — manage and inspect the crawler service."""

@@ -22,11 +22,26 @@ async def fresh_db():
 
 PROFILE_HTML = """
 <html>
-<div class="profile-name">Tony Stark</div>
-<div class="profile-group">Avengers</div>
-<div class="hero-sq-top" style="background-image: url('https://img.com/tony.jpg')"></div>
-<div class="pf-alias">Iron Man</div>
-<div class="pf-age">45</div>
+<title>Viewing Profile -> Tony Stark</title>
+<div class="profile-app group-6">
+  <header class="profile-hero">
+    <div class="profile-hero-images">
+      <div class="profile-hero-img hero-sq-top" style="background-image: url('https://img.com/tony.jpg');"></div>
+    </div>
+    <div class="profile-hero-info">
+      <h1 class="profile-name" data-text="Tony Stark">Tony Stark</h1>
+      <h2 class="profile-codename">Iron Man</h2>
+    </div>
+  </header>
+  <aside class="profile-sidebar">
+    <div class="profile-card glass profile-dossier-card">
+      <dl class="profile-dossier">
+        <dt>Age</dt><dd>45</dd>
+        <dt>Affiliation</dt><dd>Avengers</dd>
+      </dl>
+    </div>
+  </aside>
+</div>
 </html>
 """
 
@@ -72,8 +87,8 @@ class TestCrawlCharacterProfile:
             result = await crawl_character_profile("42", DATABASE_PATH)
 
         assert result["name"] == "Tony Stark"
-        assert result["fields_count"] == 2
-        assert result["group"] == "Avengers"
+        assert result["fields_count"] == 3
+        assert result["group"] == "Red"
 
         # Verify DB was updated
         async with aiosqlite.connect(DATABASE_PATH) as db:

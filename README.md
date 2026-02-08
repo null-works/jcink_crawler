@@ -10,7 +10,27 @@ Server-side web crawler and caching service for JCink forum data. Replaces heavy
 
 ## Installation
 
-### Option 1: Docker (Recommended)
+### Option 1: Quick Install (Recommended)
+
+```bash
+git clone https://github.com/null-works/jcink_crawler.git
+cd jcink_crawler
+./install.sh
+```
+
+The install script will:
+- Verify Docker, Docker Compose, Git, and curl are installed
+- Clone the repository (if not already in it)
+- Create the host data directory at `/opt/jcink-crawler/data/`
+- Build the Docker image
+- Start the crawler container
+- Wait for the health check to pass
+
+The container will appear in your existing Portainer dashboard automatically.
+
+To customize environment variables (forum URL, bot credentials, crawl intervals), clone the repo first, edit `docker-compose.yml`, then run `./install.sh`. See the [environment variables](#environment-variables) table below.
+
+### Option 2: Manual Docker Setup
 
 1. **Clone the repository**
 
@@ -21,24 +41,15 @@ Server-side web crawler and caching service for JCink forum data. Replaces heavy
 
 2. **Configure environment variables**
 
-   Edit `docker-compose.yml` to set your forum-specific values:
+   Edit `docker-compose.yml` to set your forum-specific values (see [table below](#environment-variables)).
 
-   | Variable | Description | Default |
-   |---|---|---|
-   | `FORUM_BASE_URL` | Your JCink forum URL | `https://therewasanidea.jcink.net` |
-   | `FORUM_COMPLETE_ID` | Forum ID for completed threads | `49` |
-   | `FORUM_INCOMPLETE_ID` | Forum ID for incomplete threads | `59` |
-   | `FORUM_COMMS_ID` | Forum ID for comms threads | `31` |
-   | `FORUMS_EXCLUDED` | Comma-separated forum IDs to skip | *(see docker-compose.yml)* |
-   | `CRAWL_THREADS_INTERVAL_MINUTES` | How often to crawl threads | `60` |
-   | `CRAWL_PROFILES_INTERVAL_MINUTES` | How often to crawl profiles | `1440` |
-   | `CRAWL_QUOTES_BATCH_SIZE` | Threads to scrape for quotes per cycle | `5` |
-   | `QUOTE_MIN_WORDS` | Minimum word count for a quote | `3` |
-   | `REQUEST_DELAY_SECONDS` | Delay between HTTP requests | `2` |
-   | `BOT_USERNAME` | JCink bot account username | *(empty = guest)* |
-   | `BOT_PASSWORD` | JCink bot account password | *(empty = guest)* |
+3. **Create the data directory**
 
-3. **Build and start**
+   ```bash
+   sudo mkdir -p /opt/jcink-crawler/data
+   ```
+
+4. **Build and start**
 
    ```bash
    docker compose up --build -d
@@ -46,14 +57,14 @@ Server-side web crawler and caching service for JCink forum data. Replaces heavy
 
    The service starts on **port 8943** (mapped to internal port 8000). SQLite data is persisted to `/opt/jcink-crawler/data/` on the host.
 
-4. **Verify it's running**
+5. **Verify it's running**
 
    ```bash
-   curl http://localhost:8943/health
+   curl http://imagehut.ch:8943/health
    # {"status": "ok"}
    ```
 
-### Option 2: Local Development
+### Option 3: Local Development
 
 1. **Clone the repository**
 
@@ -82,7 +93,7 @@ Server-side web crawler and caching service for JCink forum data. Replaces heavy
    export DATABASE_PATH=./data/crawler.db
    ```
 
-   All other variables have sensible defaults (see table above). Bot credentials are optional — without them, the crawler runs as a guest.
+   All other variables have sensible defaults (see [environment variables](#environment-variables)). Bot credentials are optional — without them, the crawler runs as a guest.
 
 5. **Create the data directory**
 
@@ -97,6 +108,26 @@ Server-side web crawler and caching service for JCink forum data. Replaces heavy
    ```
 
    The API is now available at `http://localhost:8000`.
+
+## Environment Variables
+
+Configure these in `docker-compose.yml` (Docker) or export them in your shell (local development):
+
+| Variable | Description | Default |
+|---|---|---|
+| `FORUM_BASE_URL` | Your JCink forum URL | `https://therewasanidea.jcink.net` |
+| `FORUM_COMPLETE_ID` | Forum ID for completed threads | `49` |
+| `FORUM_INCOMPLETE_ID` | Forum ID for incomplete threads | `59` |
+| `FORUM_COMMS_ID` | Forum ID for comms threads | `31` |
+| `FORUMS_EXCLUDED` | Comma-separated forum IDs to skip | *(see docker-compose.yml)* |
+| `CRAWL_THREADS_INTERVAL_MINUTES` | How often to crawl threads | `60` |
+| `CRAWL_PROFILES_INTERVAL_MINUTES` | How often to crawl profiles | `1440` |
+| `CRAWL_QUOTES_BATCH_SIZE` | Threads to scrape for quotes per cycle | `5` |
+| `QUOTE_MIN_WORDS` | Minimum word count for a quote | `3` |
+| `REQUEST_DELAY_SECONDS` | Delay between HTTP requests | `2` |
+| `BOT_USERNAME` | JCink bot account username | *(empty = guest)* |
+| `BOT_PASSWORD` | JCink bot account password | *(empty = guest)* |
+| `DATABASE_PATH` | Path to SQLite database file | `/app/data/crawler.db` |
 
 ## Running Tests
 
@@ -122,8 +153,8 @@ pytest tests/test_operations.py::TestAddQuote
 The CLI communicates with the running service over HTTP.
 
 ```bash
-# Set the service URL (defaults to http://localhost:8943)
-export CRAWLER_URL=http://localhost:8943
+# Set the service URL (defaults to http://imagehut.ch:8943)
+export CRAWLER_URL=http://imagehut.ch:8943
 
 # Service status
 python cli.py status
@@ -199,6 +230,7 @@ jcink_crawler/
       scheduler.py       # APScheduler periodic jobs
   tests/                 # 194 unit tests
   cli.py                 # Rich-powered CLI client
+  install.sh             # One-command installer script
   Dockerfile
   docker-compose.yml
   requirements.txt

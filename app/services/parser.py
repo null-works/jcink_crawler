@@ -178,54 +178,94 @@ def parse_thread_pagination(html: str) -> int:
     return max_st
 
 
+# Group ID to name mapping for the proper TWAI theme
+_GROUP_MAP = {
+    "4": "Admin",
+    "5": "Reserved",
+    "6": "Red",
+    "7": "Orange",
+    "8": "Yellow",
+    "9": "Green",
+    "10": "Blue",
+    "11": "Purple",
+    "12": "Corrupted",
+    "13": "Pastel",
+    "14": "Pink",
+    "15": "Neutral",
+}
+
+
 def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
-    """Extract profile data from a JCink profile page.
+    """Extract profile data from a JCink profile page (proper TWAI theme).
 
     Extracts:
-    - Username
-    - Group name
-    - Avatar URL (from background-image styles)
-    - All visible custom profile fields
+    - Username from h1.profile-name or page title
+    - Group name from .profile-app.group-{N} class
+    - Avatar URL from .hero-sq-top background-image
+    - Custom profile fields from dl.profile-dossier (dt/dd pairs)
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # Get character name
-    name_el = soup.select_one(".profile-name")
-    name = name_el.get_text(strip=True) if name_el else "Unknown"
+    # Get character name from h1.profile-name
+    name_el = soup.select_one("h1.profile-name")
+    if name_el:
+        name = name_el.get_text(strip=True)
+    else:
+        # Fallback: parse from page title "Viewing Profile -> Name"
+        title_el = soup.select_one("title")
+        if title_el and "->" in title_el.get_text():
+            name = title_el.get_text().split("->")[-1].strip()
+        else:
+            name = "Unknown"
 
-    # Get group name
-    group_el = soup.select_one(".profile-group, .group-name")
-    group_name = group_el.get_text(strip=True) if group_el else None
+    # Get group name from .profile-app.group-{N} class
+    group_name = None
+    profile_app = soup.select_one(".profile-app")
+    if profile_app:
+        for cls in profile_app.get("class", []):
+            match = re.match(r"group-(\d+)", cls)
+            if match:
+                group_name = _GROUP_MAP.get(match.group(1), cls)
+                break
 
-    # Get avatar from background-image style
+    # Get avatar from .hero-sq-top background-image
     avatar_url = None
-    for el in soup.select("[style*='background-image']"):
-        style = el.get("style", "")
-        url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s]+)['\"]?\)", style, re.I)
+    avatar_el = soup.select_one(".hero-sq-top")
+    if avatar_el:
+        style = avatar_el.get("style", "")
+        url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
         if url_match:
             avatar_url = url_match.group(1)
-            break
 
-    # Extract custom profile fields
-    # JCink profile fields are rendered as elements with specific class patterns
+    # Fallback avatar: .profile-gif or any hero image
+    if not avatar_url:
+        for sel in [".profile-gif", ".hero-rect", ".hero-portrait"]:
+            el = soup.select_one(sel)
+            if el:
+                style = el.get("style", "")
+                url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
+                if url_match:
+                    avatar_url = url_match.group(1)
+                    break
+
+    # Extract custom profile fields from dl.profile-dossier (dt/dd pairs)
     fields = {}
+    dossier = soup.select_one("dl.profile-dossier")
+    if dossier:
+        dts = dossier.select("dt")
+        dds = dossier.select("dd")
+        for dt, dd in zip(dts, dds):
+            field_key = dt.get_text(strip=True).lower()
+            field_value = dd.get_text(strip=True)
+            if field_key and field_value and field_value != "No Information":
+                fields[field_key] = field_value
 
-    # Look for pf-* classes (common JCink custom field pattern)
-    for el in soup.select("[class*='pf-']"):
-        classes = el.get("class", [])
-        for cls in classes:
-            if cls.startswith("pf-"):
-                field_key = cls
-                field_value = el.get_text(strip=True)
-                if field_value:
-                    fields[field_key] = field_value
-
-    # Also look for data-field attributes
-    for el in soup.select("[data-field]"):
-        field_key = el.get("data-field", "")
-        field_value = el.get_text(strip=True)
-        if field_key and field_value:
-            fields[field_key] = field_value
+    # Also grab codename if present
+    codename_el = soup.select_one("h2.profile-codename")
+    if codename_el:
+        codename = codename_el.get_text(strip=True)
+        if codename and codename != "No Information":
+            fields["codename"] = codename
 
     return ParsedProfile(
         user_id=user_id,
@@ -314,6 +354,51 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
             quotes.append({"text": cleaned})
 
     return quotes
+
+
+def parse_member_list(html: str) -> list[dict]:
+    """Parse JCink member list page for user IDs and names.
+
+    Returns list of dicts with 'user_id' and 'name' keys.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    members = []
+    seen_ids = set()
+
+    for link in soup.select('a[href*="showuser="]'):
+        href = link.get("href", "")
+        match = re.search(r"showuser=(\d+)", href)
+        if not match:
+            continue
+
+        user_id = match.group(1)
+        if user_id in seen_ids:
+            continue
+        seen_ids.add(user_id)
+
+        name = link.get_text(strip=True)
+        if not name:
+            continue
+
+        members.append({"user_id": user_id, "name": name})
+
+    return members
+
+
+def parse_member_list_pagination(html: str) -> int:
+    """Get the highest st= value from member list pagination.
+
+    Returns 0 if single page.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    max_st = 0
+    for link in soup.select('.pagination a[href*="st="]'):
+        match = re.search(r"st=(\d+)", link.get("href", ""))
+        if match:
+            st = int(match.group(1))
+            if st > max_st:
+                max_st = st
+    return max_st
 
 
 def parse_search_redirect(html: str) -> str | None:
