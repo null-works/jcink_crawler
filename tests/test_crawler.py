@@ -22,11 +22,14 @@ async def fresh_db():
 
 PROFILE_HTML = """
 <html>
-<div class="profile-name">Tony Stark</div>
-<div class="profile-group">Avengers</div>
-<div class="hero-sq-top" style="background-image: url('https://img.com/tony.jpg')"></div>
-<div class="pf-alias">Iron Man</div>
-<div class="pf-age">45</div>
+<title>Viewing Profile -> Tony Stark</title>
+<div class="pf-a">
+    <div class="pf-b"><div class="pf-c" style="background: url(https://img.com/tony.jpg), url(https://fallback.jpg);"></div></div>
+    <div class="pf-d"><div class="pf-e">Tony Stark</div></div>
+</div>
+<div class="pf-x"><div class="mp-b">Avengers</div></div>
+<div class="pf-k"><span class="pf-l">alias</span>Iron Man</div>
+<div class="pf-k"><span class="pf-l">age</span>45</div>
 </html>
 """
 

@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     crawl_threads_interval_minutes: int = 60
     crawl_profiles_interval_minutes: int = 1440
     crawl_discovery_interval_minutes: int = 1440
+    discovery_max_user_id: int = 500
     crawl_quotes_batch_size: int = 5
     quote_min_words: int = 3
     request_delay_seconds: float = 2.0

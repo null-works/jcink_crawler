@@ -311,11 +311,14 @@ class TestParseProfilePage:
     def test_extracts_full_profile(self):
         html = """
         <html>
-        <div class="profile-name">Tony Stark</div>
-        <div class="profile-group">Avengers</div>
-        <div class="hero-sq-top" style="background-image: url('https://img.com/tony.jpg')"></div>
-        <div class="pf-alias">Iron Man</div>
-        <div class="pf-age">45</div>
+        <title>Viewing Profile -> Tony Stark</title>
+        <div class="pf-a">
+            <div class="pf-b"><div class="pf-c" style="background: url(https://img.com/tony.jpg), url(https://fallback.jpg);"></div></div>
+            <div class="pf-d"><div class="pf-e">Tony Stark</div></div>
+        </div>
+        <div class="pf-x"><div class="mp-b">Avengers</div></div>
+        <div class="pf-k"><span class="pf-l">age</span>45</div>
+        <div class="pf-k"><span class="pf-l">alias</span>Iron Man</div>
         </html>
         """
         profile = parse_profile_page(html, "42")
@@ -323,8 +326,8 @@ class TestParseProfilePage:
         assert profile.name == "Tony Stark"
         assert profile.group_name == "Avengers"
         assert profile.avatar_url == "https://img.com/tony.jpg"
-        assert profile.fields["pf-alias"] == "Iron Man"
-        assert profile.fields["pf-age"] == "45"
+        assert profile.fields["age"] == "45"
+        assert profile.fields["alias"] == "Iron Man"
 
     def test_defaults_when_missing(self):
         html = "<html><body>Bare page</body></html>"
@@ -334,23 +337,32 @@ class TestParseProfilePage:
         assert profile.avatar_url is None
         assert profile.fields == {}
 
-    def test_extracts_data_field_attributes(self):
+    def test_name_fallback_to_title(self):
         html = """
         <html>
-        <div class="profile-name">Test User</div>
-        <div data-field="fav_color">Blue</div>
-        <div data-field="motto">Live free</div>
+        <title>Viewing Profile -> Steve Rogers</title>
         </html>
         """
         profile = parse_profile_page(html, "1")
-        assert profile.fields["fav_color"] == "Blue"
-        assert profile.fields["motto"] == "Live free"
+        assert profile.name == "Steve Rogers"
 
-    def test_group_name_from_alternative_class(self):
+    def test_fields_skip_no_information(self):
         html = """
         <html>
-        <div class="profile-name">Test</div>
-        <div class="group-name">X-Men</div>
+        <div class="pf-d"><div class="pf-e">Test</div></div>
+        <div class="pf-k"><span class="pf-l">face claim</span><i>No Information</i></div>
+        <div class="pf-k"><span class="pf-l">species</span>human</div>
+        </html>
+        """
+        profile = parse_profile_page(html, "1")
+        assert "face claim" not in profile.fields
+        assert profile.fields["species"] == "human"
+
+    def test_group_name_from_mp_b(self):
+        html = """
+        <html>
+        <div class="pf-d"><div class="pf-e">Test</div></div>
+        <div class="pf-x"><div class="mp-b">X-Men</div></div>
         </html>
         """
         profile = parse_profile_page(html, "5")

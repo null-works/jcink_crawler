@@ -182,49 +182,59 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     """Extract profile data from a JCink profile page.
 
     Extracts:
-    - Username
-    - Group name
-    - Avatar URL (from background-image styles)
-    - All visible custom profile fields
+    - Username from .pf-e or page title
+    - Group name from .mp-b
+    - Avatar URL from .pf-c background-image
+    - Custom profile fields from .pf-k rows (label in .pf-l, value as text)
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # Get character name
-    name_el = soup.select_one(".profile-name")
-    name = name_el.get_text(strip=True) if name_el else "Unknown"
+    # Get character name from .pf-e (the large name display)
+    name_el = soup.select_one(".pf-e")
+    if name_el:
+        name = name_el.get_text(strip=True)
+    else:
+        # Fallback: parse from page title "Viewing Profile -> Name"
+        title_el = soup.select_one("title")
+        if title_el and "->" in title_el.get_text():
+            name = title_el.get_text().split("->")[-1].strip()
+        else:
+            name = "Unknown"
 
-    # Get group name
-    group_el = soup.select_one(".profile-group, .group-name")
+    # Get group name from .mp-b (inside .pf-x)
+    group_el = soup.select_one(".mp-b")
     group_name = group_el.get_text(strip=True) if group_el else None
 
-    # Get avatar from background-image style
+    # Get avatar from .pf-c background style
     avatar_url = None
-    for el in soup.select("[style*='background-image']"):
-        style = el.get("style", "")
-        url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s]+)['\"]?\)", style, re.I)
+    avatar_el = soup.select_one(".pf-c")
+    if avatar_el:
+        style = avatar_el.get("style", "")
+        url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
         if url_match:
             avatar_url = url_match.group(1)
-            break
 
-    # Extract custom profile fields
-    # JCink profile fields are rendered as elements with specific class patterns
+    # Fallback avatar: any element with background-image
+    if not avatar_url:
+        for el in soup.select("[style*='background']"):
+            style = el.get("style", "")
+            url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
+            if url_match:
+                avatar_url = url_match.group(1)
+                break
+
+    # Extract custom profile fields from .pf-k rows
+    # Each row: <div class="pf-k"><span class="pf-l">label</span>value</div>
     fields = {}
-
-    # Look for pf-* classes (common JCink custom field pattern)
-    for el in soup.select("[class*='pf-']"):
-        classes = el.get("class", [])
-        for cls in classes:
-            if cls.startswith("pf-"):
-                field_key = cls
-                field_value = el.get_text(strip=True)
-                if field_value:
-                    fields[field_key] = field_value
-
-    # Also look for data-field attributes
-    for el in soup.select("[data-field]"):
-        field_key = el.get("data-field", "")
-        field_value = el.get_text(strip=True)
-        if field_key and field_value:
+    for row in soup.select(".pf-k"):
+        label_el = row.select_one(".pf-l")
+        if not label_el:
+            continue
+        field_key = label_el.get_text(strip=True)
+        # Get the value: full row text minus the label text
+        full_text = row.get_text(strip=True)
+        field_value = full_text[len(field_key):].strip()
+        if field_key and field_value and field_value != "No Information":
             fields[field_key] = field_value
 
     return ParsedProfile(
