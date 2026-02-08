@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     crawl_quotes_batch_size: int = 5
     quote_min_words: int = 3
     request_delay_seconds: float = 2.0
+    max_concurrent_requests: int = 5
     database_path: str = "/app/data/crawler.db"
     bot_username: str = ""
     bot_password: str = ""

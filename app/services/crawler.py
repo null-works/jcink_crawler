@@ -1,7 +1,7 @@
 import asyncio
 import aiosqlite
 from app.config import settings
-from app.services.fetcher import fetch_page, fetch_page_with_delay
+from app.services.fetcher import fetch_page, fetch_page_with_delay, fetch_pages_concurrent
 from app.services.parser import (
     parse_search_results,
     parse_search_redirect,
@@ -18,7 +18,6 @@ from app.models.operations import (
     upsert_thread,
     link_character_thread,
     add_quote,
-    is_thread_quote_scraped,
     mark_thread_quote_scraped,
     upsert_profile_field,
     get_character,
@@ -35,6 +34,9 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     4. Categorize threads by forum
     5. Fetch each thread to determine last poster
     6. Extract quotes along the way
+
+    Uses concurrent fetching for throughput while respecting rate limits
+    via the shared semaphore in fetcher.py.
 
     Args:
         character_id: JCink user ID
@@ -71,50 +73,64 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     all_threads, page_urls = parse_search_results(html)
     print(f"[Crawler] First page: {len(all_threads)} threads, {len(page_urls)} additional pages")
 
-    # Step 3: Fetch additional pages
-    for page_url in page_urls:
-        page_html = await fetch_page_with_delay(page_url)
-        if not page_html:
-            continue
-        if is_board_message(page_html):
-            print(f"[Crawler] Got board message on pagination, stopping")
-            break
-        page_threads, _ = parse_search_results(page_html)
-        # Deduplicate
+    # Step 3: Fetch additional search pages concurrently
+    if page_urls:
+        page_htmls = await fetch_pages_concurrent(page_urls)
         seen_ids = {t.thread_id for t in all_threads}
-        for t in page_threads:
-            if t.thread_id not in seen_ids:
-                all_threads.append(t)
-                seen_ids.add(t.thread_id)
+        for page_html in page_htmls:
+            if not page_html:
+                continue
+            if is_board_message(page_html):
+                break
+            page_threads, _ = parse_search_results(page_html)
+            for t in page_threads:
+                if t.thread_id not in seen_ids:
+                    all_threads.append(t)
+                    seen_ids.add(t.thread_id)
 
     print(f"[Crawler] Total threads found: {len(all_threads)}")
 
-    # Get character name for quote extraction
+    # Pre-load character info and quote scrape status in bulk
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         char = await get_character(db, character_id)
+
+        # Bulk query: which threads have already been quote-scraped?
+        scraped_threads = set()
+        if all_threads:
+            thread_ids = [t.thread_id for t in all_threads]
+            placeholders = ",".join("?" * len(thread_ids))
+            cursor = await db.execute(
+                f"SELECT thread_id FROM quote_crawl_log WHERE character_id = ? AND thread_id IN ({placeholders})",
+                [character_id] + thread_ids,
+            )
+            rows = await cursor.fetchall()
+            scraped_threads = {row["thread_id"] for row in rows}
+
     character_name = char.name if char else None
 
-    # Step 4: Fetch each thread to determine last poster + extract quotes
-    results = {"ongoing": 0, "comms": 0, "complete": 0, "incomplete": 0, "quotes_added": 0}
+    # Avatar cache: avoid re-fetching the same user's profile for their avatar
+    avatar_cache: dict[str, str | None] = {}
 
-    for thread in all_threads:
+    async def _process_thread(thread):
+        """Fetch and parse all data for a single thread.
+
+        Returns a result dict or None if the fetch failed.
+        HTTP concurrency is controlled by the semaphore in fetch_page_with_delay.
+        """
         thread_html = await fetch_page_with_delay(thread.url)
         if not thread_html:
-            continue
+            return None
 
         # Check for multi-page threads — get last page
         max_st = parse_thread_pagination(thread_html)
+        last_page_html = None
         if max_st > 0:
             sep = "&" if "?" in thread.url else "?"
             last_page_url = f"{thread.url}{sep}st={max_st}"
             last_page_html = await fetch_page_with_delay(last_page_url)
-            if last_page_html:
-                thread_html_for_poster = last_page_html
-            else:
-                thread_html_for_poster = thread_html
-        else:
-            thread_html_for_poster = thread_html
+
+        thread_html_for_poster = last_page_html or thread_html
 
         # Extract last poster
         last_poster = parse_last_poster(thread_html_for_poster)
@@ -126,18 +142,78 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             else False
         )
 
-        # Fetch last poster avatar
+        # Fetch last poster avatar (with cache to avoid duplicates)
         last_poster_avatar = None
         if last_poster_id:
-            avatar_html = await fetch_page_with_delay(
-                f"{base_url}/index.php?showuser={last_poster_id}"
-            )
-            if avatar_html:
-                last_poster_avatar = parse_avatar_from_profile(avatar_html)
+            if last_poster_id in avatar_cache:
+                last_poster_avatar = avatar_cache[last_poster_id]
+            else:
+                avatar_html = await fetch_page_with_delay(
+                    f"{base_url}/index.php?showuser={last_poster_id}"
+                )
+                if avatar_html:
+                    last_poster_avatar = parse_avatar_from_profile(avatar_html)
+                avatar_cache[last_poster_id] = last_poster_avatar
 
-        # Save to DB
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
+        # Extract quotes if not already scraped
+        quotes = []
+        should_mark_scraped = False
+
+        if character_name and thread.thread_id not in scraped_threads:
+            # Reuse pages already fetched for last-poster detection
+            all_pages = [thread_html]
+            if max_st > 0:
+                remaining_urls = []
+                for st in range(25, max_st + 1, 25):
+                    if st == max_st and last_page_html:
+                        # Reuse already-fetched last page
+                        all_pages.append(last_page_html)
+                    else:
+                        sep = "&" if "?" in thread.url else "?"
+                        remaining_urls.append(f"{thread.url}{sep}st={st}")
+
+                # Fetch intermediate pages concurrently
+                if remaining_urls:
+                    intermediate_htmls = await fetch_pages_concurrent(remaining_urls)
+                    for ph in intermediate_htmls:
+                        if ph:
+                            all_pages.append(ph)
+
+            for page_html in all_pages:
+                page_quotes = extract_quotes_from_html(page_html, character_name)
+                quotes.extend(page_quotes)
+
+            should_mark_scraped = True
+
+        return {
+            "thread": thread,
+            "last_poster_id": last_poster_id,
+            "last_poster_name": last_poster_name,
+            "last_poster_avatar": last_poster_avatar,
+            "is_user_last": is_user_last,
+            "quotes": quotes,
+            "should_mark_scraped": should_mark_scraped,
+        }
+
+    # Step 4: Process all threads concurrently
+    tasks = [_process_thread(t) for t in all_threads]
+    thread_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Step 5: Batch write all results to DB in a single connection
+    results = {"ongoing": 0, "comms": 0, "complete": 0, "incomplete": 0, "quotes_added": 0}
+
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+
+        for result in thread_results:
+            if isinstance(result, Exception):
+                print(f"[Crawler] Error processing thread: {result}")
+                continue
+            if result is None:
+                continue
+
+            thread = result["thread"]
+
             await upsert_thread(
                 db,
                 thread_id=thread.thread_id,
@@ -146,59 +222,32 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                 forum_id=thread.forum_id,
                 forum_name=thread.forum_name,
                 category=thread.category,
-                last_poster_id=last_poster_id,
-                last_poster_name=last_poster_name,
-                last_poster_avatar=last_poster_avatar,
+                last_poster_id=result["last_poster_id"],
+                last_poster_name=result["last_poster_name"],
+                last_poster_avatar=result["last_poster_avatar"],
             )
             await link_character_thread(
                 db,
                 character_id=character_id,
                 thread_id=thread.thread_id,
                 category=thread.category,
-                is_user_last_poster=is_user_last,
+                is_user_last_poster=result["is_user_last"],
             )
-            await db.commit()
 
-        results[thread.category] = results.get(thread.category, 0) + 1
+            results[thread.category] = results.get(thread.category, 0) + 1
 
-        # Step 5: Extract quotes if not already scraped
-        if character_name:
-            async with aiosqlite.connect(db_path) as db:
-                db.row_factory = aiosqlite.Row
-                already_scraped = await is_thread_quote_scraped(
-                    db, thread.thread_id, character_id
+            for q in result["quotes"]:
+                added = await add_quote(
+                    db, character_id, q["text"],
+                    thread.thread_id, thread.title
                 )
+                if added:
+                    results["quotes_added"] += 1
 
-            if not already_scraped:
-                # For quotes, we want ALL pages of the thread
-                all_thread_html = [thread_html]
-                if max_st > 0:
-                    for st in range(25, max_st + 1, 25):
-                        sep = "&" if "?" in thread.url else "?"
-                        page_url = f"{thread.url}{sep}st={st}"
-                        page_html = await fetch_page_with_delay(page_url)
-                        if page_html:
-                            all_thread_html.append(page_html)
+            if result["should_mark_scraped"]:
+                await mark_thread_quote_scraped(db, thread.thread_id, character_id)
 
-                for page_html in all_thread_html:
-                    quotes = extract_quotes_from_html(page_html, character_name)
-                    async with aiosqlite.connect(db_path) as db:
-                        db.row_factory = aiosqlite.Row
-                        for q in quotes:
-                            added = await add_quote(
-                                db, character_id, q["text"],
-                                thread.thread_id, thread.title
-                            )
-                            if added:
-                                results["quotes_added"] += 1
-                        await db.commit()
-
-                # Mark thread as quote-scraped
-                async with aiosqlite.connect(db_path) as db:
-                    await mark_thread_quote_scraped(
-                        db, thread.thread_id, character_id
-                    )
-                    await db.commit()
+        await db.commit()
 
     # Update crawl timestamp
     async with aiosqlite.connect(db_path) as db:
@@ -293,6 +342,13 @@ async def discover_characters(db_path: str) -> dict:
 
     print(f"[Crawler] Starting auto-discovery from ID 1 to {max_id}")
 
+    # Pre-load existing character IDs to avoid per-ID DB queries
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT id FROM characters")
+        rows = await cursor.fetchall()
+        existing_ids = {row["id"] for row in rows}
+
     new_count = 0
     existing_count = 0
     skipped_count = 0
@@ -300,12 +356,8 @@ async def discover_characters(db_path: str) -> dict:
     for user_id in range(1, max_id + 1):
         uid = str(user_id)
 
-        # Skip if already tracked
-        async with aiosqlite.connect(db_path) as db:
-            db.row_factory = aiosqlite.Row
-            existing = await get_character(db, uid)
-
-        if existing:
+        # Skip if already tracked (using pre-loaded set)
+        if uid in existing_ids:
             existing_count += 1
             consecutive_misses = 0
             continue
