@@ -86,7 +86,6 @@ for i in $(seq 1 "$MAX_RETRIES"); do
         info "Service is running!"
         echo ""
         echo "  Crawler API:    http://localhost:8943/health"
-        echo "  Portainer UI:   https://localhost:9443"
         echo ""
         echo "  Service status: docker exec -it jcink-crawler python cli.py status"
         echo "  Register user:  docker exec -it jcink-crawler python cli.py register <user_id>"

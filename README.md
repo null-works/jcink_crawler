@@ -27,12 +27,10 @@ The install script will:
 - Clone the repository (if not already in it)
 - Create the host data directory at `/opt/jcink-crawler/data/`
 - Build the Docker image
-- Start the crawler and **Portainer** containers
+- Start the crawler container
 - Wait for the health check to pass
 
-Once running:
-- **Crawler API** at `http://localhost:8943`
-- **Portainer UI** at `https://localhost:9443` — web dashboard for managing containers
+The container will appear in your existing Portainer dashboard automatically.
 
 To customize environment variables (forum URL, bot credentials, crawl intervals), clone the repo first, edit `docker-compose.yml`, then run `./install.sh`. See the [environment variables](#environment-variables) table below.
 
@@ -61,7 +59,7 @@ To customize environment variables (forum URL, bot credentials, crawl intervals)
    docker compose up --build -d
    ```
 
-   The crawler starts on **port 8943** (mapped to internal port 8000) and Portainer on **port 9443**. SQLite data is persisted to `/opt/jcink-crawler/data/` on the host.
+   The service starts on **port 8943** (mapped to internal port 8000). SQLite data is persisted to `/opt/jcink-crawler/data/` on the host.
 
 5. **Verify it's running**
 
