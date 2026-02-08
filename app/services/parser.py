@@ -316,6 +316,51 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
     return quotes
 
 
+def parse_member_list(html: str) -> list[dict]:
+    """Parse JCink member list page for user IDs and names.
+
+    Returns list of dicts with 'user_id' and 'name' keys.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    members = []
+    seen_ids = set()
+
+    for link in soup.select('a[href*="showuser="]'):
+        href = link.get("href", "")
+        match = re.search(r"showuser=(\d+)", href)
+        if not match:
+            continue
+
+        user_id = match.group(1)
+        if user_id in seen_ids:
+            continue
+        seen_ids.add(user_id)
+
+        name = link.get_text(strip=True)
+        if not name:
+            continue
+
+        members.append({"user_id": user_id, "name": name})
+
+    return members
+
+
+def parse_member_list_pagination(html: str) -> int:
+    """Get the highest st= value from member list pagination.
+
+    Returns 0 if single page.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    max_st = 0
+    for link in soup.select('.pagination a[href*="st="]'):
+        match = re.search(r"st=(\d+)", link.get("href", ""))
+        if match:
+            st = int(match.group(1))
+            if st > max_st:
+                max_st = st
+    return max_st
+
+
 def parse_search_redirect(html: str) -> str | None:
     """Check if a search results page has a meta refresh redirect.
 

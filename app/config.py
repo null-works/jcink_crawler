@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     forums_excluded: str = "4,5,6,7,8,9,10,11,12,14,15,16,18,52,56,57,58,60,63,69,85,86,87,88,90,91,92,95"
     crawl_threads_interval_minutes: int = 60
     crawl_profiles_interval_minutes: int = 1440
+    crawl_discovery_interval_minutes: int = 1440
     crawl_quotes_batch_size: int = 5
     quote_min_words: int = 3
     request_delay_seconds: float = 2.0
