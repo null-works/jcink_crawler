@@ -139,21 +139,22 @@ def parse_search_results(html: str) -> tuple[list[ParsedThread], list[str]]:
 def parse_last_poster(html: str) -> ParsedLastPoster | None:
     """Extract the last poster from a thread page.
 
-    Looks at the final .pr-wrap element on the page.
+    Looks at the final .pr-a post element on the page.
+    The TWAI theme uses .pr-a for post wrappers and .pr-j for the author name div.
     """
     soup = BeautifulSoup(html, "html.parser")
-    posts = soup.select(".pr-wrap")
+    posts = soup.select(".pr-a")
     if not posts:
         return None
 
     last_post = posts[-1]
-    name_el = last_post.select_one(".pr-name a, .pr-name")
+    name_el = last_post.select_one(".pr-j")
     if not name_el:
         return None
 
     name = name_el.get_text(strip=True)
     user_id = None
-    user_link = last_post.select_one('.pr-name a[href*="showuser="]')
+    user_link = last_post.select_one('.pr-j a[href*="showuser="]')
     if user_link:
         match = re.search(r"showuser=(\d+)", user_link.get("href", ""))
         if match:
@@ -309,15 +310,18 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
     Finds bold text matching dialog patterns (<b>"..."</b> or <strong>"..."</strong>)
     but ONLY from posts authored by the specified character.
 
+    The TWAI theme uses .pr-a for post wrappers, .pr-j for the author name div,
+    and .postcolor for the post body (all nested inside .pr-a).
+
     Returns list of dicts with 'text' key.
     """
     soup = BeautifulSoup(html, "html.parser")
     quotes = []
     min_words = settings.quote_min_words
 
-    for post_container in soup.select(".pr-wrap"):
+    for post_container in soup.select(".pr-a"):
         # Check if this post is by the character
-        name_el = post_container.select_one(".pr-name")
+        name_el = post_container.select_one(".pr-j")
         if not name_el:
             continue
 
@@ -325,23 +329,8 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
         if post_author.lower() != character_name.lower():
             continue
 
-        # Find bold elements in post body
-        # First check inside .pr-wrap (some themes nest it)
-        post_body = post_container.select_one(".pr-body, .postcolor")
-        if not post_body:
-            # In most JCink themes, .pr-body/.postcolor is a sibling of .pr-wrap,
-            # not a child — walk siblings to find the post content
-            for sibling in post_container.find_next_siblings():
-                # Stop at the next post's author block to avoid cross-post matches
-                if sibling.select_one(".pr-name") or "pr-wrap" in sibling.get("class", []):
-                    break
-                if "postcolor" in sibling.get("class", []) or "pr-body" in sibling.get("class", []):
-                    post_body = sibling
-                    break
-                found = sibling.select_one(".postcolor")
-                if found:
-                    post_body = found
-                    break
+        # Find the post body
+        post_body = post_container.select_one(".postcolor")
         if not post_body:
             continue
 
@@ -349,12 +338,12 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
             text = bold_el.get_text(strip=True)
 
             # Check if it starts with a quote character
-            if not re.match(r'^["\'\u201C\u2018]', text):
+            if not re.match(r'^["\'\u201C\u2018\u00AB]', text):
                 continue
 
             # Clean up quote marks
-            cleaned = re.sub(r'^["\'\u201C\u2018]+', '', text)
-            cleaned = re.sub(r'["\'\u201D\u2019]+$', '', cleaned)
+            cleaned = re.sub(r'^["\'\u201C\u2018\u00AB]+', '', text)
+            cleaned = re.sub(r'["\'\u201D\u2019\u00BB]+$', '', cleaned)
             cleaned = cleaned.strip()
 
             # Check minimum word count

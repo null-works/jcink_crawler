@@ -34,11 +34,11 @@ class TestCategorizeThread:
 class TestParseLastPoster:
     def test_extracts_last_poster(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name"><a href="/index.php?showuser=1">First Poster</a></div>
+        <div class="pr-a">
+            <div class="pr-j"><a href="/index.php?showuser=1">First Poster</a></div>
         </div>
-        <div class="pr-wrap">
-            <div class="pr-name"><a href="/index.php?showuser=42">Last Poster</a></div>
+        <div class="pr-a">
+            <div class="pr-j"><a href="/index.php?showuser=42">Last Poster</a></div>
         </div>
         """
         result = parse_last_poster(html)
@@ -54,9 +54,9 @@ class TestParseLastPoster:
 class TestExtractQuotes:
     def test_extracts_bold_dialog(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-            <div class="pr-body">
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor">
                 <b>"I am Iron Man and this is my quote"</b>
                 <p>Some narrative text</p>
                 <strong>"Another great dialog line here"</strong>
@@ -70,9 +70,9 @@ class TestExtractQuotes:
 
     def test_skips_other_characters(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Steve Rogers</div>
-            <div class="pr-body">
+        <div class="pr-a">
+            <div class="pr-j">Steve Rogers</div>
+            <div class="postcolor">
                 <b>"I can do this all day"</b>
             </div>
         </div>
@@ -82,9 +82,9 @@ class TestExtractQuotes:
 
     def test_skips_short_quotes(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-            <div class="pr-body">
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor">
                 <b>"Hi"</b>
                 <b>"Yes no"</b>
             </div>
@@ -95,9 +95,9 @@ class TestExtractQuotes:
 
     def test_handles_curly_quotes(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-            <div class="pr-body">
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor">
                 <b>\u201cThis uses fancy curly quotes here\u201d</b>
             </div>
         </div>
@@ -419,8 +419,8 @@ class TestParseProfilePage:
 class TestParseLastPosterExtended:
     def test_single_post_page(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name"><a href="/index.php?showuser=1">Only Poster</a></div>
+        <div class="pr-a">
+            <div class="pr-j"><a href="/index.php?showuser=1">Only Poster</a></div>
         </div>
         """
         result = parse_last_poster(html)
@@ -430,8 +430,8 @@ class TestParseLastPosterExtended:
     def test_poster_without_user_link(self):
         """Guest posters may not have a user link."""
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Guest User</div>
+        <div class="pr-a">
+            <div class="pr-j">Guest User</div>
         </div>
         """
         result = parse_last_poster(html)
@@ -440,7 +440,7 @@ class TestParseLastPosterExtended:
 
     def test_no_name_element(self):
         html = """
-        <div class="pr-wrap">
+        <div class="pr-a">
             <div class="other-stuff">content</div>
         </div>
         """
@@ -451,9 +451,9 @@ class TestParseLastPosterExtended:
 class TestExtractQuotesExtended:
     def test_case_insensitive_character_match(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">TONY STARK</div>
-            <div class="pr-body">
+        <div class="pr-a">
+            <div class="pr-j">TONY STARK</div>
+            <div class="postcolor">
                 <b>"This is a case test quote here"</b>
             </div>
         </div>
@@ -463,9 +463,9 @@ class TestExtractQuotesExtended:
 
     def test_skips_non_quote_bold_text(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-            <div class="pr-body">
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor">
                 <b>This is bold but not a quote</b>
             </div>
         </div>
@@ -476,9 +476,9 @@ class TestExtractQuotesExtended:
     def test_truncates_long_quotes(self):
         long_text = "A " * 300  # 600 chars
         html = f"""
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-            <div class="pr-body">
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor">
                 <b>"{long_text}"</b>
             </div>
         </div>
@@ -489,9 +489,9 @@ class TestExtractQuotesExtended:
 
     def test_handles_single_quotes(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-            <div class="pr-body">
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor">
                 <b>'This uses single quotes around it'</b>
             </div>
         </div>
@@ -501,17 +501,17 @@ class TestExtractQuotesExtended:
 
     def test_multiple_posts_different_characters(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-            <div class="pr-body"><b>"Tony says something really cool"</b></div>
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor"><b>"Tony says something really cool"</b></div>
         </div>
-        <div class="pr-wrap">
-            <div class="pr-name">Steve Rogers</div>
-            <div class="pr-body"><b>"Steve says something really cool"</b></div>
+        <div class="pr-a">
+            <div class="pr-j">Steve Rogers</div>
+            <div class="postcolor"><b>"Steve says something really cool"</b></div>
         </div>
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-            <div class="pr-body"><b>"Tony speaks again for real"</b></div>
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor"><b>"Tony speaks again for real"</b></div>
         </div>
         """
         quotes = extract_quotes_from_html(html, "Tony Stark")
@@ -519,97 +519,40 @@ class TestExtractQuotesExtended:
 
     def test_no_body_in_post(self):
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
         </div>
         """
         quotes = extract_quotes_from_html(html, "Tony Stark")
         assert len(quotes) == 0
 
-    def test_uses_postcolor_class(self):
+    def test_real_twai_theme_structure(self):
+        """Test with the actual TWAI theme structure: .pr-a > ... > .pr-j + .postcolor."""
         html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-            <div class="postcolor">
-                <b>"Quote from postcolor div here"</b>
-            </div>
-        </div>
-        """
-        quotes = extract_quotes_from_html(html, "Tony Stark")
-        assert len(quotes) == 1
-
-
-class TestExtractQuotesSiblingBody:
-    """Test quote extraction when .pr-body/.postcolor is a sibling of .pr-wrap (typical JCink layout)."""
-
-    def test_postcolor_as_sibling(self):
-        """Post body is a sibling of .pr-wrap, not nested inside it."""
-        html = """
-        <div class="post-row">
-            <div class="pr-wrap">
-                <div class="pr-name">Tony Stark</div>
-            </div>
-            <div class="postcolor">
-                <b>"I am Iron Man and I have things to say"</b>
-            </div>
-        </div>
-        """
-        quotes = extract_quotes_from_html(html, "Tony Stark")
-        assert len(quotes) == 1
-        assert quotes[0]["text"] == "I am Iron Man and I have things to say"
-
-    def test_pr_body_wrapping_postcolor_as_sibling(self):
-        """.pr-body wraps .postcolor, both siblings of .pr-wrap."""
-        html = """
-        <div class="post-row">
-            <div class="pr-wrap">
-                <div class="pr-name">Tony Stark</div>
-            </div>
-            <div class="pr-body">
-                <div class="postcolor">
-                    <b>"Genius billionaire playboy philanthropist that is me"</b>
+        <div class="pr-a">
+            <div class="pr-e"><table><tr><td>
+                <div class="pr-g">
+                    <div class="pr-h">
+                        <div class="pr-i">
+                            <div class="pr-j"><a href="/index.php?showuser=4">Jessica Jones</a></div>
+                        </div>
+                    </div>
                 </div>
-            </div>
+                <div class="pr-f">
+                    <center>details</center>
+                    <div class="postcolor" id="pid_123">
+                        <b>\u201cI didn\u2019t ask for this but here we are\u201d</b>
+                        <p>She crossed her arms and stared out the window.</p>
+                        <b>\u201cJust another day in hell\u2019s kitchen honestly\u201d</b>
+                    </div>
+                </div>
+            </td></tr></table></div>
         </div>
         """
-        quotes = extract_quotes_from_html(html, "Tony Stark")
-        assert len(quotes) == 1
-
-    def test_sibling_layout_skips_other_characters(self):
-        """Multiple posts with sibling layout — only extracts from the right author."""
-        html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-        </div>
-        <div class="postcolor">
-            <b>"Tony's quote is long enough here"</b>
-        </div>
-        <div class="pr-wrap">
-            <div class="pr-name">Steve Rogers</div>
-        </div>
-        <div class="postcolor">
-            <b>"Steve's quote is long enough here"</b>
-        </div>
-        """
-        quotes = extract_quotes_from_html(html, "Tony Stark")
-        assert len(quotes) == 1
-        assert "Tony" in quotes[0]["text"]
-
-    def test_sibling_layout_no_cross_post_bleed(self):
-        """Should not grab the next post's body if current post has no body."""
-        html = """
-        <div class="pr-wrap">
-            <div class="pr-name">Tony Stark</div>
-        </div>
-        <div class="pr-wrap">
-            <div class="pr-name">Steve Rogers</div>
-        </div>
-        <div class="postcolor">
-            <b>"This belongs to Steve not Tony"</b>
-        </div>
-        """
-        quotes = extract_quotes_from_html(html, "Tony Stark")
-        assert len(quotes) == 0
+        quotes = extract_quotes_from_html(html, "Jessica Jones")
+        assert len(quotes) == 2
+        assert "didn\u2019t ask for this" in quotes[0]["text"]
+        assert "hell\u2019s kitchen" in quotes[1]["text"]
 
 
 class TestBoardMessageExtended:
