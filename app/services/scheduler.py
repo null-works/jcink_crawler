@@ -101,7 +101,7 @@ def start_scheduler():
     _scheduler.start()
 
     # Trigger discovery immediately on startup
-    asyncio.get_event_loop().create_task(_discover_all_characters())
+    asyncio.get_running_loop().create_task(_discover_all_characters())
 
     print(f"[Scheduler] Started - discovery every {settings.crawl_discovery_interval_minutes}min, threads every {settings.crawl_threads_interval_minutes}min, profiles every {settings.crawl_profiles_interval_minutes}min")
 

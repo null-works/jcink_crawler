@@ -60,9 +60,9 @@ SEARCH_HTML = """
 
 THREAD_HTML = """
 <html>
-<div class="pr-wrap">
-    <div class="pr-name"><a href="/index.php?showuser=99">Steve Rogers</a></div>
-    <div class="pr-body">
+<div class="pr-a">
+    <div class="pr-j"><a href="/index.php?showuser=99">Steve Rogers</a></div>
+    <div class="postcolor">
         <b>"I can do this all day and it is great"</b>
     </div>
 </div>
@@ -71,9 +71,9 @@ THREAD_HTML = """
 
 THREAD_HTML_TONY = """
 <html>
-<div class="pr-wrap">
-    <div class="pr-name"><a href="/index.php?showuser=42">Tony Stark</a></div>
-    <div class="pr-body">
+<div class="pr-a">
+    <div class="pr-j"><a href="/index.php?showuser=42">Tony Stark</a></div>
+    <div class="postcolor">
         <b>"I am Iron Man and everyone knows it"</b>
     </div>
 </div>

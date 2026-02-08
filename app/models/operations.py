@@ -112,6 +112,7 @@ async def upsert_thread(
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
+            url = excluded.url,
             forum_id = excluded.forum_id,
             forum_name = excluded.forum_name,
             category = excluded.category,
@@ -227,12 +228,12 @@ async def add_quote(
 ) -> bool:
     """Add a quote if it doesn't already exist. Returns True if inserted."""
     try:
-        await db.execute("""
+        cursor = await db.execute("""
             INSERT OR IGNORE INTO quotes
                 (character_id, quote_text, source_thread_id, source_thread_title)
             VALUES (?, ?, ?, ?)
         """, (character_id, quote_text, source_thread_id, source_thread_title))
-        return db.total_changes > 0
+        return cursor.rowcount > 0
     except Exception:
         return False
 

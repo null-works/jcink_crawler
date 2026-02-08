@@ -1,7 +1,10 @@
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_prefix="")
+
     forum_base_url: str = "https://therewasanidea.jcink.net"
     forum_complete_id: str = "49"
     forum_incomplete_id: str = "59"
@@ -21,9 +24,6 @@ class Settings(BaseSettings):
     @property
     def excluded_forum_ids(self) -> set[str]:
         return set(self.forums_excluded.split(","))
-
-    class Config:
-        env_prefix = ""
 
 
 settings = Settings()

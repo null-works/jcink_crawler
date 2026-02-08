@@ -26,24 +26,26 @@ async def fresh_db():
 
 
 class TestStartStopScheduler:
-    def test_start_creates_scheduler(self):
+    async def test_start_creates_scheduler(self):
         from app.services import scheduler
         scheduler._scheduler = None
-        start_scheduler()
+        with patch("app.services.scheduler._discover_all_characters", new_callable=AsyncMock):
+            start_scheduler()
         assert scheduler._scheduler is not None
         stop_scheduler()
         assert scheduler._scheduler is None
 
-    def test_stop_when_not_started(self):
+    async def test_stop_when_not_started(self):
         from app.services import scheduler
         scheduler._scheduler = None
         # Should not raise
         stop_scheduler()
 
-    def test_start_registers_jobs(self):
+    async def test_start_registers_jobs(self):
         from app.services import scheduler
         scheduler._scheduler = None
-        start_scheduler()
+        with patch("app.services.scheduler._discover_all_characters", new_callable=AsyncMock):
+            start_scheduler()
         jobs = scheduler._scheduler.get_jobs()
         job_ids = {j.id for j in jobs}
         assert "crawl_threads" in job_ids
