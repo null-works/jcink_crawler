@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
     await close_client()
 
 
-app = FastAPI(title="JCink Crawler", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="The Watcher", version="1.0.0", lifespan=lifespan)
 
 # CORS for JCink embeds
 app.add_middleware(

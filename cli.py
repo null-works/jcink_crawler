@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""JCink Crawler CLI — interface with the running crawler service.
+"""The Watcher CLI — interface with the running crawler service.
 
 Usage:
     python cli.py status
@@ -117,7 +117,7 @@ class CrawlerClient:
               help="Crawler service URL (default: http://imagehut.ch:8943)")
 @click.pass_context
 def cli(ctx, url):
-    """JCink Crawler CLI — manage and inspect the crawler service."""
+    """The Watcher CLI — manage and inspect the crawler service."""
     ctx.ensure_object(dict)
     ctx.obj["client"] = CrawlerClient(url)
 
@@ -414,7 +414,7 @@ def watch(ctx, interval):
                 f"Characters: [bold]{data.get('characters_tracked', 0)}[/]  |  "
                 f"Threads: [bold]{data.get('total_threads', 0)}[/]  |  "
                 f"Quotes: [bold]{data.get('total_quotes', 0)}[/]",
-                title="JCink Crawler",
+                title="The Watcher",
                 box=box.ROUNDED,
             ))
 
