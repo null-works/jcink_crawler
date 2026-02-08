@@ -178,19 +178,36 @@ def parse_thread_pagination(html: str) -> int:
     return max_st
 
 
+# Group ID to name mapping for the proper TWAI theme
+_GROUP_MAP = {
+    "4": "Admin",
+    "5": "Reserved",
+    "6": "Red",
+    "7": "Orange",
+    "8": "Yellow",
+    "9": "Green",
+    "10": "Blue",
+    "11": "Purple",
+    "12": "Corrupted",
+    "13": "Pastel",
+    "14": "Pink",
+    "15": "Neutral",
+}
+
+
 def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
-    """Extract profile data from a JCink profile page.
+    """Extract profile data from a JCink profile page (proper TWAI theme).
 
     Extracts:
-    - Username from .pf-e or page title
-    - Group name from .mp-b
-    - Avatar URL from .pf-c background-image
-    - Custom profile fields from .pf-k rows (label in .pf-l, value as text)
+    - Username from h1.profile-name or page title
+    - Group name from .profile-app.group-{N} class
+    - Avatar URL from .hero-sq-top background-image
+    - Custom profile fields from dl.profile-dossier (dt/dd pairs)
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # Get character name from .pf-e (the large name display)
-    name_el = soup.select_one(".pf-e")
+    # Get character name from h1.profile-name
+    name_el = soup.select_one("h1.profile-name")
     if name_el:
         name = name_el.get_text(strip=True)
     else:
@@ -201,41 +218,54 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         else:
             name = "Unknown"
 
-    # Get group name from .mp-b (inside .pf-x)
-    group_el = soup.select_one(".mp-b")
-    group_name = group_el.get_text(strip=True) if group_el else None
+    # Get group name from .profile-app.group-{N} class
+    group_name = None
+    profile_app = soup.select_one(".profile-app")
+    if profile_app:
+        for cls in profile_app.get("class", []):
+            match = re.match(r"group-(\d+)", cls)
+            if match:
+                group_name = _GROUP_MAP.get(match.group(1), cls)
+                break
 
-    # Get avatar from .pf-c background style
+    # Get avatar from .hero-sq-top background-image
     avatar_url = None
-    avatar_el = soup.select_one(".pf-c")
+    avatar_el = soup.select_one(".hero-sq-top")
     if avatar_el:
         style = avatar_el.get("style", "")
         url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
         if url_match:
             avatar_url = url_match.group(1)
 
-    # Fallback avatar: any element with background-image
+    # Fallback avatar: .profile-gif or any hero image
     if not avatar_url:
-        for el in soup.select("[style*='background']"):
-            style = el.get("style", "")
-            url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
-            if url_match:
-                avatar_url = url_match.group(1)
-                break
+        for sel in [".profile-gif", ".hero-rect", ".hero-portrait"]:
+            el = soup.select_one(sel)
+            if el:
+                style = el.get("style", "")
+                url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
+                if url_match:
+                    avatar_url = url_match.group(1)
+                    break
 
-    # Extract custom profile fields from .pf-k rows
-    # Each row: <div class="pf-k"><span class="pf-l">label</span>value</div>
+    # Extract custom profile fields from dl.profile-dossier (dt/dd pairs)
     fields = {}
-    for row in soup.select(".pf-k"):
-        label_el = row.select_one(".pf-l")
-        if not label_el:
-            continue
-        field_key = label_el.get_text(strip=True)
-        # Get the value: full row text minus the label text
-        full_text = row.get_text(strip=True)
-        field_value = full_text[len(field_key):].strip()
-        if field_key and field_value and field_value != "No Information":
-            fields[field_key] = field_value
+    dossier = soup.select_one("dl.profile-dossier")
+    if dossier:
+        dts = dossier.select("dt")
+        dds = dossier.select("dd")
+        for dt, dd in zip(dts, dds):
+            field_key = dt.get_text(strip=True).lower()
+            field_value = dd.get_text(strip=True)
+            if field_key and field_value and field_value != "No Information":
+                fields[field_key] = field_value
+
+    # Also grab codename if present
+    codename_el = soup.select_one("h2.profile-codename")
+    if codename_el:
+        codename = codename_el.get_text(strip=True)
+        if codename and codename != "No Information":
+            fields["codename"] = codename
 
     return ParsedProfile(
         user_id=user_id,

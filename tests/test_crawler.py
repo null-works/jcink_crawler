@@ -23,13 +23,25 @@ async def fresh_db():
 PROFILE_HTML = """
 <html>
 <title>Viewing Profile -> Tony Stark</title>
-<div class="pf-a">
-    <div class="pf-b"><div class="pf-c" style="background: url(https://img.com/tony.jpg), url(https://fallback.jpg);"></div></div>
-    <div class="pf-d"><div class="pf-e">Tony Stark</div></div>
+<div class="profile-app group-6">
+  <header class="profile-hero">
+    <div class="profile-hero-images">
+      <div class="profile-hero-img hero-sq-top" style="background-image: url('https://img.com/tony.jpg');"></div>
+    </div>
+    <div class="profile-hero-info">
+      <h1 class="profile-name" data-text="Tony Stark">Tony Stark</h1>
+      <h2 class="profile-codename">Iron Man</h2>
+    </div>
+  </header>
+  <aside class="profile-sidebar">
+    <div class="profile-card glass profile-dossier-card">
+      <dl class="profile-dossier">
+        <dt>Age</dt><dd>45</dd>
+        <dt>Affiliation</dt><dd>Avengers</dd>
+      </dl>
+    </div>
+  </aside>
 </div>
-<div class="pf-x"><div class="mp-b">Avengers</div></div>
-<div class="pf-k"><span class="pf-l">alias</span>Iron Man</div>
-<div class="pf-k"><span class="pf-l">age</span>45</div>
 </html>
 """
 
@@ -75,8 +87,8 @@ class TestCrawlCharacterProfile:
             result = await crawl_character_profile("42", DATABASE_PATH)
 
         assert result["name"] == "Tony Stark"
-        assert result["fields_count"] == 2
-        assert result["group"] == "Avengers"
+        assert result["fields_count"] == 3
+        assert result["group"] == "Red"
 
         # Verify DB was updated
         async with aiosqlite.connect(DATABASE_PATH) as db:

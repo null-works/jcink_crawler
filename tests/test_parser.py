@@ -312,22 +312,35 @@ class TestParseProfilePage:
         html = """
         <html>
         <title>Viewing Profile -> Tony Stark</title>
-        <div class="pf-a">
-            <div class="pf-b"><div class="pf-c" style="background: url(https://img.com/tony.jpg), url(https://fallback.jpg);"></div></div>
-            <div class="pf-d"><div class="pf-e">Tony Stark</div></div>
+        <div class="profile-app group-6">
+          <header class="profile-hero">
+            <div class="profile-hero-images">
+              <div class="profile-hero-img hero-sq-top" style="background-image: url('https://img.com/tony.jpg');"></div>
+            </div>
+            <div class="profile-hero-info">
+              <h1 class="profile-name" data-text="Tony Stark">Tony Stark</h1>
+              <h2 class="profile-codename">Iron Man</h2>
+            </div>
+          </header>
+          <aside class="profile-sidebar">
+            <div class="profile-card glass profile-dossier-card">
+              <dl class="profile-dossier">
+                <dt>Age</dt><dd>45</dd>
+                <dt>Affiliation</dt><dd>Avengers</dd>
+              </dl>
+            </div>
+          </aside>
         </div>
-        <div class="pf-x"><div class="mp-b">Avengers</div></div>
-        <div class="pf-k"><span class="pf-l">age</span>45</div>
-        <div class="pf-k"><span class="pf-l">alias</span>Iron Man</div>
         </html>
         """
         profile = parse_profile_page(html, "42")
         assert profile.user_id == "42"
         assert profile.name == "Tony Stark"
-        assert profile.group_name == "Avengers"
+        assert profile.group_name == "Red"
         assert profile.avatar_url == "https://img.com/tony.jpg"
         assert profile.fields["age"] == "45"
-        assert profile.fields["alias"] == "Iron Man"
+        assert profile.fields["affiliation"] == "Avengers"
+        assert profile.fields["codename"] == "Iron Man"
 
     def test_defaults_when_missing(self):
         html = "<html><body>Bare page</body></html>"
@@ -349,24 +362,37 @@ class TestParseProfilePage:
     def test_fields_skip_no_information(self):
         html = """
         <html>
-        <div class="pf-d"><div class="pf-e">Test</div></div>
-        <div class="pf-k"><span class="pf-l">face claim</span><i>No Information</i></div>
-        <div class="pf-k"><span class="pf-l">species</span>human</div>
+        <h1 class="profile-name">Test</h1>
+        <dl class="profile-dossier">
+          <dt>Face Claim</dt><dd>No Information</dd>
+          <dt>Species</dt><dd>human</dd>
+        </dl>
         </html>
         """
         profile = parse_profile_page(html, "1")
         assert "face claim" not in profile.fields
         assert profile.fields["species"] == "human"
 
-    def test_group_name_from_mp_b(self):
+    def test_group_from_class(self):
         html = """
         <html>
-        <div class="pf-d"><div class="pf-e">Test</div></div>
-        <div class="pf-x"><div class="mp-b">X-Men</div></div>
+        <div class="profile-app group-11">
+          <h1 class="profile-name">Test</h1>
+        </div>
         </html>
         """
         profile = parse_profile_page(html, "5")
-        assert profile.group_name == "X-Men"
+        assert profile.group_name == "Purple"
+
+    def test_avatar_fallback_to_gif(self):
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="profile-gif" style="background-image: url('https://img.com/gif.gif');"></div>
+        </html>
+        """
+        profile = parse_profile_page(html, "5")
+        assert profile.avatar_url == "https://img.com/gif.gif"
 
 
 class TestParseLastPosterExtended:
