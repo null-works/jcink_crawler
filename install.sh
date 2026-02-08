@@ -30,7 +30,31 @@ if ! docker compose version &>/dev/null; then
     error "Docker Compose is not available. Install it from https://docs.docker.com/compose/install/"
 fi
 
-info "Docker and Docker Compose found."
+if ! command -v git &>/dev/null; then
+    error "Git is not installed. Install it from https://git-scm.com/downloads"
+fi
+
+if ! command -v curl &>/dev/null; then
+    error "curl is not installed. Install it with your package manager."
+fi
+
+info "All prerequisites found."
+
+# --- Clone repository if needed ---
+
+REPO_URL="https://github.com/null-works/jcink_crawler.git"
+REPO_DIR="jcink_crawler"
+
+if [ -f "docker-compose.yml" ] && [ -f "Dockerfile" ]; then
+    info "Already inside the project directory."
+elif [ -d "$REPO_DIR" ]; then
+    info "Directory $REPO_DIR already exists, entering it..."
+    cd "$REPO_DIR"
+else
+    info "Cloning repository..."
+    git clone "$REPO_URL"
+    cd "$REPO_DIR"
+fi
 
 # --- Create host data directory ---
 

@@ -13,19 +13,24 @@ Server-side web crawler and caching service for JCink forum data. Replaces heavy
 ### Option 1: Quick Install (Recommended)
 
 ```bash
-git clone https://github.com/null-works/jcink_crawler.git
-cd jcink_crawler
+curl -sSL https://raw.githubusercontent.com/null-works/jcink_crawler/main/install.sh | bash
+```
+
+Or if you've already cloned the repo:
+
+```bash
 ./install.sh
 ```
 
 The install script will:
-- Verify Docker and Docker Compose are installed and running
+- Verify Docker, Docker Compose, Git, and curl are installed
+- Clone the repository (if not already in it)
 - Create the host data directory at `/opt/jcink-crawler/data/`
 - Build the Docker image
 - Start the container
 - Wait for the health check to pass
 
-To customize environment variables (forum URL, bot credentials, crawl intervals), edit `docker-compose.yml` before running the script. See the [environment variables](#environment-variables) table below.
+To customize environment variables (forum URL, bot credentials, crawl intervals), clone the repo first, edit `docker-compose.yml`, then run `./install.sh`. See the [environment variables](#environment-variables) table below.
 
 ### Option 2: Manual Docker Setup
 
