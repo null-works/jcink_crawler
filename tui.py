@@ -15,7 +15,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Input, Static
+from textual.widgets import DataTable, Footer, Header, Input, Static
 from textual import work
 
 
@@ -126,15 +126,9 @@ class WatcherApp(App):
     """Main dashboard — character list with live stats."""
 
     TITLE = "The Watcher"
+    SUB_TITLE = "Loading..."
 
     CSS = """
-    #stats-bar {
-        height: 1;
-        background: #16213e;
-        color: white;
-        padding: 0 2;
-        text-style: bold;
-    }
     #filter-input {
         margin: 0 1;
     }
@@ -158,7 +152,7 @@ class WatcherApp(App):
         self.filter_text = ""
 
     def compose(self) -> ComposeResult:
-        yield Static("[bold white on #16213e] THE WATCHER  —  Loading...[/]", id="stats-bar")
+        yield Header(show_clock=True)
         yield Input(placeholder="Type to filter by name or affiliation...", id="filter-input")
         yield DataTable(id="char-table")
         yield Footer()
@@ -182,13 +176,11 @@ class WatcherApp(App):
             pass
 
     def _update_ui(self, status, chars):
-        bar = self.query_one("#stats-bar", Static)
-        bar.update(
-            f"[green bold]● THE WATCHER[/]   "
-            f"Characters: [bold cyan]{status.get('characters_tracked', 0)}[/]   "
-            f"Threads: [bold magenta]{status.get('total_threads', 0)}[/]   "
-            f"Quotes: [bold yellow]{status.get('total_quotes', 0)}[/]   "
-            f"[dim]refreshing every {self.interval}s[/]"
+        self.sub_title = (
+            f"Characters: {status.get('characters_tracked', 0)}   "
+            f"Threads: {status.get('total_threads', 0)}   "
+            f"Quotes: {status.get('total_quotes', 0)}   "
+            f"(every {self.interval}s)"
         )
         self.all_chars = chars or []
         self._rebuild_table()
