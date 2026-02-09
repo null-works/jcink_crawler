@@ -359,7 +359,7 @@ async def discover_characters(db_path: str) -> dict:
     base_url = settings.forum_base_url
     max_id = settings.discovery_max_user_id
     consecutive_misses = 0
-    max_consecutive_misses = 20
+    max_consecutive_misses = settings.discovery_max_consecutive_misses
 
     print(f"[Crawler] Starting auto-discovery from ID 1 to {max_id}")
 
