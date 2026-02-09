@@ -147,7 +147,7 @@ class WatcherApp(App):
         background: #282a36;
     }
     Header {
-        background: #44475a;
+        background: #6272a4;
         color: #f8f8f2;
     }
     HeaderTitle {
@@ -158,10 +158,10 @@ class WatcherApp(App):
         margin: 0 1;
         background: #44475a;
         color: #f8f8f2;
-        border: solid #6272a4;
+        border: solid #bd93f9;
     }
     #filter-input:focus {
-        border: solid #bd93f9;
+        border: solid #ff79c6;
     }
     #char-table {
         height: 1fr;
@@ -181,12 +181,12 @@ class WatcherApp(App):
         color: #f8f8f2;
     }
     Footer {
-        background: #44475a;
+        background: #6272a4;
         color: #f8f8f2;
     }
     Footer > .footer--key {
-        background: #6272a4;
-        color: #f8f8f2;
+        background: #bd93f9;
+        color: #282a36;
     }
     """
 
@@ -260,15 +260,15 @@ class WatcherApp(App):
         for char in filtered:
             counts = char.get("thread_counts", {})
             table.add_row(
-                Text(char["id"], style=_COMMENT),
+                Text(char["id"], style=f"bold {_PURPLE}"),
                 Text(char["name"][:22], style=f"bold {_FG}"),
-                Text((char.get("affiliation") or "—")[:20], style=_CYAN),
-                Text(str(counts.get("total", 0)), style=f"bold {_FG}"),
-                Text(str(counts.get("ongoing", 0)), style=_GREEN),
-                Text(str(counts.get("comms", 0)), style=_PURPLE),
-                Text(str(counts.get("complete", 0)), style=_PINK),
-                Text(str(counts.get("incomplete", 0)), style=_YELLOW),
-                Text(_format_time(char.get("last_thread_crawl")), style=_COMMENT),
+                Text((char.get("affiliation") or "—")[:20], style=f"italic {_CYAN}"),
+                Text(str(counts.get("total", 0)), style=f"bold {_ORANGE}"),
+                Text(str(counts.get("ongoing", 0)), style=f"bold {_GREEN}"),
+                Text(str(counts.get("comms", 0)), style=f"bold {_CYAN}"),
+                Text(str(counts.get("complete", 0)), style=f"bold {_PINK}"),
+                Text(str(counts.get("incomplete", 0)), style=f"bold {_YELLOW}"),
+                Text(_format_time(char.get("last_thread_crawl")), style=_ORANGE),
                 key=char["id"],
             )
 
