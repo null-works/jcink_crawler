@@ -392,69 +392,11 @@ def crawl(ctx, character_id, crawl_type):
 @click.option("--interval", "-i", default=5, help="Refresh interval in seconds")
 @click.pass_context
 def watch(ctx, interval):
-    """Live dashboard — auto-refreshing status view."""
+    """Live interactive dashboard with scrolling, filtering, and detail views."""
     client: CrawlerClient = ctx.obj["client"]
-
-    def _build_dashboard():
-        """Build a compact dashboard that fits in a standard terminal."""
-        from rich.console import Group
-
-        data = client.status()
-        if not data:
-            return Text("[Service unavailable]", style="red bold")
-
-        # Compact header line
-        header = Text.assemble(
-            ("● ", "green bold"),
-            (f"{data.get('characters_tracked', 0)}", "bold"), " chars  ",
-            (f"{data.get('total_threads', 0)}", "bold"), " threads  ",
-            (f"{data.get('total_quotes', 0)}", "bold"), " quotes",
-        )
-
-        chars = client.characters()
-        if not chars:
-            return Group(header, Text("  No characters registered.", style="dim"))
-
-        # Compact table: Name + thread counts combined + last crawl
-        table = Table(box=None, show_header=True, pad_edge=False, padding=(0, 1))
-        table.add_column("Name", style="bold white", no_wrap=True)
-        table.add_column("Threads", justify="right", no_wrap=True)
-        table.add_column("Crawled", style="dim", no_wrap=True)
-
-        for char in chars:
-            counts = char.get("thread_counts", {})
-            og = counts.get("ongoing", 0)
-            cm = counts.get("comms", 0)
-            cp = counts.get("complete", 0)
-            ic = counts.get("incomplete", 0)
-            tot = counts.get("total", 0)
-
-            # Compact thread counts: "12 (3/2/5/2)"
-            thread_str = Text.assemble(
-                (str(tot), "bold"),
-                (" ", ""),
-                (f"{og}", "green"), ("/", "dim"),
-                (f"{cm}", "blue"), ("/", "dim"),
-                (f"{cp}", "magenta"), ("/", "dim"),
-                (f"{ic}", "yellow"),
-            )
-
-            table.add_row(
-                char["name"][:18],
-                thread_str,
-                _format_time(char.get("last_thread_crawl")),
-            )
-
-        footer = Text(f"  {interval}s refresh | Ctrl+C to exit", style="dim")
-        return Group(header, table, footer)
-
-    try:
-        with Live(_build_dashboard(), console=console, refresh_per_second=1, screen=True) as live:
-            while True:
-                time.sleep(interval)
-                live.update(_build_dashboard())
-    except KeyboardInterrupt:
-        pass
+    from tui import WatcherApp
+    app = WatcherApp(base_url=client.base_url, interval=interval)
+    app.run()
 
 
 # --- Helpers ---
