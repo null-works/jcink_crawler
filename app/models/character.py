@@ -87,5 +87,5 @@ class CharacterRegister(BaseModel):
 
 class CrawlTrigger(BaseModel):
     """Manually trigger a crawl for a specific character."""
-    character_id: str
-    crawl_type: str = "threads"  # "threads", "profile", "quotes"
+    character_id: str | None = None
+    crawl_type: str = "threads"  # "threads", "profile", "discover"

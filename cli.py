@@ -103,11 +103,11 @@ class CrawlerClient:
     def register(self, user_id: str) -> dict | None:
         return self._post("/api/character/register", {"user_id": user_id})
 
-    def trigger_crawl(self, cid: str, crawl_type: str) -> dict | None:
-        return self._post("/api/crawl/trigger", {
-            "character_id": cid,
-            "crawl_type": crawl_type,
-        })
+    def trigger_crawl(self, cid: str | None, crawl_type: str) -> dict | None:
+        payload = {"crawl_type": crawl_type}
+        if cid:
+            payload["character_id"] = cid
+        return self._post("/api/crawl/trigger", payload)
 
 
 # --- CLI Group ---
@@ -367,13 +367,26 @@ def register(ctx, user_id):
 # --- Crawl Trigger ---
 
 @cli.command()
-@click.argument("character_id")
-@click.option("--type", "crawl_type", type=click.Choice(["threads", "profile"]),
+@click.argument("character_id", required=False, default=None)
+@click.option("--type", "crawl_type", type=click.Choice(["threads", "profile", "discover"]),
               default="threads", help="Type of crawl to trigger")
 @click.pass_context
 def crawl(ctx, character_id, crawl_type):
-    """Manually trigger a crawl for a character."""
+    """Manually trigger a crawl for a character (or --type discover for all)."""
     client: CrawlerClient = ctx.obj["client"]
+
+    if crawl_type == "discover":
+        console.print("Triggering [cyan]member list discovery[/]...")
+        result = client.trigger_crawl(None, "discover")
+        if not result:
+            console.print("[red]Discovery trigger failed.[/]")
+            return
+        console.print("[green]✓ Discovery queued[/] — scanning full member list")
+        return
+
+    if not character_id:
+        console.print("[red]character_id is required for threads/profile crawls.[/]")
+        return
 
     console.print(f"Triggering [cyan]{crawl_type}[/] crawl for character [cyan]{character_id}[/]...")
 

@@ -25,6 +25,7 @@ from app.services import (
     crawl_character_profile,
     register_character,
 )
+from app.services.crawler import discover_characters
 from app.services.activity import get_activity
 
 router = APIRouter()
@@ -152,6 +153,20 @@ async def trigger_crawl(
     background_tasks: BackgroundTasks,
 ):
     """Manually trigger a crawl for a character."""
+    if data.crawl_type == "discover":
+        background_tasks.add_task(
+            discover_characters, settings.database_path
+        )
+        return {
+            "status": "crawl_queued",
+            "character_id": None,
+            "crawl_type": "discover",
+        }
+
+
+    if not data.character_id:
+        raise HTTPException(status_code=422, detail="character_id is required for threads/profile crawls")
+
     if data.crawl_type == "threads":
         background_tasks.add_task(
             crawl_character_threads, data.character_id, settings.database_path
@@ -161,7 +176,7 @@ async def trigger_crawl(
             crawl_character_profile, data.character_id, settings.database_path
         )
     else:
-        raise HTTPException(status_code=400, detail="Invalid crawl_type. Use 'threads' or 'profile'")
+        raise HTTPException(status_code=400, detail="Invalid crawl_type. Use 'threads', 'profile', or 'discover'")
 
     return {
         "status": "crawl_queued",
