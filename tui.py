@@ -18,6 +18,19 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Input, Static
 from textual import work
 
+# Dracula palette
+_BG = "#282a36"
+_CURRENT = "#44475a"
+_FG = "#f8f8f2"
+_COMMENT = "#6272a4"
+_CYAN = "#8be9fd"
+_GREEN = "#50fa7b"
+_ORANGE = "#ffb86c"
+_PINK = "#ff79c6"
+_PURPLE = "#bd93f9"
+_RED = "#ff5555"
+_YELLOW = "#f1fa8c"
+
 
 def _format_time(ts: str | None) -> str:
     if not ts:
@@ -53,7 +66,8 @@ class CharacterDetailScreen(Screen):
         height: auto;
         max-height: 5;
         padding: 0 1;
-        background: $boost;
+        background: #44475a;
+        color: #f8f8f2;
     }
     #thread-table {
         height: 1fr;
@@ -93,15 +107,15 @@ class CharacterDetailScreen(Screen):
 
         header = self.query_one("#detail-header", Static)
         header.update(
-            f"[bold]{char.get('name', '?')}[/]  "
-            f"[dim]{char.get('group_name', '')}[/]  "
+            f"[bold #f8f8f2]{char.get('name', '?')}[/]  "
+            f"[#6272a4]{char.get('group_name', '')}[/]  "
             f"ID: {char.get('id', '')}  "
-            f"Quotes: [bold]{quote_data.get('count', 0)}[/]\n"
-            f"Threads: [bold]{counts.get('total', 0)}[/]  "
-            f"[green]{counts.get('ongoing', 0)} ongoing[/]  "
-            f"[blue]{counts.get('comms', 0)} comms[/]  "
-            f"[magenta]{counts.get('complete', 0)} complete[/]  "
-            f"[yellow]{counts.get('incomplete', 0)} incomplete[/]"
+            f"Quotes: [bold #ff79c6]{quote_data.get('count', 0)}[/]\n"
+            f"Threads: [bold #f8f8f2]{counts.get('total', 0)}[/]  "
+            f"[#50fa7b]{counts.get('ongoing', 0)} ongoing[/]  "
+            f"[#8be9fd]{counts.get('comms', 0)} comms[/]  "
+            f"[#ff79c6]{counts.get('complete', 0)} complete[/]  "
+            f"[#f1fa8c]{counts.get('incomplete', 0)} incomplete[/]"
         )
 
         table = self.query_one("#thread-table", DataTable)
@@ -119,43 +133,60 @@ class CharacterDetailScreen(Screen):
 
     def _show_error(self, msg):
         header = self.query_one("#detail-header", Static)
-        header.update(f"[red]Error: {msg}[/]")
+        header.update(f"[#ff5555]Error: {msg}[/]")
 
 
 class WatcherApp(App):
     """Main dashboard — character list with live stats."""
 
-    TITLE = "RED TEST - The Watcher"
-    SUB_TITLE = "IF YOU SEE THIS THE BUILD WORKS"
+    TITLE = "The Watcher"
+    SUB_TITLE = "Loading..."
 
     CSS = """
     Screen {
-        background: #330000;
+        background: #282a36;
     }
     Header {
-        background: red;
-        color: white;
+        background: #44475a;
+        color: #f8f8f2;
+    }
+    HeaderTitle {
+        color: #bd93f9;
+        text-style: bold;
     }
     #filter-input {
         margin: 0 1;
-        background: #550000;
-        color: white;
-        border: solid red;
+        background: #44475a;
+        color: #f8f8f2;
+        border: solid #6272a4;
+    }
+    #filter-input:focus {
+        border: solid #bd93f9;
     }
     #char-table {
         height: 1fr;
-        background: #220000;
+        background: #282a36;
     }
     DataTable > .datatable--header {
-        background: #880000;
-        color: white;
+        background: #44475a;
+        color: #bd93f9;
+        text-style: bold;
     }
     DataTable > .datatable--cursor {
-        background: red;
-        color: white;
+        background: #44475a;
+        color: #f8f8f2;
+    }
+    DataTable:focus > .datatable--cursor {
+        background: #6272a4;
+        color: #f8f8f2;
     }
     Footer {
-        background: #880000;
+        background: #44475a;
+        color: #f8f8f2;
+    }
+    Footer > .footer--key {
+        background: #6272a4;
+        color: #f8f8f2;
     }
     """
 
@@ -175,7 +206,7 @@ class WatcherApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield Input(placeholder="RED TEST -- Type to filter by name or affiliation...", id="filter-input")
+        yield Input(placeholder="Type to filter by name or affiliation...", id="filter-input")
         yield DataTable(id="char-table")
         yield Footer()
 
@@ -210,7 +241,6 @@ class WatcherApp(App):
     def _rebuild_table(self):
         table = self.query_one("#char-table", DataTable)
 
-        # Preserve cursor position
         try:
             cursor_row = table.cursor_row
         except Exception:
@@ -230,19 +260,18 @@ class WatcherApp(App):
         for char in filtered:
             counts = char.get("thread_counts", {})
             table.add_row(
-                Text(char["id"], style="bold red"),
-                Text(char["name"][:22], style="bold white"),
-                Text((char.get("affiliation") or "—")[:20], style="bold yellow"),
-                Text(str(counts.get("total", 0)), style="bold white"),
-                Text(str(counts.get("ongoing", 0)), style="green"),
-                Text(str(counts.get("comms", 0)), style="dodger_blue1"),
-                Text(str(counts.get("complete", 0)), style="magenta"),
-                Text(str(counts.get("incomplete", 0)), style="yellow"),
-                Text(_format_time(char.get("last_thread_crawl")), style="dim"),
+                Text(char["id"], style=_COMMENT),
+                Text(char["name"][:22], style=f"bold {_FG}"),
+                Text((char.get("affiliation") or "—")[:20], style=_CYAN),
+                Text(str(counts.get("total", 0)), style=f"bold {_FG}"),
+                Text(str(counts.get("ongoing", 0)), style=_GREEN),
+                Text(str(counts.get("comms", 0)), style=_PURPLE),
+                Text(str(counts.get("complete", 0)), style=_PINK),
+                Text(str(counts.get("incomplete", 0)), style=_YELLOW),
+                Text(_format_time(char.get("last_thread_crawl")), style=_COMMENT),
                 key=char["id"],
             )
 
-        # Restore cursor
         if filtered:
             safe_row = min(cursor_row, len(filtered) - 1)
             if safe_row >= 0:
