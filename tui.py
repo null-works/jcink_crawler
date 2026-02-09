@@ -241,6 +241,7 @@ class WatcherApp(App):
         table = self.query_one("#char-table", DataTable)
         table.add_columns("ID", "Name", "Affiliation", "Tot", "OG", "CM", "CP", "IC", "Crawled")
         table.cursor_type = "row"
+        table.cursor_foreground_priority = "renderable"
         table.focus()
         self.refresh_data()
         self.set_interval(self.interval, self.refresh_data)
