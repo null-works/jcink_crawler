@@ -1,6 +1,7 @@
 import asyncio
 import aiosqlite
 from app.config import settings
+from app.services.activity import set_activity, clear_activity
 from app.services.fetcher import fetch_page, fetch_page_with_delay, fetch_pages_concurrent
 from app.services.parser import (
     parse_search_results,
@@ -50,6 +51,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     search_url = f"{base_url}/index.php?act=Search&CODE=getalluser&mid={character_id}&type=posts"
 
     print(f"[Crawler] Starting thread crawl for character {character_id}")
+    set_activity(f"Crawling threads", character_id=character_id)
 
     # Step 1: Hit search, handle redirect
     html = await fetch_page(search_url)
@@ -115,6 +117,8 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             scraped_pairs = {(row["thread_id"], row["character_id"]) for row in rows}
 
     character_name = char.name if char else None
+    if character_name:
+        set_activity(f"Crawling threads for {character_name}", character_id=character_id, character_name=character_name)
 
     # Avatar cache: avoid re-fetching the same user's profile for their avatar
     avatar_cache: dict[str, str | None] = {}
@@ -299,6 +303,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     async with aiosqlite.connect(db_path) as db:
         await update_character_crawl_time(db, character_id, "threads")
 
+    clear_activity()
     print(f"[Crawler] Thread crawl complete for {character_id}: {results}")
     return results
 
@@ -317,6 +322,7 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     profile_url = f"{base_url}/index.php?showuser={character_id}"
 
     print(f"[Crawler] Starting profile crawl for {character_id}")
+    set_activity(f"Crawling profile", character_id=character_id)
 
     html = await fetch_page(profile_url)
     if not html:
@@ -339,6 +345,7 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
         await update_character_crawl_time(db, character_id, "profile")
         await db.commit()
 
+    clear_activity()
     print(f"[Crawler] Profile crawl complete for {character_id}: {len(profile.fields)} fields")
     return {
         "name": profile.name,
@@ -387,6 +394,7 @@ async def discover_characters(db_path: str) -> dict:
     max_consecutive_misses = settings.discovery_max_consecutive_misses
 
     print(f"[Crawler] Starting auto-discovery from ID 1 to {max_id}")
+    set_activity("Discovering characters")
 
     # Pre-load existing character IDs to avoid per-ID DB queries
     async with aiosqlite.connect(db_path) as db:
@@ -429,6 +437,7 @@ async def discover_characters(db_path: str) -> dict:
 
         consecutive_misses = 0
         print(f"[Crawler] Discovered: {profile.name} (ID {uid})")
+        set_activity(f"Discovered {profile.name}", character_id=uid, character_name=profile.name)
 
         try:
             # Save the profile we already fetched
@@ -453,6 +462,7 @@ async def discover_characters(db_path: str) -> dict:
         except Exception as e:
             print(f"[Crawler] Error registering {profile.name}: {e}")
 
+    clear_activity()
     print(f"[Crawler] Discovery complete: {new_count} new, {existing_count} existing, {skipped_count} skipped")
     return {
         "new_registered": new_count,

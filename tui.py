@@ -257,11 +257,13 @@ class WatcherApp(App):
             pass
 
     def _update_ui(self, status, chars):
+        activity = status.get("current_activity")
+        activity_text = f"   >> {activity['activity']}" if activity else ""
         self.sub_title = (
             f"Characters: {status.get('characters_tracked', 0)}   "
             f"Threads: {status.get('total_threads', 0)}   "
-            f"Quotes: {status.get('total_quotes', 0)}   "
-            f"(every {self.interval}s)"
+            f"Quotes: {status.get('total_quotes', 0)}"
+            f"{activity_text}"
         )
         self.all_chars = chars or []
         self._rebuild_table()

@@ -75,6 +75,7 @@ class CrawlStatusResponse(BaseModel):
     total_quotes: int = 0
     last_thread_crawl: str | None = None
     last_profile_crawl: str | None = None
+    current_activity: dict | None = None
 
 
 # --- Request Models ---

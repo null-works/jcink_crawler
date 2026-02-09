@@ -25,6 +25,7 @@ from app.services import (
     crawl_character_profile,
     register_character,
 )
+from app.services.activity import get_activity
 
 router = APIRouter()
 
@@ -200,10 +201,13 @@ async def get_service_status(db: aiosqlite.Connection = Depends(get_db)):
     row = await cursor.fetchone()
     last_profile = row["last"] if row else None
 
+    activity = get_activity()
+
     return CrawlStatusResponse(
         characters_tracked=char_count,
         total_threads=thread_count,
         total_quotes=quote_count,
         last_thread_crawl=last_thread,
         last_profile_crawl=last_profile,
+        current_activity=activity if activity["active"] else None,
     )
