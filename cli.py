@@ -368,20 +368,26 @@ def register(ctx, user_id):
 
 @cli.command()
 @click.argument("character_id", required=False, default=None)
-@click.option("--type", "crawl_type", type=click.Choice(["threads", "profile", "discover"]),
+@click.option("--type", "crawl_type", type=click.Choice(["threads", "profile", "discover", "all-threads", "all-profiles"]),
               default="threads", help="Type of crawl to trigger")
 @click.pass_context
 def crawl(ctx, character_id, crawl_type):
-    """Manually trigger a crawl for a character (or --type discover for all)."""
+    """Manually trigger a crawl for a character (or --type discover/all-threads/all-profiles)."""
     client: CrawlerClient = ctx.obj["client"]
 
-    if crawl_type == "discover":
-        console.print("Triggering [cyan]member list discovery[/]...")
-        result = client.trigger_crawl(None, "discover")
+    # Bulk operations that don't need a character_id
+    if crawl_type in ("discover", "all-threads", "all-profiles"):
+        labels = {
+            "discover": "member list discovery",
+            "all-threads": "thread crawl for ALL characters",
+            "all-profiles": "profile crawl for ALL characters",
+        }
+        console.print(f"Triggering [cyan]{labels[crawl_type]}[/]...")
+        result = client.trigger_crawl(None, crawl_type)
         if not result:
-            console.print("[red]Discovery trigger failed.[/]")
+            console.print("[red]Trigger failed.[/]")
             return
-        console.print("[green]✓ Discovery queued[/] — scanning full member list")
+        console.print(f"[green]✓ Queued[/] — {labels[crawl_type]}")
         return
 
     if not character_id:

@@ -26,6 +26,7 @@ from app.services import (
     register_character,
 )
 from app.services.crawler import discover_characters
+from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
 from app.services.activity import get_activity
 
 router = APIRouter()
@@ -157,12 +158,15 @@ async def trigger_crawl(
         background_tasks.add_task(
             discover_characters, settings.database_path
         )
-        return {
-            "status": "crawl_queued",
-            "character_id": None,
-            "crawl_type": "discover",
-        }
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "discover"}
 
+    if data.crawl_type == "all-threads":
+        background_tasks.add_task(_crawl_all_threads)
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-threads"}
+
+    if data.crawl_type == "all-profiles":
+        background_tasks.add_task(_crawl_all_profiles)
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-profiles"}
 
     if not data.character_id:
         raise HTTPException(status_code=422, detail="character_id is required for threads/profile crawls")
