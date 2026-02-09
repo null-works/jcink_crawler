@@ -25,3 +25,5 @@ services:
       - BOT_USERNAME=Watcher
       - BOT_PASSWORD=5Qc43y$$K7651035Qc43y$$K765103
       - CRAWLER_URL=http://localhost:8000
+      - COLORTERM=truecolor
+      - TERM=xterm-256color

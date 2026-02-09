@@ -288,15 +288,15 @@ class WatcherApp(App):
         for char in filtered:
             counts = char.get("thread_counts", {})
             table.add_row(
-                Text(char["id"], style=f"bold {_PURPLE}"),
-                Text(char["name"][:22], style=f"bold {_FG}"),
-                Text((char.get("affiliation") or "—")[:20], style=f"italic {_CYAN}"),
-                Text(str(counts.get("total", 0)), style=f"bold {_ORANGE}"),
-                Text(str(counts.get("ongoing", 0)), style=f"bold {_GREEN}"),
-                Text(str(counts.get("comms", 0)), style=f"bold {_CYAN}"),
-                Text(str(counts.get("complete", 0)), style=f"bold {_PINK}"),
-                Text(str(counts.get("incomplete", 0)), style=f"bold {_YELLOW}"),
-                Text(_format_time(char.get("last_thread_crawl")), style=_ORANGE),
+                Text.from_markup(f"[bold bright_magenta]{char['id']}[/]"),
+                Text.from_markup(f"[bold white]{char['name'][:22]}[/]"),
+                Text.from_markup(f"[italic bright_cyan]{(char.get('affiliation') or '—')[:20]}[/]"),
+                Text.from_markup(f"[bold yellow]{counts.get('total', 0)}[/]"),
+                Text.from_markup(f"[bold bright_green]{counts.get('ongoing', 0)}[/]"),
+                Text.from_markup(f"[bold bright_cyan]{counts.get('comms', 0)}[/]"),
+                Text.from_markup(f"[bold bright_magenta]{counts.get('complete', 0)}[/]"),
+                Text.from_markup(f"[bold bright_yellow]{counts.get('incomplete', 0)}[/]"),
+                Text.from_markup(f"[bright_yellow]{_format_time(char.get('last_thread_crawl'))}[/]"),
                 key=char["id"],
             )
 
