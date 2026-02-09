@@ -129,16 +129,13 @@ class WatcherApp(App):
 
     CSS = """
     #stats-bar {
-        dock: top;
-        height: 3;
-        background: #1a1a2e;
-        color: #e0e0e0;
-        padding: 1 2;
+        height: 1;
+        background: #16213e;
+        color: white;
+        padding: 0 2;
         text-style: bold;
-        border-bottom: solid #444;
     }
     #filter-input {
-        dock: top;
         margin: 0 1;
     }
     #char-table {
@@ -161,8 +158,8 @@ class WatcherApp(App):
         self.filter_text = ""
 
     def compose(self) -> ComposeResult:
-        yield Static("Connecting...", id="stats-bar")
-        yield Input(placeholder="Type to filter by name or group...", id="filter-input")
+        yield Static("[bold white on #16213e] THE WATCHER  —  Loading...[/]", id="stats-bar")
+        yield Input(placeholder="Type to filter by name or affiliation...", id="filter-input")
         yield DataTable(id="char-table")
         yield Footer()
 
