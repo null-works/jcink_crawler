@@ -125,15 +125,37 @@ class CharacterDetailScreen(Screen):
 class WatcherApp(App):
     """Main dashboard — character list with live stats."""
 
-    TITLE = "The Watcher"
-    SUB_TITLE = "Loading..."
+    TITLE = "RED TEST - The Watcher"
+    SUB_TITLE = "IF YOU SEE THIS THE BUILD WORKS"
 
     CSS = """
+    Screen {
+        background: #330000;
+    }
+    Header {
+        background: red;
+        color: white;
+    }
     #filter-input {
         margin: 0 1;
+        background: #550000;
+        color: white;
+        border: solid red;
     }
     #char-table {
         height: 1fr;
+        background: #220000;
+    }
+    DataTable > .datatable--header {
+        background: #880000;
+        color: white;
+    }
+    DataTable > .datatable--cursor {
+        background: red;
+        color: white;
+    }
+    Footer {
+        background: #880000;
     }
     """
 
@@ -153,7 +175,7 @@ class WatcherApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield Input(placeholder="Type to filter by name or affiliation...", id="filter-input")
+        yield Input(placeholder="RED TEST -- Type to filter by name or affiliation...", id="filter-input")
         yield DataTable(id="char-table")
         yield Footer()
 
@@ -208,9 +230,9 @@ class WatcherApp(App):
         for char in filtered:
             counts = char.get("thread_counts", {})
             table.add_row(
-                Text(char["id"], style="dim"),
-                Text(char["name"][:22], style="bold"),
-                Text((char.get("affiliation") or "—")[:20], style="cyan"),
+                Text(char["id"], style="bold red"),
+                Text(char["name"][:22], style="bold white"),
+                Text((char.get("affiliation") or "—")[:20], style="bold yellow"),
                 Text(str(counts.get("total", 0)), style="bold white"),
                 Text(str(counts.get("ongoing", 0)), style="green"),
                 Text(str(counts.get("comms", 0)), style="dodger_blue1"),
