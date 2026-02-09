@@ -11,6 +11,7 @@ Usage:
 import click
 import httpx
 from datetime import datetime
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
@@ -129,14 +130,15 @@ class WatcherApp(App):
     CSS = """
     #stats-bar {
         dock: top;
-        height: 1;
-        background: $boost;
+        height: 3;
+        background: $primary-background;
         color: $text;
-        padding: 0 1;
+        padding: 1 2;
+        text-style: bold;
+        border-bottom: solid $accent;
     }
     #filter-input {
         dock: top;
-        height: 3;
         margin: 0 1;
     }
     #char-table {
@@ -166,7 +168,7 @@ class WatcherApp(App):
 
     def on_mount(self):
         table = self.query_one("#char-table", DataTable)
-        table.add_columns("Name", "Tot", "OG", "CM", "CP", "IC", "Crawled")
+        table.add_columns("ID", "Name", "Group", "Tot", "OG", "CM", "CP", "IC", "Crawled")
         table.cursor_type = "row"
         table.focus()
         self.refresh_data()
@@ -185,11 +187,11 @@ class WatcherApp(App):
     def _update_ui(self, status, chars):
         bar = self.query_one("#stats-bar", Static)
         bar.update(
-            f"[green bold]●[/] "
-            f"[bold]{status.get('characters_tracked', 0)}[/] chars   "
-            f"[bold]{status.get('total_threads', 0)}[/] threads   "
-            f"[bold]{status.get('total_quotes', 0)}[/] quotes   "
-            f"[dim]({self.interval}s refresh)[/]"
+            f"[green bold]● THE WATCHER[/]   "
+            f"Characters: [bold cyan]{status.get('characters_tracked', 0)}[/]   "
+            f"Threads: [bold magenta]{status.get('total_threads', 0)}[/]   "
+            f"Quotes: [bold yellow]{status.get('total_quotes', 0)}[/]   "
+            f"[dim]refreshing every {self.interval}s[/]"
         )
         self.all_chars = chars or []
         self._rebuild_table()
@@ -217,13 +219,15 @@ class WatcherApp(App):
         for char in filtered:
             counts = char.get("thread_counts", {})
             table.add_row(
-                char["name"][:25],
-                str(counts.get("total", 0)),
-                str(counts.get("ongoing", 0)),
-                str(counts.get("comms", 0)),
-                str(counts.get("complete", 0)),
-                str(counts.get("incomplete", 0)),
-                _format_time(char.get("last_thread_crawl")),
+                Text(char["id"], style="dim"),
+                Text(char["name"][:22], style="bold"),
+                Text((char.get("group_name") or "—")[:14], style="cyan"),
+                Text(str(counts.get("total", 0)), style="bold white"),
+                Text(str(counts.get("ongoing", 0)), style="green"),
+                Text(str(counts.get("comms", 0)), style="dodger_blue1"),
+                Text(str(counts.get("complete", 0)), style="magenta"),
+                Text(str(counts.get("incomplete", 0)), style="yellow"),
+                Text(_format_time(char.get("last_thread_crawl")), style="dim"),
                 key=char["id"],
             )
 
