@@ -196,6 +196,22 @@ class WatcherApp(App):
     DataTable > .datatable--odd-row {
         background: #2d2f3d;
     }
+    #activity-bar {
+        dock: bottom;
+        height: 1;
+        background: #44475a;
+        color: #50fa7b;
+        padding: 0 2;
+        text-style: bold;
+    }
+    #activity-bar.idle {
+        background: #44475a;
+        color: #6272a4;
+    }
+    #activity-bar.active {
+        background: #44475a;
+        color: #50fa7b;
+    }
     Footer {
         background: #bd93f9;
         color: #282a36;
@@ -235,6 +251,7 @@ class WatcherApp(App):
         yield Header(show_clock=True)
         yield Input(placeholder="Type to filter by name or affiliation...", id="filter-input")
         yield DataTable(id="char-table")
+        yield Static("Idle", id="activity-bar", classes="idle")
         yield Footer()
 
     def on_mount(self):
@@ -257,14 +274,21 @@ class WatcherApp(App):
             pass
 
     def _update_ui(self, status, chars):
-        activity = status.get("current_activity")
-        activity_text = f"   >> {activity['activity']}" if activity else ""
         self.sub_title = (
             f"Characters: {status.get('characters_tracked', 0)}   "
             f"Threads: {status.get('total_threads', 0)}   "
             f"Quotes: {status.get('total_quotes', 0)}"
-            f"{activity_text}"
         )
+
+        activity_bar = self.query_one("#activity-bar", Static)
+        activity = status.get("current_activity")
+        if activity:
+            activity_bar.update(f"\u25b6 {activity['activity']}")
+            activity_bar.set_classes("active")
+        else:
+            activity_bar.update("Idle — waiting for next scheduled crawl")
+            activity_bar.set_classes("idle")
+
         self.all_chars = chars or []
         self._rebuild_table()
 
