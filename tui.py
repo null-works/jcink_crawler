@@ -181,16 +181,14 @@ class WatcherApp(App):
     }
     DataTable > .datatable--header {
         background: #6272a4;
-        color: #f8f8f2;
+        color: #bd93f9;
         text-style: bold;
     }
     DataTable > .datatable--cursor {
         background: #44475a;
-        color: #f8f8f2;
     }
     DataTable:focus > .datatable--cursor {
-        background: #bd93f9;
-        color: #282a36;
+        background: #6272a4;
     }
     DataTable > .datatable--even-row {
         background: #282a36;
