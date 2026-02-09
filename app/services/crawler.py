@@ -10,6 +10,7 @@ from app.services.parser import (
     parse_profile_page,
     parse_avatar_from_profile,
     extract_quotes_from_html,
+    extract_thread_authors,
     is_board_message,
 )
 from app.models.operations import (
@@ -174,25 +175,31 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             if (thread.thread_id, cid) not in scraped_pairs
         }
 
+        # Extract authors from pages we already have (no extra HTTP)
+        thread_author_ids: set[str] = set()
+        thread_author_ids.update(extract_thread_authors(thread_html))
+        if last_page_html:
+            thread_author_ids.update(extract_thread_authors(last_page_html))
+
         if chars_needing_scrape:
-            # Reuse pages already fetched for last-poster detection
+            # Collect all pages for quote extraction (reuse already-fetched)
             all_pages = [thread_html]
             if max_st > 0:
                 remaining_urls = []
                 for st in range(25, max_st + 1, 25):
                     if st == max_st and last_page_html:
-                        # Reuse already-fetched last page
                         all_pages.append(last_page_html)
                     else:
                         sep = "&" if "?" in thread.url else "?"
                         remaining_urls.append(f"{thread.url}{sep}st={st}")
 
-                # Fetch intermediate pages concurrently
                 if remaining_urls:
                     intermediate_htmls = await fetch_pages_concurrent(remaining_urls)
                     for ph in intermediate_htmls:
                         if ph:
                             all_pages.append(ph)
+                            # Also grab authors from intermediate pages
+                            thread_author_ids.update(extract_thread_authors(ph))
 
             # Extract quotes for every character that needs this thread scraped
             for cid, cname in chars_needing_scrape.items():
@@ -211,6 +218,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             "is_user_last": is_user_last,
             "quotes_by_character": quotes_by_character,
             "characters_to_mark_scraped": characters_to_mark_scraped,
+            "thread_author_ids": thread_author_ids,
         }
 
     # Step 4: Process all threads concurrently
@@ -251,6 +259,23 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                 category=thread.category,
                 is_user_last_poster=result["is_user_last"],
             )
+
+            # Opportunistically link this thread to other known characters
+            # who posted in it — saves them needing a full search crawl
+            for author_id in result.get("thread_author_ids", set()):
+                if author_id != character_id and author_id in all_characters:
+                    is_author_last = (
+                        result["last_poster_id"] == author_id
+                        if result["last_poster_id"]
+                        else False
+                    )
+                    await link_character_thread(
+                        db,
+                        character_id=author_id,
+                        thread_id=thread.thread_id,
+                        category=thread.category,
+                        is_user_last_poster=is_author_last,
+                    )
 
             results[thread.category] = results.get(thread.category, 0) + 1
 

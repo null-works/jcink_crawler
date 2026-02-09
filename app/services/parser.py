@@ -163,6 +163,23 @@ def parse_last_poster(html: str) -> ParsedLastPoster | None:
     return ParsedLastPoster(name=name, user_id=user_id)
 
 
+def extract_thread_authors(html: str) -> set[str]:
+    """Extract all unique author user IDs from a thread page.
+
+    Parses every .pr-a post container and pulls the user ID from the
+    author link in .pr-j.  Returns a set of user ID strings.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    author_ids: set[str] = set()
+    for post in soup.select(".pr-a"):
+        user_link = post.select_one('.pr-j a[href*="showuser="]')
+        if user_link:
+            match = re.search(r"showuser=(\d+)", user_link.get("href", ""))
+            if match:
+                author_ids.add(match.group(1))
+    return author_ids
+
+
 def parse_thread_pagination(html: str) -> int:
     """Get the highest st= value from thread pagination.
 
