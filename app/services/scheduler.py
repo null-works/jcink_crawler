@@ -14,11 +14,13 @@ _scheduler: AsyncIOScheduler | None = None
 async def _crawl_all_threads():
     """Crawl threads for all tracked characters."""
     print("[Scheduler] Starting scheduled thread crawl for all characters")
+    excluded = settings.excluded_name_set
     async with aiosqlite.connect(settings.database_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id, name FROM characters ORDER BY last_thread_crawl ASC NULLS FIRST")
-        characters = await cursor.fetchall()
+        all_chars = await cursor.fetchall()
 
+    characters = [c for c in all_chars if c["name"].lower() not in excluded]
     if not characters:
         print("[Scheduler] No characters to crawl")
         return
@@ -45,11 +47,13 @@ async def _crawl_all_threads():
 async def _crawl_all_profiles():
     """Crawl profiles for all tracked characters."""
     print("[Scheduler] Starting scheduled profile crawl for all characters")
+    excluded = settings.excluded_name_set
     async with aiosqlite.connect(settings.database_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id, name FROM characters ORDER BY last_profile_crawl ASC NULLS FIRST")
-        characters = await cursor.fetchall()
+        all_chars = await cursor.fetchall()
 
+    characters = [c for c in all_chars if c["name"].lower() not in excluded]
     if not characters:
         print("[Scheduler] No characters to crawl")
         return

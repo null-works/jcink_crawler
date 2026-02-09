@@ -22,6 +22,7 @@ services:
       - MAX_CONCURRENT_REQUESTS=5
       - BOT_USERNAME=Watcher
       - BOT_PASSWORD=5Qc43y$$K7651035Qc43y$$K765103
+      - EXCLUDED_NAMES=Watcher,Null,Spider,Kat,Randompercision
       - CRAWLER_URL=http://localhost:8000
       - COLORTERM=truecolor
       - TERM=xterm-256color

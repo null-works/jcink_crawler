@@ -446,8 +446,13 @@ async def discover_characters(db_path: str) -> dict:
         if not members:
             continue
 
+        excluded = settings.excluded_name_set
         for member in members:
             uid = member["user_id"]
+
+            if member["name"].lower() in excluded:
+                skipped_count += 1
+                continue
 
             if uid in existing_ids:
                 existing_count += 1

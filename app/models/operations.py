@@ -42,7 +42,8 @@ async def get_character(db: aiosqlite.Connection, character_id: str) -> Characte
 
 
 async def get_all_characters(db: aiosqlite.Connection) -> list[CharacterSummary]:
-    """Get all tracked characters."""
+    """Get all tracked characters, excluding filtered names."""
+    excluded = settings.excluded_name_set
     cursor = await db.execute(
         """SELECT c.*, pf.field_value AS affiliation
            FROM characters c
@@ -55,6 +56,8 @@ async def get_all_characters(db: aiosqlite.Connection) -> list[CharacterSummary]
     results = []
     for row in rows:
         char = dict(row)
+        if char["name"].lower() in excluded:
+            continue
         counts = await get_thread_counts(db, char["id"])
         results.append(CharacterSummary(
             id=char["id"],

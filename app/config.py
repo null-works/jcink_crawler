@@ -21,10 +21,15 @@ class Settings(BaseSettings):
     bot_username: str = ""
     bot_password: str = ""
     affiliation_field_key: str = "affiliation"
+    excluded_names: str = "Watcher,Null,Spider,Kat,Randompercision"
 
     @property
     def excluded_forum_ids(self) -> set[str]:
         return set(self.forums_excluded.split(","))
+
+    @property
+    def excluded_name_set(self) -> set[str]:
+        return {n.strip().lower() for n in self.excluded_names.split(",") if n.strip()}
 
 
 settings = Settings()

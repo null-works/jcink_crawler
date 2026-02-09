@@ -192,10 +192,11 @@ async def trigger_crawl(
 @router.get("/status", response_model=CrawlStatusResponse)
 async def get_service_status(db: aiosqlite.Connection = Depends(get_db)):
     """Get overall service status."""
-    # Character count
-    cursor = await db.execute("SELECT COUNT(*) as count FROM characters")
-    row = await cursor.fetchone()
-    char_count = row["count"] if row else 0
+    # Character count (excluding filtered names)
+    excluded = settings.excluded_name_set
+    cursor = await db.execute("SELECT name FROM characters")
+    all_names = await cursor.fetchall()
+    char_count = sum(1 for r in all_names if r["name"].lower() not in excluded)
 
     # Thread count
     cursor = await db.execute("SELECT COUNT(*) as count FROM threads")
