@@ -1,0 +1,108 @@
+:root {
+    --bg:        #282a36;
+    --bg-darker: #1e1f29;
+    --bg-light:  #2d2f3d;
+    --current:   #44475a;
+    --fg:        #f8f8f2;
+    --comment:   #6272a4;
+    --cyan:      #8be9fd;
+    --green:     #50fa7b;
+    --orange:    #ffb86c;
+    --pink:      #ff79c6;
+    --purple:    #bd93f9;
+    --red:       #ff5555;
+    --yellow:    #f1fa8c;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+    --radius:    6px;
+    --radius-lg: 10px;
+    --shadow:    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 15px;
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    min-height: 100vh;
+}
+
+a {
+    color: var(--purple);
+    text-decoration: none;
+    transition: color 0.15s;
+}
+
+a:hover {
+    color: var(--pink);
+}
+
+h1, h2, h3, h4 {
+    color: var(--fg);
+    font-weight: 600;
+}
+
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.4rem; }
+h3 { font-size: 1.15rem; }
+
+code, pre {
+    font-family: var(--font-mono);
+}
+
+::selection {
+    background: var(--purple);
+    color: var(--bg);
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-darker);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--comment);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--purple);
+}
+
+/* Utility text classes */
+.text-fg      { color: var(--fg); }
+.text-comment { color: var(--comment); }
+.text-cyan    { color: var(--cyan); }
+.text-green   { color: var(--green); }
+.text-orange  { color: var(--orange); }
+.text-pink    { color: var(--pink); }
+.text-purple  { color: var(--purple); }
+.text-red     { color: var(--red); }
+.text-yellow  { color: var(--yellow); }
+.bold         { font-weight: 600; }
+.italic       { font-style: italic; }
+.mono         { font-family: var(--font-mono); }
+.truncate     { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+mark {
+    background: var(--yellow);
+    color: var(--bg);
+    padding: 0.1em 0.2em;
+    border-radius: 2px;
+}

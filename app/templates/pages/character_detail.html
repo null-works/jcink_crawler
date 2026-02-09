@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}{{ character.name }} - The Watcher{% endblock %}
+{% block content %}
+
+{# Character header card #}
+<div class="card">
+    <div class="char-header">
+        {% if character.avatar_url %}
+        <img src="{{ character.avatar_url }}" alt="{{ character.name }}" class="avatar-lg">
+        {% else %}
+        <span class="avatar-placeholder" style="width: 80px; height: 80px; font-size: 2rem;">?</span>
+        {% endif %}
+        <div class="char-info">
+            <h1>{{ character.name }}</h1>
+            {% if character.group_name %}
+            <div class="group-name">{{ character.group_name }}</div>
+            {% endif %}
+            {% if character.affiliation %}
+            <span class="count-badge cyan">{{ character.affiliation }}</span>
+            {% endif %}
+
+            <div class="char-counts">
+                <div class="count-item">
+                    <div class="num text-green">{{ threads.counts.ongoing }}</div>
+                    <div class="label">Ongoing</div>
+                </div>
+                <div class="count-item">
+                    <div class="num text-cyan">{{ threads.counts.comms }}</div>
+                    <div class="label">Comms</div>
+                </div>
+                <div class="count-item">
+                    <div class="num text-pink">{{ threads.counts.complete }}</div>
+                    <div class="label">Complete</div>
+                </div>
+                <div class="count-item">
+                    <div class="num text-yellow">{{ threads.counts.incomplete }}</div>
+                    <div class="label">Incomplete</div>
+                </div>
+                <div class="count-item">
+                    <div class="num text-purple">{{ total_quotes }}</div>
+                    <div class="label">Quotes</div>
+                </div>
+            </div>
+
+            {# Thread bar visualization #}
+            {% set total_t = threads.counts.total or 1 %}
+            <div class="thread-bar" style="width: 200px;">
+                <div class="bar-seg green" style="width: {{ (threads.counts.ongoing / total_t * 100)|round }}%" title="Ongoing: {{ threads.counts.ongoing }}"></div>
+                <div class="bar-seg cyan" style="width: {{ (threads.counts.comms / total_t * 100)|round }}%" title="Comms: {{ threads.counts.comms }}"></div>
+                <div class="bar-seg pink" style="width: {{ (threads.counts.complete / total_t * 100)|round }}%" title="Complete: {{ threads.counts.complete }}"></div>
+                <div class="bar-seg yellow" style="width: {{ (threads.counts.incomplete / total_t * 100)|round }}%" title="Incomplete: {{ threads.counts.incomplete }}"></div>
+            </div>
+        </div>
+
+        <div style="margin-left: auto; display: flex; flex-direction: column; gap: 0.5rem;">
+            {% if character.profile_url %}
+            <a href="{{ character.profile_url }}" target="_blank" class="btn btn-ghost btn-sm">View Profile</a>
+            {% endif %}
+            <button class="btn btn-purple btn-sm"
+                    hx-post="/htmx/crawl"
+                    hx-vals='{"character_id": "{{ character.id }}", "crawl_type": "threads"}'
+                    hx-target="#crawl-result"
+                    hx-swap="innerHTML">Crawl Threads</button>
+            <button class="btn btn-ghost btn-sm"
+                    hx-post="/htmx/crawl"
+                    hx-vals='{"character_id": "{{ character.id }}", "crawl_type": "profile"}'
+                    hx-target="#crawl-result"
+                    hx-swap="innerHTML">Crawl Profile</button>
+            <div id="crawl-result" style="font-size: 0.8rem;"></div>
+        </div>
+    </div>
+
+    {% if character.last_thread_crawl or character.last_profile_crawl %}
+    <div style="margin-top: 1rem; font-size: 0.8rem; color: var(--comment);">
+        {% if character.last_thread_crawl %}Threads crawled {{ character.last_thread_crawl|format_time }}{% endif %}
+        {% if character.last_thread_crawl and character.last_profile_crawl %} &middot; {% endif %}
+        {% if character.last_profile_crawl %}Profile crawled {{ character.last_profile_crawl|format_time }}{% endif %}
+        &middot; ID: <span class="mono">{{ character.id }}</span>
+    </div>
+    {% endif %}
+</div>
+
+{# Profile fields #}
+{% if fields %}
+<div class="card">
+    <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Fields</h3>
+    <table class="fields-table">
+        {% for key, value in fields.items() %}
+        <tr>
+            <td class="field-key">{{ key }}</td>
+            <td class="field-value">{{ value }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endif %}
+
+{# Threads section #}
+<div class="card">
+    <div class="section-header">
+        <h3 class="card-title">Threads ({{ threads.counts.total }})</h3>
+        <div class="chip-group">
+            <button class="chip active"
+                    hx-get="/htmx/character/{{ character.id }}/threads"
+                    hx-target="#thread-section" hx-swap="innerHTML"
+                    onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">All</button>
+            <button class="chip chip-green"
+                    hx-get="/htmx/character/{{ character.id }}/threads?category=ongoing"
+                    hx-target="#thread-section" hx-swap="innerHTML"
+                    onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">Ongoing ({{ threads.counts.ongoing }})</button>
+            <button class="chip chip-cyan"
+                    hx-get="/htmx/character/{{ character.id }}/threads?category=comms"
+                    hx-target="#thread-section" hx-swap="innerHTML"
+                    onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">Comms ({{ threads.counts.comms }})</button>
+            <button class="chip chip-pink"
+                    hx-get="/htmx/character/{{ character.id }}/threads?category=complete"
+                    hx-target="#thread-section" hx-swap="innerHTML"
+                    onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">Complete ({{ threads.counts.complete }})</button>
+            <button class="chip chip-yellow"
+                    hx-get="/htmx/character/{{ character.id }}/threads?category=incomplete"
+                    hx-target="#thread-section" hx-swap="innerHTML"
+                    onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">Incomplete ({{ threads.counts.incomplete }})</button>
+        </div>
+    </div>
+    <div id="thread-section">
+        {% include "partials/character_threads_section.html" %}
+    </div>
+</div>
+
+{# Quotes section #}
+<div class="card">
+    <div class="section-header">
+        <h3 class="card-title">Quotes ({{ total_quotes }})</h3>
+        <input type="search" name="q" class="search-input" placeholder="Search quotes..."
+               style="max-width: 250px;"
+               hx-get="/htmx/character/{{ character.id }}/quotes"
+               hx-trigger="keyup changed delay:300ms"
+               hx-target="#quote-section"
+               hx-swap="innerHTML">
+    </div>
+    <div id="quote-section">
+        {% include "partials/character_quotes_section.html" %}
+    </div>
+</div>
+
+{% endblock %}

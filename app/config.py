@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     bot_password: str = ""
     affiliation_field_key: str = "affiliation"
     excluded_names: str = "Watcher,Null,Spider,Kat,Randompercision"
+    dashboard_password: str = ""
+    dashboard_secret_key: str = "change-me-in-production"
 
     @property
     def excluded_forum_ids(self) -> set[str]:

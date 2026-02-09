@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Threads - The Watcher{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Thread Browser</h1>
+    <p class="subtitle">Search and filter threads across all characters</p>
+</div>
+
+{# Filters #}
+<div class="filters-bar">
+    <input type="search" name="q" class="search-input" placeholder="Search threads..."
+           value="{{ q or '' }}"
+           hx-get="/htmx/threads"
+           hx-trigger="keyup changed delay:300ms"
+           hx-target="#thread-tbody"
+           hx-include=".thread-filter">
+
+    <div class="separator hide-mobile"></div>
+
+    <div class="chip-group">
+        <button class="chip {{ 'active' if not category }}" onclick="setThreadFilter('category', '')"
+                hx-get="/htmx/threads"
+                hx-target="#thread-tbody"
+                hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']"
+                hx-vals='{"category": ""}'>All</button>
+        <button class="chip chip-green {{ 'active' if category == 'ongoing' }}" onclick="setThreadFilter('category', 'ongoing')"
+                hx-get="/htmx/threads"
+                hx-target="#thread-tbody"
+                hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']"
+                hx-vals='{"category": "ongoing"}'>Ongoing</button>
+        <button class="chip chip-cyan {{ 'active' if category == 'comms' }}"
+                hx-get="/htmx/threads"
+                hx-target="#thread-tbody"
+                hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']"
+                hx-vals='{"category": "comms"}'>Comms</button>
+        <button class="chip chip-pink {{ 'active' if category == 'complete' }}"
+                hx-get="/htmx/threads"
+                hx-target="#thread-tbody"
+                hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']"
+                hx-vals='{"category": "complete"}'>Complete</button>
+        <button class="chip chip-yellow {{ 'active' if category == 'incomplete' }}"
+                hx-get="/htmx/threads"
+                hx-target="#thread-tbody"
+                hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']"
+                hx-vals='{"category": "incomplete"}'>Incomplete</button>
+    </div>
+
+    <div class="separator hide-mobile"></div>
+
+    <select name="status" class="form-input thread-filter"
+            hx-get="/htmx/threads"
+            hx-trigger="change"
+            hx-target="#thread-tbody"
+            hx-include="[name='q'], [name='character_id'], [name='sort'], [name='dir']">
+        <option value="" {{ 'selected' if not status }}>All Status</option>
+        <option value="awaiting" {{ 'selected' if status == 'awaiting' }}>Awaiting Reply</option>
+        <option value="replied" {{ 'selected' if status == 'replied' }}>Replied</option>
+    </select>
+
+    {% if all_characters %}
+    <select name="character_id" class="form-input thread-filter"
+            hx-get="/htmx/threads"
+            hx-trigger="change"
+            hx-target="#thread-tbody"
+            hx-include="[name='q'], [name='status'], [name='sort'], [name='dir']">
+        <option value="">All Characters</option>
+        {% for c in all_characters %}
+        <option value="{{ c.id }}" {{ 'selected' if character_id == c.id }}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+    {% endif %}
+
+    <input type="hidden" name="sort" value="{{ sort or 'title' }}" class="thread-filter">
+    <input type="hidden" name="dir" value="{{ dir or 'asc' }}" class="thread-filter">
+</div>
+
+{# Thread table #}
+<div class="table-wrap">
+<table class="data-table">
+    <thead>
+        <tr>
+            <th class="sortable {{ 'sort-asc' if sort == 'title' and dir == 'asc' }}{{ 'sort-desc' if sort == 'title' and dir == 'desc' }}"
+                hx-get="/htmx/threads?sort=title&dir={{ 'desc' if sort == 'title' and dir == 'asc' else 'asc' }}"
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Title</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'category' and dir == 'asc' }}{{ 'sort-desc' if sort == 'category' and dir == 'desc' }}"
+                hx-get="/htmx/threads?sort=category&dir={{ 'desc' if sort == 'category' and dir == 'asc' else 'asc' }}"
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Category</th>
+            <th>Character</th>
+            <th>Last Poster</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody id="thread-tbody">
+        {% include "partials/thread_table_rows.html" %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

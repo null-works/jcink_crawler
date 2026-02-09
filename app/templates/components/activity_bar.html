@@ -1,0 +1,7 @@
+<div class="activity-bar"
+     id="activity-bar"
+     hx-get="/htmx/activity"
+     hx-trigger="every 5s"
+     hx-swap="innerHTML">
+    {% include "partials/activity_content.html" %}
+</div>

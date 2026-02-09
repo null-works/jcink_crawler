@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Quotes - The Watcher{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Quote Browser</h1>
+    <p class="subtitle">Search dialog quotes across all characters</p>
+</div>
+
+{# Filters #}
+<div class="filters-bar">
+    <input type="search" name="q" class="search-input" placeholder="Search quotes..."
+           value="{{ q or '' }}"
+           hx-get="/htmx/quotes"
+           hx-trigger="keyup changed delay:300ms"
+           hx-target="#quote-list"
+           hx-include=".quote-filter">
+
+    {% if all_characters %}
+    <div class="separator hide-mobile"></div>
+    <select name="character_id" class="form-input quote-filter"
+            hx-get="/htmx/quotes"
+            hx-trigger="change"
+            hx-target="#quote-list"
+            hx-include="[name='q'], [name='sort'], [name='dir']">
+        <option value="">All Characters</option>
+        {% for c in all_characters %}
+        <option value="{{ c.id }}" {{ 'selected' if character_id == c.id }}>{{ c.name }}</option>
+        {% endfor %}
+    </select>
+    {% endif %}
+
+    <input type="hidden" name="sort" value="{{ sort or 'created_at' }}" class="quote-filter">
+    <input type="hidden" name="dir" value="{{ dir or 'desc' }}" class="quote-filter">
+</div>
+
+<p class="text-comment" style="margin-bottom: 1rem;">{{ total }} quote{{ 's' if total != 1 }} found</p>
+
+{# Quote list #}
+<div id="quote-list">
+    {% include "partials/quote_list_items.html" %}
+</div>
+{% endblock %}

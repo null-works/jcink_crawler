@@ -1,0 +1,19 @@
+<nav class="nav">
+    <a href="/dashboard" class="nav-brand">
+        <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="50" r="45" stroke="currentColor" stroke-width="4"/>
+            <ellipse cx="50" cy="50" rx="28" ry="18" stroke="currentColor" stroke-width="3"/>
+            <circle cx="50" cy="50" r="8" fill="currentColor"/>
+        </svg>
+        The Watcher
+    </a>
+    <ul class="nav-links">
+        <li><a href="/dashboard" class="{{ 'active' if request.url.path == '/dashboard' }}">Dashboard</a></li>
+        <li><a href="/threads" class="{{ 'active' if request.url.path == '/threads' }}">Threads</a></li>
+        <li><a href="/quotes" class="{{ 'active' if request.url.path == '/quotes' }}">Quotes</a></li>
+        <li><a href="/admin" class="{{ 'active' if request.url.path == '/admin' }}">Admin</a></li>
+    </ul>
+    <div class="nav-right">
+        <a href="/logout" class="btn btn-ghost btn-sm">Logout</a>
+    </div>
+</nav>

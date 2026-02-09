@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Admin - The Watcher{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Admin</h1>
+    <p class="subtitle">Service status and management</p>
+</div>
+
+{# Stats #}
+<section class="stats-grid" id="admin-stats"
+         hx-get="/htmx/stats" hx-trigger="every 30s" hx-swap="innerHTML">
+    {% include "partials/stats_values.html" %}
+</section>
+
+{# Admin actions #}
+<div class="admin-grid">
+    {# Register character #}
+    <div class="card">
+        <h3 class="card-title">Register Character</h3>
+        <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+            Register a JCink user ID for tracking. Profile and threads will be crawled automatically.
+        </p>
+        <form hx-post="/htmx/register" hx-target="#register-result" hx-swap="innerHTML">
+            <input type="text" name="user_id" class="form-input" placeholder="JCink User ID" required>
+            <button type="submit" class="btn btn-purple">Register</button>
+        </form>
+        <div id="register-result" class="result"></div>
+    </div>
+
+    {# Crawl triggers #}
+    <div class="card">
+        <h3 class="card-title">Trigger Crawl</h3>
+        <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+            Manually trigger a crawl operation.
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <button class="btn btn-green"
+                    hx-post="/htmx/crawl"
+                    hx-vals='{"crawl_type": "discover"}'
+                    hx-target="#crawl-result"
+                    hx-swap="innerHTML">Discover Characters</button>
+            <button class="btn btn-purple"
+                    hx-post="/htmx/crawl"
+                    hx-vals='{"crawl_type": "all-threads"}'
+                    hx-target="#crawl-result"
+                    hx-swap="innerHTML">Crawl All Threads</button>
+            <button class="btn btn-ghost"
+                    hx-post="/htmx/crawl"
+                    hx-vals='{"crawl_type": "all-profiles"}'
+                    hx-target="#crawl-result"
+                    hx-swap="innerHTML">Crawl All Profiles</button>
+        </div>
+        <div id="crawl-result" class="result"></div>
+    </div>
+
+    {# Per-character crawl #}
+    <div class="card">
+        <h3 class="card-title">Crawl Specific Character</h3>
+        <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+            Trigger a crawl for a specific character.
+        </p>
+        <form hx-post="/htmx/crawl" hx-target="#char-crawl-result" hx-swap="innerHTML">
+            <select name="character_id" class="form-input" required>
+                <option value="">Select character...</option>
+                {% for c in characters %}
+                <option value="{{ c.id }}">{{ c.name }} (#{{ c.id }})</option>
+                {% endfor %}
+            </select>
+            <select name="crawl_type" class="form-input">
+                <option value="threads">Threads</option>
+                <option value="profile">Profile</option>
+            </select>
+            <button type="submit" class="btn btn-purple">Crawl</button>
+        </form>
+        <div id="char-crawl-result" class="result"></div>
+    </div>
+</div>
+
+{# Service info #}
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.75rem;">Service Info</h3>
+    <table class="fields-table">
+        <tr>
+            <td class="field-key">Status</td>
+            <td class="field-value"><span class="text-green">Online</span></td>
+        </tr>
+        <tr>
+            <td class="field-key">Last Crawl</td>
+            <td class="field-value">{{ stats.last_crawl|format_time if stats.last_crawl else 'Never' }}</td>
+        </tr>
+        <tr>
+            <td class="field-key">Characters Tracked</td>
+            <td class="field-value">{{ stats.characters_tracked }}</td>
+        </tr>
+        <tr>
+            <td class="field-key">Total Threads</td>
+            <td class="field-value">{{ stats.total_threads }}</td>
+        </tr>
+        <tr>
+            <td class="field-key">Total Quotes</td>
+            <td class="field-value">{{ stats.total_quotes }}</td>
+        </tr>
+    </table>
+</div>
+{% endblock %}

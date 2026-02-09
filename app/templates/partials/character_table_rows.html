@@ -1,0 +1,32 @@
+{% from "components/pagination.html" import paginate %}
+{% for char in characters %}
+<tr class="clickable-row" onclick="window.location='/character/{{ char.id }}'">
+    <td>
+        {% if char.avatar_url %}
+        <img src="{{ char.avatar_url }}" alt="" class="avatar-sm" loading="lazy">
+        {% else %}
+        <span class="avatar-placeholder">?</span>
+        {% endif %}
+    </td>
+    <td class="bold">{{ char.name }}</td>
+    <td class="text-cyan">{{ char.affiliation or '&mdash;' }}</td>
+    <td class="text-comment">{{ char.group_name or '&mdash;' }}</td>
+    <td><span class="count-badge green">{{ char.thread_counts.get('ongoing', 0) }}</span></td>
+    <td><span class="count-badge cyan">{{ char.thread_counts.get('comms', 0) }}</span></td>
+    <td><span class="count-badge pink">{{ char.thread_counts.get('complete', 0) }}</span></td>
+    <td><span class="count-badge yellow">{{ char.thread_counts.get('incomplete', 0) }}</span></td>
+    <td class="bold">{{ char.thread_counts.get('total', 0) }}</td>
+    <td class="text-comment">{{ char.last_thread_crawl|format_time }}</td>
+</tr>
+{% endfor %}
+{% if not characters %}
+<tr><td colspan="10" class="empty-state">No characters found</td></tr>
+{% endif %}
+</table>
+{% set extra = "" %}
+{% if q %} {% set extra = extra ~ "&q=" ~ q %} {% endif %}
+{% if affiliation %} {% set extra = extra ~ "&affiliation=" ~ affiliation %} {% endif %}
+{% if group %} {% set extra = extra ~ "&group=" ~ group %} {% endif %}
+{% if sort %} {% set extra = extra ~ "&sort=" ~ sort %} {% endif %}
+{% if dir %} {% set extra = extra ~ "&dir=" ~ dir %} {% endif %}
+{{ paginate(total, page, per_page, "character-tbody", "/htmx/characters", extra) }}
