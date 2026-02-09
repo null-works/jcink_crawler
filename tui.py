@@ -131,11 +131,11 @@ class WatcherApp(App):
     #stats-bar {
         dock: top;
         height: 3;
-        background: $primary-background;
-        color: $text;
+        background: #1a1a2e;
+        color: #e0e0e0;
         padding: 1 2;
         text-style: bold;
-        border-bottom: solid $accent;
+        border-bottom: solid #444;
     }
     #filter-input {
         dock: top;
@@ -168,7 +168,7 @@ class WatcherApp(App):
 
     def on_mount(self):
         table = self.query_one("#char-table", DataTable)
-        table.add_columns("ID", "Name", "Group", "Tot", "OG", "CM", "CP", "IC", "Crawled")
+        table.add_columns("ID", "Name", "Affiliation", "Tot", "OG", "CM", "CP", "IC", "Crawled")
         table.cursor_type = "row"
         table.focus()
         self.refresh_data()
@@ -213,7 +213,7 @@ class WatcherApp(App):
             filtered = [
                 c for c in filtered
                 if ft in c["name"].lower()
-                or ft in (c.get("group_name") or "").lower()
+                or ft in (c.get("affiliation") or "").lower()
             ]
 
         for char in filtered:
@@ -221,7 +221,7 @@ class WatcherApp(App):
             table.add_row(
                 Text(char["id"], style="dim"),
                 Text(char["name"][:22], style="bold"),
-                Text((char.get("group_name") or "—")[:14], style="cyan"),
+                Text((char.get("affiliation") or "—")[:20], style="cyan"),
                 Text(str(counts.get("total", 0)), style="bold white"),
                 Text(str(counts.get("ongoing", 0)), style="green"),
                 Text(str(counts.get("comms", 0)), style="dodger_blue1"),

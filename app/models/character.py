@@ -25,6 +25,7 @@ class CharacterSummary(BaseModel):
     profile_url: str
     group_name: str | None = None
     avatar_url: str | None = None
+    affiliation: str | None = None
     thread_counts: dict[str, int] = {}
     last_profile_crawl: datetime | None = None
     last_thread_crawl: datetime | None = None

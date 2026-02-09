@@ -1,4 +1,5 @@
 import aiosqlite
+from app.config import settings
 from app.models.character import (
     CharacterSummary,
     ThreadInfo,
@@ -13,7 +14,12 @@ from app.models.character import (
 async def get_character(db: aiosqlite.Connection, character_id: str) -> CharacterSummary | None:
     """Get character by ID."""
     cursor = await db.execute(
-        "SELECT * FROM characters WHERE id = ?", (character_id,)
+        """SELECT c.*, pf.field_value AS affiliation
+           FROM characters c
+           LEFT JOIN profile_fields pf
+             ON pf.character_id = c.id AND pf.field_key = ?
+           WHERE c.id = ?""",
+        (settings.affiliation_field_key, character_id),
     )
     row = await cursor.fetchone()
     if not row:
@@ -28,6 +34,7 @@ async def get_character(db: aiosqlite.Connection, character_id: str) -> Characte
         profile_url=char["profile_url"],
         group_name=char.get("group_name"),
         avatar_url=char.get("avatar_url"),
+        affiliation=char.get("affiliation"),
         thread_counts=counts,
         last_profile_crawl=char.get("last_profile_crawl"),
         last_thread_crawl=char.get("last_thread_crawl"),
@@ -36,7 +43,14 @@ async def get_character(db: aiosqlite.Connection, character_id: str) -> Characte
 
 async def get_all_characters(db: aiosqlite.Connection) -> list[CharacterSummary]:
     """Get all tracked characters."""
-    cursor = await db.execute("SELECT * FROM characters ORDER BY name")
+    cursor = await db.execute(
+        """SELECT c.*, pf.field_value AS affiliation
+           FROM characters c
+           LEFT JOIN profile_fields pf
+             ON pf.character_id = c.id AND pf.field_key = ?
+           ORDER BY c.name""",
+        (settings.affiliation_field_key,),
+    )
     rows = await cursor.fetchall()
     results = []
     for row in rows:
@@ -48,6 +62,7 @@ async def get_all_characters(db: aiosqlite.Connection) -> list[CharacterSummary]
             profile_url=char["profile_url"],
             group_name=char.get("group_name"),
             avatar_url=char.get("avatar_url"),
+            affiliation=char.get("affiliation"),
             thread_counts=counts,
             last_profile_crawl=char.get("last_profile_crawl"),
             last_thread_crawl=char.get("last_thread_crawl"),

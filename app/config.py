@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     database_path: str = "/app/data/crawler.db"
     bot_username: str = ""
     bot_password: str = ""
+    affiliation_field_key: str = "affiliation"
 
     @property
     def excluded_forum_ids(self) -> set[str]:
