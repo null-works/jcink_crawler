@@ -396,55 +396,57 @@ def watch(ctx, interval):
     client: CrawlerClient = ctx.obj["client"]
 
     def _build_dashboard():
-        """Build the full dashboard as a renderable group."""
-        # Service status
+        """Build a compact dashboard that fits in a standard terminal."""
+        from rich.console import Group
+
         data = client.status()
         if not data:
-            return Panel("[red bold]Service unavailable[/]", title="The Watcher", box=box.ROUNDED)
+            return Text("[Service unavailable]", style="red bold")
 
-        # Header
-        header = Panel(
-            f"[green bold]● Online[/]  |  "
-            f"Characters: [bold]{data.get('characters_tracked', 0)}[/]  |  "
-            f"Threads: [bold]{data.get('total_threads', 0)}[/]  |  "
-            f"Quotes: [bold]{data.get('total_quotes', 0)}[/]",
-            title="The Watcher",
-            box=box.ROUNDED,
+        # Compact header line
+        header = Text.assemble(
+            ("● ", "green bold"),
+            (f"{data.get('characters_tracked', 0)}", "bold"), " chars  ",
+            (f"{data.get('total_threads', 0)}", "bold"), " threads  ",
+            (f"{data.get('total_quotes', 0)}", "bold"), " quotes",
         )
 
-        # Characters table
         chars = client.characters()
-        if chars:
-            table = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-            table.add_column("ID", style="dim", width=8)
-            table.add_column("Name", style="bold white", width=20)
-            table.add_column("Group", style="cyan", width=15)
-            table.add_column("OG", justify="right", style="green", width=4)
-            table.add_column("CM", justify="right", style="blue", width=4)
-            table.add_column("CP", justify="right", style="magenta", width=4)
-            table.add_column("IC", justify="right", style="yellow", width=4)
-            table.add_column("Tot", justify="right", style="bold", width=4)
-            table.add_column("Last Crawl", style="dim", width=20)
+        if not chars:
+            return Group(header, Text("  No characters registered.", style="dim"))
 
-            for char in chars:
-                counts = char.get("thread_counts", {})
-                table.add_row(
-                    char["id"],
-                    char["name"][:20],
-                    (char.get("group_name") or "—")[:15],
-                    str(counts.get("ongoing", 0)),
-                    str(counts.get("comms", 0)),
-                    str(counts.get("complete", 0)),
-                    str(counts.get("incomplete", 0)),
-                    str(counts.get("total", 0)),
-                    _format_time(char.get("last_thread_crawl")),
-                )
+        # Compact table: Name + thread counts combined + last crawl
+        table = Table(box=None, show_header=True, pad_edge=False, padding=(0, 1))
+        table.add_column("Name", style="bold white", no_wrap=True)
+        table.add_column("Threads", justify="right", no_wrap=True)
+        table.add_column("Crawled", style="dim", no_wrap=True)
 
-            from rich.console import Group
-            return Group(header, table, Text(f"\n  Refreshing every {interval}s — Ctrl+C to exit", style="dim"))
-        else:
-            from rich.console import Group
-            return Group(header, Text("\n  No characters registered.", style="dim"))
+        for char in chars:
+            counts = char.get("thread_counts", {})
+            og = counts.get("ongoing", 0)
+            cm = counts.get("comms", 0)
+            cp = counts.get("complete", 0)
+            ic = counts.get("incomplete", 0)
+            tot = counts.get("total", 0)
+
+            # Compact thread counts: "12 (3/2/5/2)"
+            thread_str = Text.assemble(
+                (str(tot), "bold"),
+                (" ", ""),
+                (f"{og}", "green"), ("/", "dim"),
+                (f"{cm}", "blue"), ("/", "dim"),
+                (f"{cp}", "magenta"), ("/", "dim"),
+                (f"{ic}", "yellow"),
+            )
+
+            table.add_row(
+                char["name"][:18],
+                thread_str,
+                _format_time(char.get("last_thread_crawl")),
+            )
+
+        footer = Text(f"  {interval}s refresh | Ctrl+C to exit", style="dim")
+        return Group(header, table, footer)
 
     try:
         with Live(_build_dashboard(), console=console, refresh_per_second=1, screen=True) as live:
