@@ -95,17 +95,23 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         db.row_factory = aiosqlite.Row
         char = await get_character(db, character_id)
 
-        # Bulk query: which threads have already been quote-scraped?
-        scraped_threads = set()
+        # Load ALL known characters so we can opportunistically extract
+        # quotes for other characters from pages we already fetch
+        cursor = await db.execute("SELECT id, name FROM characters")
+        rows = await cursor.fetchall()
+        all_characters = {row["id"]: row["name"] for row in rows}
+
+        # Bulk query: which (thread, character) pairs are already quote-scraped?
+        scraped_pairs: set[tuple[str, str]] = set()
         if all_threads:
             thread_ids = [t.thread_id for t in all_threads]
             placeholders = ",".join("?" * len(thread_ids))
             cursor = await db.execute(
-                f"SELECT thread_id FROM quote_crawl_log WHERE character_id = ? AND thread_id IN ({placeholders})",
-                [character_id] + thread_ids,
+                f"SELECT thread_id, character_id FROM quote_crawl_log WHERE thread_id IN ({placeholders})",
+                thread_ids,
             )
             rows = await cursor.fetchall()
-            scraped_threads = {row["thread_id"] for row in rows}
+            scraped_pairs = {(row["thread_id"], row["character_id"]) for row in rows}
 
     character_name = char.name if char else None
 
@@ -155,11 +161,20 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                     last_poster_avatar = parse_avatar_from_profile(avatar_html)
                 avatar_cache[last_poster_id] = last_poster_avatar
 
-        # Extract quotes if not already scraped
-        quotes = []
-        should_mark_scraped = False
+        # Extract quotes — opportunistically for ALL known characters, not just
+        # the current one. Since we already have the HTML, extracting for others
+        # is essentially free and saves re-fetching these pages later.
+        # quotes_by_character: {character_id: [{"text": ...}, ...]}
+        quotes_by_character: dict[str, list[dict]] = {}
+        characters_to_mark_scraped: list[str] = []
 
-        if character_name and thread.thread_id not in scraped_threads:
+        # Which characters still need this thread scraped?
+        chars_needing_scrape = {
+            cid: cname for cid, cname in all_characters.items()
+            if (thread.thread_id, cid) not in scraped_pairs
+        }
+
+        if chars_needing_scrape:
             # Reuse pages already fetched for last-poster detection
             all_pages = [thread_html]
             if max_st > 0:
@@ -179,11 +194,14 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                         if ph:
                             all_pages.append(ph)
 
-            for page_html in all_pages:
-                page_quotes = extract_quotes_from_html(page_html, character_name)
-                quotes.extend(page_quotes)
-
-            should_mark_scraped = True
+            # Extract quotes for every character that needs this thread scraped
+            for cid, cname in chars_needing_scrape.items():
+                char_quotes = []
+                for page_html in all_pages:
+                    page_quotes = extract_quotes_from_html(page_html, cname)
+                    char_quotes.extend(page_quotes)
+                quotes_by_character[cid] = char_quotes
+                characters_to_mark_scraped.append(cid)
 
         return {
             "thread": thread,
@@ -191,8 +209,8 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             "last_poster_name": last_poster_name,
             "last_poster_avatar": last_poster_avatar,
             "is_user_last": is_user_last,
-            "quotes": quotes,
-            "should_mark_scraped": should_mark_scraped,
+            "quotes_by_character": quotes_by_character,
+            "characters_to_mark_scraped": characters_to_mark_scraped,
         }
 
     # Step 4: Process all threads concurrently
@@ -236,16 +254,19 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
 
             results[thread.category] = results.get(thread.category, 0) + 1
 
-            for q in result["quotes"]:
-                added = await add_quote(
-                    db, character_id, q["text"],
-                    thread.thread_id, thread.title
-                )
-                if added:
-                    results["quotes_added"] += 1
+            # Save quotes for ALL characters extracted from this thread
+            for cid, char_quotes in result["quotes_by_character"].items():
+                for q in char_quotes:
+                    added = await add_quote(
+                        db, cid, q["text"],
+                        thread.thread_id, thread.title
+                    )
+                    # Only count quotes for the character we're crawling
+                    if added and cid == character_id:
+                        results["quotes_added"] += 1
 
-            if result["should_mark_scraped"]:
-                await mark_thread_quote_scraped(db, thread.thread_id, character_id)
+            for cid in result["characters_to_mark_scraped"]:
+                await mark_thread_quote_scraped(db, thread.thread_id, cid)
 
         await db.commit()
 
