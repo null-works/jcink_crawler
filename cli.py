@@ -395,65 +395,64 @@ def watch(ctx, interval):
     """Live dashboard — auto-refreshing status view."""
     client: CrawlerClient = ctx.obj["client"]
 
-    console.print("[dim]Press Ctrl+C to exit[/]\n")
+    def _build_dashboard():
+        """Build the full dashboard as a renderable group."""
+        # Service status
+        data = client.status()
+        if not data:
+            return Panel("[red bold]Service unavailable[/]", title="The Watcher", box=box.ROUNDED)
+
+        # Header
+        header = Panel(
+            f"[green bold]● Online[/]  |  "
+            f"Characters: [bold]{data.get('characters_tracked', 0)}[/]  |  "
+            f"Threads: [bold]{data.get('total_threads', 0)}[/]  |  "
+            f"Quotes: [bold]{data.get('total_quotes', 0)}[/]",
+            title="The Watcher",
+            box=box.ROUNDED,
+        )
+
+        # Characters table
+        chars = client.characters()
+        if chars:
+            table = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
+            table.add_column("ID", style="dim", width=8)
+            table.add_column("Name", style="bold white", width=20)
+            table.add_column("Group", style="cyan", width=15)
+            table.add_column("OG", justify="right", style="green", width=4)
+            table.add_column("CM", justify="right", style="blue", width=4)
+            table.add_column("CP", justify="right", style="magenta", width=4)
+            table.add_column("IC", justify="right", style="yellow", width=4)
+            table.add_column("Tot", justify="right", style="bold", width=4)
+            table.add_column("Last Crawl", style="dim", width=20)
+
+            for char in chars:
+                counts = char.get("thread_counts", {})
+                table.add_row(
+                    char["id"],
+                    char["name"][:20],
+                    (char.get("group_name") or "—")[:15],
+                    str(counts.get("ongoing", 0)),
+                    str(counts.get("comms", 0)),
+                    str(counts.get("complete", 0)),
+                    str(counts.get("incomplete", 0)),
+                    str(counts.get("total", 0)),
+                    _format_time(char.get("last_thread_crawl")),
+                )
+
+            from rich.console import Group
+            return Group(header, table, Text(f"\n  Refreshing every {interval}s — Ctrl+C to exit", style="dim"))
+        else:
+            from rich.console import Group
+            return Group(header, Text("\n  No characters registered.", style="dim"))
 
     try:
-        while True:
-            console.clear()
-
-            # Service status
-            data = client.status()
-            if not data:
-                console.print("[red bold]✗ Service unavailable[/]")
+        with Live(_build_dashboard(), console=console, refresh_per_second=1, screen=True) as live:
+            while True:
                 time.sleep(interval)
-                continue
-
-            # Header
-            console.print(Panel(
-                f"[green bold]● Online[/]  |  "
-                f"Characters: [bold]{data.get('characters_tracked', 0)}[/]  |  "
-                f"Threads: [bold]{data.get('total_threads', 0)}[/]  |  "
-                f"Quotes: [bold]{data.get('total_quotes', 0)}[/]",
-                title="The Watcher",
-                box=box.ROUNDED,
-            ))
-
-            # Characters table
-            chars = client.characters()
-            if chars:
-                table = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-                table.add_column("ID", style="dim", width=8)
-                table.add_column("Name", style="bold white", width=20)
-                table.add_column("Group", style="cyan", width=15)
-                table.add_column("OG", justify="right", style="green", width=4)
-                table.add_column("CM", justify="right", style="blue", width=4)
-                table.add_column("CP", justify="right", style="magenta", width=4)
-                table.add_column("IC", justify="right", style="yellow", width=4)
-                table.add_column("Tot", justify="right", style="bold", width=4)
-                table.add_column("Last Crawl", style="dim", width=20)
-
-                for char in chars:
-                    counts = char.get("thread_counts", {})
-                    table.add_row(
-                        char["id"],
-                        char["name"][:20],
-                        (char.get("group_name") or "—")[:15],
-                        str(counts.get("ongoing", 0)),
-                        str(counts.get("comms", 0)),
-                        str(counts.get("complete", 0)),
-                        str(counts.get("incomplete", 0)),
-                        str(counts.get("total", 0)),
-                        _format_time(char.get("last_thread_crawl")),
-                    )
-                console.print(table)
-            else:
-                console.print("\n  [dim]No characters registered.[/]")
-
-            console.print(f"\n  [dim]Refreshing every {interval}s — Ctrl+C to exit[/]")
-            time.sleep(interval)
-
+                live.update(_build_dashboard())
     except KeyboardInterrupt:
-        console.print("\n[dim]Stopped.[/]")
+        pass
 
 
 # --- Helpers ---
