@@ -25,6 +25,9 @@ from app.services import (
     crawl_character_profile,
     register_character,
 )
+from app.services.crawler import discover_characters
+from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
+from app.services.activity import get_activity
 
 router = APIRouter()
 
@@ -151,6 +154,23 @@ async def trigger_crawl(
     background_tasks: BackgroundTasks,
 ):
     """Manually trigger a crawl for a character."""
+    if data.crawl_type == "discover":
+        background_tasks.add_task(
+            discover_characters, settings.database_path
+        )
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "discover"}
+
+    if data.crawl_type == "all-threads":
+        background_tasks.add_task(_crawl_all_threads)
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-threads"}
+
+    if data.crawl_type == "all-profiles":
+        background_tasks.add_task(_crawl_all_profiles)
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-profiles"}
+
+    if not data.character_id:
+        raise HTTPException(status_code=422, detail="character_id is required for threads/profile crawls")
+
     if data.crawl_type == "threads":
         background_tasks.add_task(
             crawl_character_threads, data.character_id, settings.database_path
@@ -160,7 +180,7 @@ async def trigger_crawl(
             crawl_character_profile, data.character_id, settings.database_path
         )
     else:
-        raise HTTPException(status_code=400, detail="Invalid crawl_type. Use 'threads' or 'profile'")
+        raise HTTPException(status_code=400, detail="Invalid crawl_type. Use 'threads', 'profile', or 'discover'")
 
     return {
         "status": "crawl_queued",
@@ -172,10 +192,11 @@ async def trigger_crawl(
 @router.get("/status", response_model=CrawlStatusResponse)
 async def get_service_status(db: aiosqlite.Connection = Depends(get_db)):
     """Get overall service status."""
-    # Character count
-    cursor = await db.execute("SELECT COUNT(*) as count FROM characters")
-    row = await cursor.fetchone()
-    char_count = row["count"] if row else 0
+    # Character count (excluding filtered names)
+    excluded = settings.excluded_name_set
+    cursor = await db.execute("SELECT name FROM characters")
+    all_names = await cursor.fetchall()
+    char_count = sum(1 for r in all_names if r["name"].lower() not in excluded)
 
     # Thread count
     cursor = await db.execute("SELECT COUNT(*) as count FROM threads")
@@ -200,10 +221,13 @@ async def get_service_status(db: aiosqlite.Connection = Depends(get_db)):
     row = await cursor.fetchone()
     last_profile = row["last"] if row else None
 
+    activity = get_activity()
+
     return CrawlStatusResponse(
         characters_tracked=char_count,
         total_threads=thread_count,
         total_quotes=quote_count,
         last_thread_crawl=last_thread,
         last_profile_crawl=last_profile,
+        current_activity=activity if activity["active"] else None,
     )

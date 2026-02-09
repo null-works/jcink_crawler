@@ -5,6 +5,15 @@ from app.config import settings
 # Shared client for connection pooling
 _client: httpx.AsyncClient | None = None
 _authenticated: bool = False
+_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    """Get or create the shared concurrency semaphore."""
+    global _semaphore
+    if _semaphore is None:
+        _semaphore = asyncio.Semaphore(settings.max_concurrent_requests)
+    return _semaphore
 
 
 async def get_client() -> httpx.AsyncClient:
@@ -22,12 +31,13 @@ async def get_client() -> httpx.AsyncClient:
 
 
 async def close_client() -> None:
-    """Close the shared HTTP client."""
-    global _client, _authenticated
+    """Close the shared HTTP client and reset state."""
+    global _client, _authenticated, _semaphore
     if _client and not _client.is_closed:
         await _client.aclose()
         _client = None
     _authenticated = False
+    _semaphore = None
 
 
 async def authenticate() -> bool:
@@ -116,6 +126,23 @@ async def fetch_page(url: str) -> str | None:
 
 
 async def fetch_page_with_delay(url: str) -> str | None:
-    """Fetch a page with a polite delay to avoid hammering JCink."""
-    await asyncio.sleep(settings.request_delay_seconds)
-    return await fetch_page(url)
+    """Fetch a page with a polite delay and concurrency control.
+
+    Uses a semaphore to limit concurrent requests while maintaining
+    a per-request delay for politeness.
+    """
+    async with _get_semaphore():
+        await asyncio.sleep(settings.request_delay_seconds)
+        return await fetch_page(url)
+
+
+async def fetch_pages_concurrent(urls: list[str]) -> list[str | None]:
+    """Fetch multiple pages concurrently, respecting rate limits.
+
+    Uses the shared semaphore to limit concurrent requests while
+    fetching all URLs in parallel. Results are returned in the same
+    order as the input URLs.
+    """
+    if not urls:
+        return []
+    return await asyncio.gather(*[fetch_page_with_delay(u) for u in urls])

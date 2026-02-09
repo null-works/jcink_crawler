@@ -25,6 +25,7 @@ class CharacterSummary(BaseModel):
     profile_url: str
     group_name: str | None = None
     avatar_url: str | None = None
+    affiliation: str | None = None
     thread_counts: dict[str, int] = {}
     last_profile_crawl: datetime | None = None
     last_thread_crawl: datetime | None = None
@@ -74,6 +75,7 @@ class CrawlStatusResponse(BaseModel):
     total_quotes: int = 0
     last_thread_crawl: str | None = None
     last_profile_crawl: str | None = None
+    current_activity: dict | None = None
 
 
 # --- Request Models ---
@@ -85,5 +87,5 @@ class CharacterRegister(BaseModel):
 
 class CrawlTrigger(BaseModel):
     """Manually trigger a crawl for a specific character."""
-    character_id: str
-    crawl_type: str = "threads"  # "threads", "profile", "quotes"
+    character_id: str | None = None
+    crawl_type: str = "threads"  # "threads", "profile", "discover"

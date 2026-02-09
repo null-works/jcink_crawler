@@ -103,11 +103,11 @@ class CrawlerClient:
     def register(self, user_id: str) -> dict | None:
         return self._post("/api/character/register", {"user_id": user_id})
 
-    def trigger_crawl(self, cid: str, crawl_type: str) -> dict | None:
-        return self._post("/api/crawl/trigger", {
-            "character_id": cid,
-            "crawl_type": crawl_type,
-        })
+    def trigger_crawl(self, cid: str | None, crawl_type: str) -> dict | None:
+        payload = {"crawl_type": crawl_type}
+        if cid:
+            payload["character_id"] = cid
+        return self._post("/api/crawl/trigger", payload)
 
 
 # --- CLI Group ---
@@ -367,13 +367,32 @@ def register(ctx, user_id):
 # --- Crawl Trigger ---
 
 @cli.command()
-@click.argument("character_id")
-@click.option("--type", "crawl_type", type=click.Choice(["threads", "profile"]),
+@click.argument("character_id", required=False, default=None)
+@click.option("--type", "crawl_type", type=click.Choice(["threads", "profile", "discover", "all-threads", "all-profiles"]),
               default="threads", help="Type of crawl to trigger")
 @click.pass_context
 def crawl(ctx, character_id, crawl_type):
-    """Manually trigger a crawl for a character."""
+    """Manually trigger a crawl for a character (or --type discover/all-threads/all-profiles)."""
     client: CrawlerClient = ctx.obj["client"]
+
+    # Bulk operations that don't need a character_id
+    if crawl_type in ("discover", "all-threads", "all-profiles"):
+        labels = {
+            "discover": "member list discovery",
+            "all-threads": "thread crawl for ALL characters",
+            "all-profiles": "profile crawl for ALL characters",
+        }
+        console.print(f"Triggering [cyan]{labels[crawl_type]}[/]...")
+        result = client.trigger_crawl(None, crawl_type)
+        if not result:
+            console.print("[red]Trigger failed.[/]")
+            return
+        console.print(f"[green]✓ Queued[/] — {labels[crawl_type]}")
+        return
+
+    if not character_id:
+        console.print("[red]character_id is required for threads/profile crawls.[/]")
+        return
 
     console.print(f"Triggering [cyan]{crawl_type}[/] crawl for character [cyan]{character_id}[/]...")
 
@@ -392,68 +411,11 @@ def crawl(ctx, character_id, crawl_type):
 @click.option("--interval", "-i", default=5, help="Refresh interval in seconds")
 @click.pass_context
 def watch(ctx, interval):
-    """Live dashboard — auto-refreshing status view."""
+    """Live interactive dashboard with scrolling, filtering, and detail views."""
     client: CrawlerClient = ctx.obj["client"]
-
-    console.print("[dim]Press Ctrl+C to exit[/]\n")
-
-    try:
-        while True:
-            console.clear()
-
-            # Service status
-            data = client.status()
-            if not data:
-                console.print("[red bold]✗ Service unavailable[/]")
-                time.sleep(interval)
-                continue
-
-            # Header
-            console.print(Panel(
-                f"[green bold]● Online[/]  |  "
-                f"Characters: [bold]{data.get('characters_tracked', 0)}[/]  |  "
-                f"Threads: [bold]{data.get('total_threads', 0)}[/]  |  "
-                f"Quotes: [bold]{data.get('total_quotes', 0)}[/]",
-                title="The Watcher",
-                box=box.ROUNDED,
-            ))
-
-            # Characters table
-            chars = client.characters()
-            if chars:
-                table = Table(box=box.SIMPLE, show_header=True, pad_edge=False)
-                table.add_column("ID", style="dim", width=8)
-                table.add_column("Name", style="bold white", width=20)
-                table.add_column("Group", style="cyan", width=15)
-                table.add_column("OG", justify="right", style="green", width=4)
-                table.add_column("CM", justify="right", style="blue", width=4)
-                table.add_column("CP", justify="right", style="magenta", width=4)
-                table.add_column("IC", justify="right", style="yellow", width=4)
-                table.add_column("Tot", justify="right", style="bold", width=4)
-                table.add_column("Last Crawl", style="dim", width=20)
-
-                for char in chars:
-                    counts = char.get("thread_counts", {})
-                    table.add_row(
-                        char["id"],
-                        char["name"][:20],
-                        (char.get("group_name") or "—")[:15],
-                        str(counts.get("ongoing", 0)),
-                        str(counts.get("comms", 0)),
-                        str(counts.get("complete", 0)),
-                        str(counts.get("incomplete", 0)),
-                        str(counts.get("total", 0)),
-                        _format_time(char.get("last_thread_crawl")),
-                    )
-                console.print(table)
-            else:
-                console.print("\n  [dim]No characters registered.[/]")
-
-            console.print(f"\n  [dim]Refreshing every {interval}s — Ctrl+C to exit[/]")
-            time.sleep(interval)
-
-    except KeyboardInterrupt:
-        console.print("\n[dim]Stopped.[/]")
+    from tui import WatcherApp
+    app = WatcherApp(base_url=client.base_url, interval=interval)
+    app.run()
 
 
 # --- Helpers ---

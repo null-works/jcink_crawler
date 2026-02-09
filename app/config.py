@@ -13,17 +13,23 @@ class Settings(BaseSettings):
     crawl_threads_interval_minutes: int = 60
     crawl_profiles_interval_minutes: int = 1440
     crawl_discovery_interval_minutes: int = 1440
-    discovery_max_user_id: int = 500
     crawl_quotes_batch_size: int = 5
     quote_min_words: int = 3
     request_delay_seconds: float = 2.0
+    max_concurrent_requests: int = 5
     database_path: str = "/app/data/crawler.db"
     bot_username: str = ""
     bot_password: str = ""
+    affiliation_field_key: str = "affiliation"
+    excluded_names: str = "Watcher,Null,Spider,Kat,Randompercision"
 
     @property
     def excluded_forum_ids(self) -> set[str]:
         return set(self.forums_excluded.split(","))
+
+    @property
+    def excluded_name_set(self) -> set[str]:
+        return {n.strip().lower() for n in self.excluded_names.split(",") if n.strip()}
 
 
 settings = Settings()

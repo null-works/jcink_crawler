@@ -5,6 +5,7 @@ import aiosqlite
 
 from app.config import settings
 from app.services.crawler import crawl_character_threads, crawl_character_profile, discover_characters
+from app.services.activity import set_activity, clear_activity
 
 
 _scheduler: AsyncIOScheduler | None = None
@@ -13,17 +14,25 @@ _scheduler: AsyncIOScheduler | None = None
 async def _crawl_all_threads():
     """Crawl threads for all tracked characters."""
     print("[Scheduler] Starting scheduled thread crawl for all characters")
+    excluded = settings.excluded_name_set
     async with aiosqlite.connect(settings.database_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id, name FROM characters ORDER BY last_thread_crawl ASC NULLS FIRST")
-        characters = await cursor.fetchall()
+        all_chars = await cursor.fetchall()
 
+    characters = [c for c in all_chars if c["name"].lower() not in excluded]
     if not characters:
         print("[Scheduler] No characters to crawl")
         return
 
-    print(f"[Scheduler] Crawling threads for {len(characters)} characters")
-    for char in characters:
+    total = len(characters)
+    print(f"[Scheduler] Crawling threads for {total} characters")
+    for i, char in enumerate(characters, 1):
+        set_activity(
+            f"Crawling threads ({i}/{total}): {char['name']}",
+            character_id=char["id"],
+            character_name=char["name"],
+        )
         try:
             await crawl_character_threads(char["id"], settings.database_path)
         except Exception as e:
@@ -31,29 +40,39 @@ async def _crawl_all_threads():
         # Extra delay between characters to be polite
         await asyncio.sleep(settings.request_delay_seconds * 2)
 
+    clear_activity()
     print("[Scheduler] Scheduled thread crawl complete")
 
 
 async def _crawl_all_profiles():
     """Crawl profiles for all tracked characters."""
     print("[Scheduler] Starting scheduled profile crawl for all characters")
+    excluded = settings.excluded_name_set
     async with aiosqlite.connect(settings.database_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id, name FROM characters ORDER BY last_profile_crawl ASC NULLS FIRST")
-        characters = await cursor.fetchall()
+        all_chars = await cursor.fetchall()
 
+    characters = [c for c in all_chars if c["name"].lower() not in excluded]
     if not characters:
         print("[Scheduler] No characters to crawl")
         return
 
-    print(f"[Scheduler] Crawling profiles for {len(characters)} characters")
-    for char in characters:
+    total = len(characters)
+    print(f"[Scheduler] Crawling profiles for {total} characters")
+    for i, char in enumerate(characters, 1):
+        set_activity(
+            f"Crawling profiles ({i}/{total}): {char['name']}",
+            character_id=char["id"],
+            character_name=char["name"],
+        )
         try:
             await crawl_character_profile(char["id"], settings.database_path)
         except Exception as e:
             print(f"[Scheduler] Error crawling profile for {char['name']} ({char['id']}): {e}")
         await asyncio.sleep(settings.request_delay_seconds)
 
+    clear_activity()
     print("[Scheduler] Scheduled profile crawl complete")
 
 
