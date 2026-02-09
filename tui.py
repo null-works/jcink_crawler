@@ -61,16 +61,23 @@ class CharacterDetailScreen(Screen):
     CSS = """
     CharacterDetailScreen {
         layout: vertical;
+        background: #282a36;
     }
     #detail-header {
         height: auto;
         max-height: 5;
         padding: 0 1;
-        background: #44475a;
+        background: #6272a4;
         color: #f8f8f2;
+        border-bottom: solid #bd93f9;
     }
     #thread-table {
         height: 1fr;
+        background: #282a36;
+        scrollbar-background: #44475a;
+        scrollbar-color: #bd93f9;
+        scrollbar-color-hover: #ff79c6;
+        scrollbar-color-active: #ff79c6;
     }
     """
 
@@ -147,11 +154,12 @@ class WatcherApp(App):
         background: #282a36;
     }
     Header {
-        background: #6272a4;
-        color: #f8f8f2;
+        dock: top;
+        background: #bd93f9;
+        color: #282a36;
     }
     HeaderTitle {
-        color: #bd93f9;
+        color: #282a36;
         text-style: bold;
     }
     #filter-input {
@@ -166,10 +174,14 @@ class WatcherApp(App):
     #char-table {
         height: 1fr;
         background: #282a36;
+        scrollbar-background: #44475a;
+        scrollbar-color: #bd93f9;
+        scrollbar-color-hover: #ff79c6;
+        scrollbar-color-active: #ff79c6;
     }
     DataTable > .datatable--header {
-        background: #44475a;
-        color: #bd93f9;
+        background: #6272a4;
+        color: #f8f8f2;
         text-style: bold;
     }
     DataTable > .datatable--cursor {
@@ -177,15 +189,32 @@ class WatcherApp(App):
         color: #f8f8f2;
     }
     DataTable:focus > .datatable--cursor {
-        background: #6272a4;
-        color: #f8f8f2;
+        background: #bd93f9;
+        color: #282a36;
+    }
+    DataTable > .datatable--even-row {
+        background: #282a36;
+    }
+    DataTable > .datatable--odd-row {
+        background: #2d2f3d;
     }
     Footer {
-        background: #6272a4;
-        color: #f8f8f2;
+        background: #bd93f9;
+        color: #282a36;
+    }
+    Footer > .footer--highlight {
+        background: #ff79c6;
+        color: #282a36;
+    }
+    Footer > .footer--highlight-key {
+        background: #ff79c6;
+        color: #282a36;
     }
     Footer > .footer--key {
-        background: #bd93f9;
+        background: #44475a;
+        color: #bd93f9;
+    }
+    Footer > .footer--description {
         color: #282a36;
     }
     """
