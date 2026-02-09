@@ -119,8 +119,13 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             scraped_pairs = {(row["thread_id"], row["character_id"]) for row in rows}
 
     character_name = char.name if char else None
+    thread_count = len(all_threads)
     if character_name:
-        set_activity(f"Crawling threads for {character_name}", character_id=character_id, character_name=character_name)
+        set_activity(
+            f"Crawling threads for {character_name} — {thread_count} threads found",
+            character_id=character_id,
+            character_name=character_name,
+        )
 
     # Avatar cache: avoid re-fetching the same user's profile for their avatar
     avatar_cache: dict[str, str | None] = {}
@@ -324,13 +329,19 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     profile_url = f"{base_url}/index.php?showuser={character_id}"
 
     print(f"[Crawler] Starting profile crawl for {character_id}")
-    set_activity(f"Crawling profile", character_id=character_id)
+    set_activity(f"Crawling profile for #{character_id}", character_id=character_id)
 
     html = await fetch_page(profile_url)
     if not html:
         return {"error": "Failed to fetch profile page"}
 
     profile = parse_profile_page(html, character_id)
+    if profile.name:
+        set_activity(
+            f"Crawling profile for {profile.name}",
+            character_id=character_id,
+            character_name=profile.name,
+        )
 
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row

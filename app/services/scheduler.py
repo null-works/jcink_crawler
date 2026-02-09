@@ -5,6 +5,7 @@ import aiosqlite
 
 from app.config import settings
 from app.services.crawler import crawl_character_threads, crawl_character_profile, discover_characters
+from app.services.activity import set_activity, clear_activity
 
 
 _scheduler: AsyncIOScheduler | None = None
@@ -22,8 +23,14 @@ async def _crawl_all_threads():
         print("[Scheduler] No characters to crawl")
         return
 
-    print(f"[Scheduler] Crawling threads for {len(characters)} characters")
-    for char in characters:
+    total = len(characters)
+    print(f"[Scheduler] Crawling threads for {total} characters")
+    for i, char in enumerate(characters, 1):
+        set_activity(
+            f"Crawling threads ({i}/{total}): {char['name']}",
+            character_id=char["id"],
+            character_name=char["name"],
+        )
         try:
             await crawl_character_threads(char["id"], settings.database_path)
         except Exception as e:
@@ -31,6 +38,7 @@ async def _crawl_all_threads():
         # Extra delay between characters to be polite
         await asyncio.sleep(settings.request_delay_seconds * 2)
 
+    clear_activity()
     print("[Scheduler] Scheduled thread crawl complete")
 
 
@@ -46,14 +54,21 @@ async def _crawl_all_profiles():
         print("[Scheduler] No characters to crawl")
         return
 
-    print(f"[Scheduler] Crawling profiles for {len(characters)} characters")
-    for char in characters:
+    total = len(characters)
+    print(f"[Scheduler] Crawling profiles for {total} characters")
+    for i, char in enumerate(characters, 1):
+        set_activity(
+            f"Crawling profiles ({i}/{total}): {char['name']}",
+            character_id=char["id"],
+            character_name=char["name"],
+        )
         try:
             await crawl_character_profile(char["id"], settings.database_path)
         except Exception as e:
             print(f"[Scheduler] Error crawling profile for {char['name']} ({char['id']}): {e}")
         await asyncio.sleep(settings.request_delay_seconds)
 
+    clear_activity()
     print("[Scheduler] Scheduled profile crawl complete")
 
 
