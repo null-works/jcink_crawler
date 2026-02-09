@@ -12,6 +12,8 @@ from app.services.parser import (
     parse_avatar_from_profile,
     extract_quotes_from_html,
     extract_thread_authors,
+    parse_member_list,
+    parse_member_list_pagination,
     is_board_message,
 )
 from app.models.operations import (
@@ -380,20 +382,17 @@ async def register_character(user_id: str, db_path: str) -> dict:
 
 
 async def discover_characters(db_path: str) -> dict:
-    """Auto-discover characters by iterating through user IDs starting from 1.
+    """Auto-discover characters by crawling the full forum member list.
 
-    Fetches each profile page sequentially. If a profile returns a valid
-    character name, it gets registered. Stops after consecutive misses.
+    Paginates through every page of the member list, registering any
+    new characters found. No artificial limits on user IDs or page counts.
 
     Returns:
         Summary dict with counts
     """
     base_url = settings.forum_base_url
-    max_id = settings.discovery_max_user_id
-    consecutive_misses = 0
-    max_consecutive_misses = settings.discovery_max_consecutive_misses
 
-    print(f"[Crawler] Starting auto-discovery from ID 1 to {max_id}")
+    print("[Crawler] Starting auto-discovery via member list")
     set_activity("Discovering characters")
 
     # Pre-load existing character IDs to avoid per-ID DB queries
@@ -403,64 +402,83 @@ async def discover_characters(db_path: str) -> dict:
         rows = await cursor.fetchall()
         existing_ids = {row["id"] for row in rows}
 
+    # Fetch first page to get pagination info
+    member_list_url = f"{base_url}/index.php?act=Members&max_results=30"
+    first_page_html = await fetch_page_with_delay(member_list_url)
+    if not first_page_html:
+        clear_activity()
+        print("[Crawler] Failed to fetch member list")
+        return {"new_registered": 0, "already_tracked": 0, "skipped": 0}
+
+    max_st = parse_member_list_pagination(first_page_html)
+    page_offsets = [0] + list(range(30, max_st + 1, 30))
+    total_pages = len(page_offsets)
+    print(f"[Crawler] Member list has {total_pages} pages")
+
     new_count = 0
     existing_count = 0
     skipped_count = 0
 
-    for user_id in range(1, max_id + 1):
-        uid = str(user_id)
+    for page_num, st in enumerate(page_offsets, 1):
+        set_activity(f"Discovering characters (page {page_num}/{total_pages})")
 
-        # Skip if already tracked (using pre-loaded set)
-        if uid in existing_ids:
-            existing_count += 1
-            consecutive_misses = 0
+        if st == 0:
+            html = first_page_html
+        else:
+            url = f"{member_list_url}&st={st}"
+            html = await fetch_page_with_delay(url)
+            if not html:
+                skipped_count += 1
+                continue
+
+        members = parse_member_list(html)
+        if not members:
             continue
 
-        # Fetch profile page
-        profile_url = f"{base_url}/index.php?showuser={uid}"
-        html = await fetch_page_with_delay(profile_url)
+        for member in members:
+            uid = member["user_id"]
 
-        if not html or is_board_message(html):
-            consecutive_misses += 1
-            skipped_count += 1
-            if consecutive_misses >= max_consecutive_misses:
-                print(f"[Crawler] {max_consecutive_misses} consecutive misses at ID {uid}, stopping discovery")
-                break
-            continue
+            if uid in existing_ids:
+                existing_count += 1
+                continue
 
-        # Check if the profile actually has a character name
-        profile = parse_profile_page(html, uid)
-        if not profile.name or profile.name == "Unknown":
-            consecutive_misses += 1
-            skipped_count += 1
-            continue
+            # Fetch their profile to get full details
+            profile_url = f"{base_url}/index.php?showuser={uid}"
+            profile_html = await fetch_page_with_delay(profile_url)
 
-        consecutive_misses = 0
-        print(f"[Crawler] Discovered: {profile.name} (ID {uid})")
-        set_activity(f"Discovered {profile.name}", character_id=uid, character_name=profile.name)
+            if not profile_html or is_board_message(profile_html):
+                skipped_count += 1
+                continue
 
-        try:
-            # Save the profile we already fetched
-            async with aiosqlite.connect(db_path) as db:
-                db.row_factory = aiosqlite.Row
-                await upsert_character(
-                    db,
-                    character_id=uid,
-                    name=profile.name,
-                    profile_url=profile_url,
-                    group_name=profile.group_name,
-                    avatar_url=profile.avatar_url,
-                )
-                for key, value in profile.fields.items():
-                    await upsert_profile_field(db, uid, key, value)
-                await update_character_crawl_time(db, uid, "profile")
-                await db.commit()
+            profile = parse_profile_page(profile_html, uid)
+            if not profile.name or profile.name == "Unknown":
+                skipped_count += 1
+                continue
 
-            # Crawl their threads
-            await crawl_character_threads(uid, db_path)
-            new_count += 1
-        except Exception as e:
-            print(f"[Crawler] Error registering {profile.name}: {e}")
+            print(f"[Crawler] Discovered: {profile.name} (ID {uid})")
+            set_activity(f"Discovered {profile.name}", character_id=uid, character_name=profile.name)
+
+            try:
+                async with aiosqlite.connect(db_path) as db:
+                    db.row_factory = aiosqlite.Row
+                    await upsert_character(
+                        db,
+                        character_id=uid,
+                        name=profile.name,
+                        profile_url=profile_url,
+                        group_name=profile.group_name,
+                        avatar_url=profile.avatar_url,
+                    )
+                    for key, value in profile.fields.items():
+                        await upsert_profile_field(db, uid, key, value)
+                    await update_character_crawl_time(db, uid, "profile")
+                    await db.commit()
+
+                existing_ids.add(uid)
+                await crawl_character_threads(uid, db_path)
+                new_count += 1
+            except Exception as e:
+                print(f"[Crawler] Error registering {profile.name}: {e}")
 
     clear_activity()
     print(f"[Crawler] Discovery complete: {new_count} new, {existing_count} existing, {skipped_count} skipped")
