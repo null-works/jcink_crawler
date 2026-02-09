@@ -197,8 +197,8 @@ class WatcherApp(App):
         background: #2d2f3d;
     }
     #activity-bar {
-        dock: bottom;
         height: 1;
+        width: 100%;
         background: #44475a;
         color: #50fa7b;
         padding: 0 2;
