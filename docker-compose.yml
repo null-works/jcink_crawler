@@ -26,5 +26,5 @@ services:
       - CRAWLER_URL=http://localhost:8000
       - COLORTERM=truecolor
       - TERM=xterm-256color
-      - DASHBOARD_PASSWORD=5Qc43y$$K765103
+      - DASHBOARD_PASSWORD_B64=NVFjNDN5JEs3NjUxMDM=
       - DASHBOARD_SECRET_KEY=watcher-secret-key-change-me

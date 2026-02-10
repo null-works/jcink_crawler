@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Set up dashboard password for The Watcher web interface."""
+import base64
 import secrets
 import sys
 import re
@@ -26,6 +27,9 @@ def main():
 
     secret_key = secrets.token_urlsafe(32)
 
+    # Base64-encode the password to avoid all shell/docker escaping issues
+    password_b64 = base64.b64encode(password.encode("utf-8")).decode("utf-8")
+
     # Read existing docker-compose.yml
     try:
         with open(COMPOSE_FILE, "r") as f:
@@ -35,6 +39,7 @@ def main():
         sys.exit(1)
 
     # Remove existing dashboard lines if present
+    content = re.sub(r"      - DASHBOARD_PASSWORD_B64=.*\n", "", content)
     content = re.sub(r"      - DASHBOARD_PASSWORD=.*\n", "", content)
     content = re.sub(r"      - DASHBOARD_SECRET_KEY=.*\n", "", content)
 
@@ -57,22 +62,13 @@ def main():
     for i in range(len(lines) - 1, -1, -1):
         stripped = lines[i].strip()
         if stripped.startswith("- ") and "=" in stripped:
-            # Verify it's in the environment block
             insert_idx = i
             break
 
-    # Escape for docker-compose: $ must be $$ to be literal
-    compose_password = password.replace("$", "$$")
     new_lines = [
-        f"      - DASHBOARD_PASSWORD={compose_password}",
+        f"      - DASHBOARD_PASSWORD_B64={password_b64}",
         f"      - DASHBOARD_SECRET_KEY={secret_key}",
     ]
-
-    if "$" in password:
-        print()
-        print(f"  Note: Your password contains '$'. In docker-compose.yml")
-        print(f"  it will be stored as '{compose_password}' (escaped).")
-        print(f"  In the browser login, type the original: {password}")
 
     for offset, line in enumerate(new_lines):
         lines.insert(insert_idx + 1 + offset, line)
@@ -84,8 +80,7 @@ def main():
     print("  Dashboard password configured!")
     print()
     print(f"  Login with:  {password}")
-    print(f"  Secret key:  {secret_key}")
-    print(f"  Stored as:   {compose_password} (in docker-compose.yml)")
+    print(f"  Stored as:   DASHBOARD_PASSWORD_B64={password_b64}")
     print()
     print("  Added to docker-compose.yml. Restart to apply:")
     print("    docker compose up --build -d")
