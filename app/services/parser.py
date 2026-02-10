@@ -224,8 +224,12 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # Get character name from h1.profile-name
+    # Get character name
+    # Method 1: h1.profile-name
     name_el = soup.select_one("h1.profile-name")
+    # Method 2: div.pf-e (TWAI static skin)
+    if not name_el:
+        name_el = soup.select_one("div.pf-e")
     if name_el:
         name = name_el.get_text(strip=True)
     else:
@@ -236,7 +240,8 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         else:
             name = "Unknown"
 
-    # Get group name from .profile-app.group-{N} class
+    # Get group name
+    # Method 1: .profile-app.group-{N} class
     group_name = None
     profile_app = soup.select_one(".profile-app")
     if profile_app:
@@ -245,29 +250,28 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
             if match:
                 group_name = _GROUP_MAP.get(match.group(1), cls)
                 break
+    # Method 2: div.mp-b in pf-x (TWAI static skin)
+    if not group_name:
+        group_el = soup.select_one("div.pf-x div.mp-b")
+        if group_el:
+            group_name = group_el.get_text(strip=True)
 
-    # Get avatar from .hero-sq-top background-image
+    # Get avatar from background-image styles
     avatar_url = None
-    avatar_el = soup.select_one(".hero-sq-top")
-    if avatar_el:
-        style = avatar_el.get("style", "")
-        url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
-        if url_match:
-            avatar_url = url_match.group(1)
+    # Try multiple selectors in order of preference
+    for sel in [".hero-sq-top", ".pf-c", ".profile-gif", ".hero-rect", ".hero-portrait"]:
+        el = soup.select_one(sel)
+        if el:
+            style = el.get("style", "")
+            url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
+            if url_match:
+                avatar_url = url_match.group(1)
+                break
 
-    # Fallback avatar: .profile-gif or any hero image
-    if not avatar_url:
-        for sel in [".profile-gif", ".hero-rect", ".hero-portrait"]:
-            el = soup.select_one(sel)
-            if el:
-                style = el.get("style", "")
-                url_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
-                if url_match:
-                    avatar_url = url_match.group(1)
-                    break
-
-    # Extract custom profile fields from dl.profile-dossier (dt/dd pairs)
+    # Extract custom profile fields
     fields = {}
+
+    # Method 1: dl.profile-dossier (dt/dd pairs)
     dossier = soup.select_one("dl.profile-dossier")
     if dossier:
         dts = dossier.select("dt")
@@ -278,11 +282,25 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
             if field_key and field_value and field_value != "No Information":
                 fields[field_key] = field_value
 
-    # Also grab codename if present
+    # Method 2: div.pf-k / span.pf-l (TWAI static skin)
+    if not fields:
+        for pf_k in soup.select("div.pf-k"):
+            label_el = pf_k.select_one("span.pf-l")
+            if label_el:
+                field_key = label_el.get_text(strip=True).lower()
+                # Value is the text after the label span
+                label_el.extract()
+                field_value = pf_k.get_text(strip=True)
+                if field_key and field_value and field_value != "No Information":
+                    fields[field_key] = field_value
+
+    # Grab codename from h2.profile-codename or div.pf-s span.pf-1
     codename_el = soup.select_one("h2.profile-codename")
+    if not codename_el:
+        codename_el = soup.select_one("div.pf-s span.pf-1")
     if codename_el:
         codename = codename_el.get_text(strip=True)
-        if codename and codename != "No Information":
+        if codename and codename.lower() != "code name" and codename != "No Information":
             fields["codename"] = codename
 
     return ParsedProfile(
