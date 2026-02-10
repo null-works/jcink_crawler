@@ -523,6 +523,54 @@ select.form-input {
     font-weight: 600;
 }
 
+/* === Character Detail Header === */
+.char-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.5rem;
+}
+
+.char-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.char-info h1 {
+    font-size: 1.5rem;
+    margin: 0 0 0.25rem 0;
+    color: var(--fg);
+}
+
+.char-info .group-name {
+    color: var(--comment);
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.char-counts {
+    display: flex;
+    gap: 1.25rem;
+    margin: 0.75rem 0;
+}
+
+.count-item {
+    text-align: center;
+}
+
+.count-item .num {
+    font-size: 1.4rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.count-item .label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--comment);
+    margin-top: 0.15rem;
+}
+
 /* === Profile Fields Table === */
 .fields-table {
     width: 100%;
@@ -639,6 +687,8 @@ select.form-input {
 /* === Responsive helpers === */
 @media (max-width: 768px) {
     .hide-mobile { display: none !important; }
+    .char-header { flex-direction: column; align-items: center; text-align: center; }
+    .char-counts { justify-content: center; }
 }
 
 @media (min-width: 769px) {
