@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}The Watcher{% endblock %}</title>
     <link rel="icon" href="{{ url_for('static', path='img/favicon.svg') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/dracula.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/components.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/layout.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/dracula.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/components.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/layout.css') }}?v=2">
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-    <script src="{{ url_for('static', path='js/app.js') }}" defer></script>
+    <script src="{{ url_for('static', path='js/app.js') }}?v=2" defer></script>
 </head>
 <body>
     {% include "components/nav.html" %}
