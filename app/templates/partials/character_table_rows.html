@@ -9,8 +9,8 @@
         {% endif %}
     </td>
     <td class="bold">{{ char.name }}</td>
-    <td class="text-cyan">{{ char.affiliation or '&mdash;' }}</td>
-    <td class="text-comment">{{ char.group_name or '&mdash;' }}</td>
+    <td class="text-cyan">{{ char.affiliation or '—' }}</td>
+    <td class="text-comment">{{ char.group_name or '—' }}</td>
     <td><span class="count-badge green">{{ char.thread_counts.get('ongoing', 0) }}</span></td>
     <td><span class="count-badge cyan">{{ char.thread_counts.get('comms', 0) }}</span></td>
     <td><span class="count-badge pink">{{ char.thread_counts.get('complete', 0) }}</span></td>

@@ -99,12 +99,9 @@
 /* === Data Tables === */
 .data-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     font-size: 0.9rem;
-}
-
-.data-table thead {
-    background: var(--bg-darker);
 }
 
 .data-table th {
@@ -112,7 +109,7 @@
     color: var(--purple);
     font-weight: 600;
     text-align: left;
-    padding: 0.75rem 0.75rem;
+    padding: 0.85rem 0.75rem;
     border-bottom: 2px solid var(--current);
     white-space: nowrap;
     font-size: 0.8rem;
@@ -121,7 +118,7 @@
 }
 
 .data-table td {
-    padding: 0.6rem 0.75rem;
+    padding: 0.65rem 0.75rem;
     border-bottom: 1px solid rgba(68, 71, 90, 0.5);
     vertical-align: middle;
 }
