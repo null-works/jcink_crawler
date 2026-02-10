@@ -110,11 +110,15 @@
     font-weight: 600;
     text-align: left;
     padding: 0.85rem 0.75rem;
-    border-bottom: 2px solid var(--current);
+    border-bottom: 2px solid var(--purple);
     white-space: nowrap;
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+}
+
+.data-table tbody tr:first-child td {
+    padding-top: 0.85rem;
 }
 
 .data-table td {
@@ -138,14 +142,12 @@
 .data-table .sortable {
     cursor: pointer;
     user-select: none;
-    position: relative;
     padding-right: 1.5rem;
 }
 
 .data-table .sortable::after {
     content: '\2195';
-    position: absolute;
-    right: 0.5rem;
+    margin-left: 0.25rem;
     color: var(--comment);
     font-size: 0.75rem;
 }
