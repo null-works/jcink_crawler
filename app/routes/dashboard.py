@@ -116,6 +116,8 @@ async def login_page(request: Request):
 async def login_submit(request: Request):
     form = await request.form()
     password = form.get("password", "")
+    import logging
+    logging.warning(f"[LOGIN] submitted={repr(password)} stored={repr(settings.dashboard_password)} match={password == settings.dashboard_password}")
     if password == settings.dashboard_password:
         s = _get_serializer()
         token = s.dumps({"auth": True})
