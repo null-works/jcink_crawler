@@ -415,6 +415,54 @@ select.form-input {
 .bar-seg.pink   { background: var(--pink); }
 .bar-seg.yellow { background: var(--yellow); }
 
+/* === Power Grid === */
+.powergrid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    max-width: 400px;
+}
+
+.powergrid-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.powergrid-label {
+    width: 2.5rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--pink);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+}
+
+.powergrid-track {
+    flex: 1;
+    height: 18px;
+    background: var(--current);
+    border-radius: 9px;
+    overflow: hidden;
+}
+
+.powergrid-fill {
+    height: 100%;
+    border-radius: 9px;
+    background: linear-gradient(90deg, var(--pink), #bf8fce);
+    transition: width 0.4s ease;
+}
+
+.powergrid-value {
+    width: 1.5rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--fg);
+    text-align: center;
+    flex-shrink: 0;
+}
+
 /* === Activity Bar === */
 .activity-bar {
     position: fixed;

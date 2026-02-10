@@ -80,12 +80,40 @@
     {% endif %}
 </div>
 
-{# Profile fields #}
-{% if fields %}
+{# Power Grid #}
+{% set pg_keys = ['power grid - int', 'power grid - str', 'power grid - spd', 'power grid - dur', 'power grid - pwr', 'power grid - cmb'] %}
+{% set pg_labels = {'power grid - int': 'INT', 'power grid - str': 'STR', 'power grid - spd': 'SPD', 'power grid - dur': 'DUR', 'power grid - pwr': 'PWR', 'power grid - cmb': 'CMB'} %}
+{% set pg_stats = [] %}
+{% for k in pg_keys %}
+    {% if fields.get(k) %}{% if pg_stats.append({'label': pg_labels[k], 'value': fields[k]|int(0)}) %}{% endif %}{% endif %}
+{% endfor %}
+{% if pg_stats %}
+<div class="card">
+    <h3 class="card-title" style="margin-bottom: 1rem;">Power Grid</h3>
+    <div class="powergrid">
+        {% for stat in pg_stats %}
+        <div class="powergrid-stat">
+            <span class="powergrid-label">{{ stat.label }}</span>
+            <div class="powergrid-track">
+                <div class="powergrid-fill" style="width: {{ (stat.value / 7 * 100)|round }}%"></div>
+            </div>
+            <span class="powergrid-value">{{ stat.value }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# Profile fields (excluding power grid) #}
+{% set regular_fields = {} %}
+{% for key, value in fields.items() %}
+    {% if key not in pg_keys %}{% if regular_fields.update({key: value}) %}{% endif %}{% endif %}
+{% endfor %}
+{% if regular_fields %}
 <div class="card">
     <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Fields</h3>
     <table class="fields-table">
-        {% for key, value in fields.items() %}
+        {% for key, value in regular_fields.items() %}
         <tr>
             <td class="field-key">{{ key }}</td>
             <td class="field-value">{{ value }}</td>
