@@ -2,7 +2,7 @@ import aiosqlite
 from app.config import settings
 
 ALLOWED_CHAR_SORTS = {"name", "id", "affiliation", "total_threads", "last_thread_crawl"}
-ALLOWED_THREAD_SORTS = {"title", "category", "last_poster_name", "forum_name"}
+ALLOWED_THREAD_SORTS = {"title", "category", "last_poster_name", "forum_name", "char_name", "is_user_last_poster"}
 ALLOWED_QUOTE_SORTS = {"created_at", "quote_text"}
 
 
@@ -137,7 +137,13 @@ async def search_threads_global(
     if sort_by not in ALLOWED_THREAD_SORTS:
         sort_by = "title"
     direction = "DESC" if sort_dir.lower() == "desc" else "ASC"
-    order = f"t.{sort_by} {direction}" if sort_by != "category" else f"ct.category {direction}"
+    sort_map = {
+        "category": f"ct.category {direction}",
+        "char_name": f"c.name {direction}",
+        "is_user_last_poster": f"ct.is_user_last_poster {direction}",
+        "last_poster_name": f"t.last_poster_name {direction}",
+    }
+    order = sort_map.get(sort_by, f"t.{sort_by} {direction}")
 
     offset = (max(page, 1) - 1) * per_page
     select_sql = f"""

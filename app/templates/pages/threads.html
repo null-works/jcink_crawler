@@ -85,9 +85,15 @@
             <th class="sortable {{ 'sort-asc' if sort == 'category' and dir == 'asc' }}{{ 'sort-desc' if sort == 'category' and dir == 'desc' }}"
                 hx-get="/htmx/threads?sort=category&dir={{ 'desc' if sort == 'category' and dir == 'asc' else 'asc' }}"
                 hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Category</th>
-            <th>Character</th>
-            <th>Last Poster</th>
-            <th>Status</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'char_name' and dir == 'asc' }}{{ 'sort-desc' if sort == 'char_name' and dir == 'desc' }}"
+                hx-get="/htmx/threads?sort=char_name&dir={{ 'desc' if sort == 'char_name' and dir == 'asc' else 'asc' }}"
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Character</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'last_poster_name' and dir == 'asc' }}{{ 'sort-desc' if sort == 'last_poster_name' and dir == 'desc' }}"
+                hx-get="/htmx/threads?sort=last_poster_name&dir={{ 'desc' if sort == 'last_poster_name' and dir == 'asc' else 'asc' }}"
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Last Poster</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'is_user_last_poster' and dir == 'asc' }}{{ 'sort-desc' if sort == 'is_user_last_poster' and dir == 'desc' }}"
+                hx-get="/htmx/threads?sort=is_user_last_poster&dir={{ 'desc' if sort == 'is_user_last_poster' and dir == 'asc' else 'asc' }}"
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Status</th>
         </tr>
     </thead>
     <tbody id="thread-tbody">
