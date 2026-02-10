@@ -116,6 +116,7 @@ async def login_page(request: Request):
 async def login_submit(request: Request):
     form = await request.form()
     password = form.get("password", "")
+    print(f"[LOGIN DEBUG] submitted={repr(password)} len={len(password)} stored={repr(settings.dashboard_password)} len={len(settings.dashboard_password)} b64={repr(settings.dashboard_password_b64)} match={password == settings.dashboard_password}", flush=True)
     if password == settings.dashboard_password:
         s = _get_serializer()
         token = s.dumps({"auth": True})
