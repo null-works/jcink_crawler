@@ -68,6 +68,12 @@ def main():
         f"      - DASHBOARD_SECRET_KEY={secret_key}",
     ]
 
+    if "$" in password:
+        print()
+        print(f"  Note: Your password contains '$'. In docker-compose.yml")
+        print(f"  it will be stored as '{compose_password}' (escaped).")
+        print(f"  In the browser login, type the original: {password}")
+
     for offset, line in enumerate(new_lines):
         lines.insert(insert_idx + 1 + offset, line)
 
@@ -77,8 +83,9 @@ def main():
     print()
     print("  Dashboard password configured!")
     print()
-    print(f"  Password:   {password}")
-    print(f"  Secret key: {secret_key}")
+    print(f"  Login with:  {password}")
+    print(f"  Secret key:  {secret_key}")
+    print(f"  Stored as:   {compose_password} (in docker-compose.yml)")
     print()
     print("  Added to docker-compose.yml. Restart to apply:")
     print("    docker compose up --build -d")
