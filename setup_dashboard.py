@@ -61,10 +61,10 @@ def main():
             insert_idx = i
             break
 
-    # Escape special characters for YAML
-    safe_password = password.replace("'", "''")
+    # Escape for docker-compose: $ must be $$ to be literal
+    compose_password = password.replace("$", "$$")
     new_lines = [
-        f"      - DASHBOARD_PASSWORD='{safe_password}'",
+        f"      - DASHBOARD_PASSWORD={compose_password}",
         f"      - DASHBOARD_SECRET_KEY={secret_key}",
     ]
 
