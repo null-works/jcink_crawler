@@ -197,12 +197,14 @@ async def character_detail_page(
     quotes = await get_all_quotes(db, character_id)
     activity = get_activity()
 
+    total_quotes = len(quotes)
     return templates.TemplateResponse(request, "pages/character_detail.html", {
         "character": char,
         "fields": fields,
         "threads": threads,
         "quotes": quotes[:20],
-        "total_quotes": len(quotes),
+        "total_quotes": total_quotes,
+        "total": total_quotes,
         "activity": activity,
         "per_page": 20,
         "page": 1,
