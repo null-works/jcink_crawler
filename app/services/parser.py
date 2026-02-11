@@ -338,6 +338,80 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     )
 
 
+def parse_application_url(html: str) -> str | None:
+    """Extract the application thread URL from a profile page.
+
+    The TWAI theme renders a link with title="view application" inside
+    the pf-ad action bar at the bottom of the profile.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    link = soup.select_one('a[title="view application"]')
+    if not link:
+        return None
+    href = link.get("href", "")
+    if not href or "No Information" in href:
+        return None
+    if not href.startswith("http"):
+        href = f"{settings.forum_base_url}/{href.lstrip('/')}"
+    return href
+
+
+# Map application power grid stat names to short field keys
+_POWER_GRID_STAT_MAP = {
+    "intelligence": "power grid - int",
+    "strength": "power grid - str",
+    "speed": "power grid - spd",
+    "durability": "power grid - dur",
+    "energy projection": "power grid - pwr",
+    "fighting skills": "power grid - cmb",
+}
+
+
+def parse_power_grid(html: str) -> dict[str, str]:
+    """Extract power grid stats from a character application thread page.
+
+    The TWAI theme renders the power grid inside a tabbed section:
+      - div.sa-n contains each stat row
+      - div.sa-o has the stat label (e.g. "intelligence")
+      - div.sa-q has a style="width: XX%" representing the bar fill
+
+    Also extracts metadata from div.sa-s (archetype, weapons, etc.).
+
+    Returns a dict of field_key -> value suitable for storing as profile fields.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    fields: dict[str, str] = {}
+
+    # Extract stat bars
+    for stat_row in soup.select("div.sa-n"):
+        label_el = stat_row.select_one("div.sa-o")
+        bar_el = stat_row.select_one("div.sa-q")
+        if not label_el or not bar_el:
+            continue
+
+        stat_name = label_el.get_text(strip=True).lower()
+        field_key = _POWER_GRID_STAT_MAP.get(stat_name)
+        if not field_key:
+            continue
+
+        # Extract percentage from inline style
+        style = bar_el.get("style", "")
+        width_match = re.search(r"width:\s*([\d.]+)%", style)
+        if width_match:
+            fields[field_key] = width_match.group(1).split(".")[0]  # Store as integer string
+
+    # Extract metadata (archetype, weapons, etc.)
+    for meta in soup.select("div.sa-s"):
+        title = meta.get("title", "").strip().lower()
+        value_el = meta.select_one("div.sa-u")
+        if title and value_el:
+            value = value_el.get_text(strip=True)
+            if value and value.lower() != "no information":
+                fields[f"power grid - {title}"] = value
+
+    return fields
+
+
 def parse_avatar_from_profile(html: str) -> str | None:
     """Extract just the avatar URL from a profile page.
 
