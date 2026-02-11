@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - The Watcher{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <p class="subtitle">Character tracking overview</p>
+</div>
+
+{# Stats cards #}
+<section class="stats-grid" id="stats-grid"
+         hx-get="/htmx/stats" hx-trigger="every 30s" hx-swap="innerHTML">
+    {% include "partials/stats_values.html" %}
+</section>
+
+{# Filters #}
+<div class="filters-bar">
+    <input type="search" name="q" class="search-input" placeholder="Search characters..."
+           value="{{ q or '' }}"
+           hx-get="/htmx/characters"
+           hx-trigger="keyup changed delay:300ms"
+           hx-target="#character-tbody"
+           hx-include=".char-filter">
+
+    {% if affiliations %}
+    <div class="separator hide-mobile"></div>
+    <div class="chip-group">
+        {% for aff in affiliations %}
+        <label class="chip" onclick="this.classList.toggle('active')">
+            <input type="radio" name="affiliation" value="{{ aff }}" class="char-filter"
+                   hx-get="/htmx/characters"
+                   hx-trigger="change"
+                   hx-target="#character-tbody"
+                   hx-include="[name='q'], [name='group'], [name='sort'], [name='dir']"
+                   {{ 'checked' if affiliation == aff }}>
+            <span class="chip-label">{{ aff }}</span>
+        </label>
+        {% endfor %}
+        <label class="chip" onclick="this.classList.toggle('active')">
+            <input type="radio" name="affiliation" value="" class="char-filter"
+                   hx-get="/htmx/characters"
+                   hx-trigger="change"
+                   hx-target="#character-tbody"
+                   hx-include="[name='q'], [name='group'], [name='sort'], [name='dir']"
+                   {{ 'checked' if not affiliation }}>
+            <span class="chip-label">All</span>
+        </label>
+    </div>
+    {% endif %}
+
+    {% if groups %}
+    <div class="separator hide-mobile"></div>
+    <select name="group" class="form-input char-filter"
+            hx-get="/htmx/characters"
+            hx-trigger="change"
+            hx-target="#character-tbody"
+            hx-include="[name='q'], [name='affiliation'], [name='sort'], [name='dir']">
+        <option value="">All Groups</option>
+        {% for g in groups %}
+        <option value="{{ g }}" {{ 'selected' if group == g }}>{{ g }}</option>
+        {% endfor %}
+    </select>
+    {% endif %}
+
+    <input type="hidden" name="sort" value="{{ sort or 'name' }}" class="char-filter">
+    <input type="hidden" name="dir" value="{{ dir or 'asc' }}" class="char-filter">
+</div>
+
+{# Character table #}
+<div class="table-wrap">
+<table class="data-table">
+    <thead>
+        <tr>
+            <th style="width: 48px;"></th>
+            <th class="sortable {{ 'sort-asc' if sort == 'name' and dir == 'asc' }}{{ 'sort-desc' if sort == 'name' and dir == 'desc' }}"
+                hx-get="/htmx/characters?sort=name&dir={{ 'desc' if sort == 'name' and dir == 'asc' else 'asc' }}"
+                hx-target="#character-tbody" hx-include="[name='q'], [name='affiliation'], [name='group']">Name</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'affiliation' and dir == 'asc' }}{{ 'sort-desc' if sort == 'affiliation' and dir == 'desc' }}"
+                hx-get="/htmx/characters?sort=affiliation&dir={{ 'desc' if sort == 'affiliation' and dir == 'asc' else 'asc' }}"
+                hx-target="#character-tbody" hx-include="[name='q'], [name='affiliation'], [name='group']">Affiliation</th>
+            <th class="hide-mobile">Group</th>
+            <th>Ongoing</th>
+            <th>Comms</th>
+            <th class="hide-mobile">Complete</th>
+            <th class="hide-mobile">Incomplete</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'total_threads' and dir == 'asc' }}{{ 'sort-desc' if sort == 'total_threads' and dir == 'desc' }}"
+                hx-get="/htmx/characters?sort=total_threads&dir={{ 'desc' if sort == 'total_threads' and dir == 'asc' else 'asc' }}"
+                hx-target="#character-tbody" hx-include="[name='q'], [name='affiliation'], [name='group']">Total</th>
+            <th class="sortable hide-mobile {{ 'sort-asc' if sort == 'last_thread_crawl' and dir == 'asc' }}{{ 'sort-desc' if sort == 'last_thread_crawl' and dir == 'desc' }}"
+                hx-get="/htmx/characters?sort=last_thread_crawl&dir={{ 'desc' if sort == 'last_thread_crawl' and dir == 'asc' else 'asc' }}"
+                hx-target="#character-tbody" hx-include="[name='q'], [name='affiliation'], [name='group']">Last Crawled</th>
+        </tr>
+    </thead>
+    <tbody id="character-tbody">
+        {% include "partials/character_table_rows.html" %}
+    </tbody>
+</table>
+</div>
+{% endblock %}

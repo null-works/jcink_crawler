@@ -1,0 +1,21 @@
+{% from "components/pagination.html" import paginate %}
+{% for quote in quotes %}
+<div class="quote-card">
+    <div class="quote-text">{{ quote.quote_text }}</div>
+    <div class="quote-meta">
+        <span><a href="/character/{{ quote.character_id }}">{{ quote.character_name }}</a></span>
+        {% if quote.source_thread_title %}
+        <span>from <span class="text-comment">{{ quote.source_thread_title }}</span></span>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+{% if not quotes %}
+<div class="empty-state" style="padding: 3rem; text-align: center; color: var(--comment);">No quotes found</div>
+{% endif %}
+{% set extra = "" %}
+{% if q %} {% set extra = extra ~ "&q=" ~ q %} {% endif %}
+{% if character_id %} {% set extra = extra ~ "&character_id=" ~ character_id %} {% endif %}
+{% if sort %} {% set extra = extra ~ "&sort=" ~ sort %} {% endif %}
+{% if dir %} {% set extra = extra ~ "&dir=" ~ dir %} {% endif %}
+{{ paginate(total, page, per_page, "quote-list", "/htmx/quotes", extra) }}

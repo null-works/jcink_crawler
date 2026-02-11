@@ -1,11 +1,15 @@
+import pathlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db
-from app.routes import character_router
+from app.routes import character_router, dashboard_router
 from app.services.fetcher import close_client
 from app.services.scheduler import start_scheduler, stop_scheduler
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent
 
 
 @asynccontextmanager
@@ -35,5 +39,11 @@ async def health_check():
     return {"status": "ok"}
 
 
+# Static files
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
 # Register API routes
 app.include_router(character_router, prefix="/api")
+
+# Register dashboard routes (HTML)
+app.include_router(dashboard_router)

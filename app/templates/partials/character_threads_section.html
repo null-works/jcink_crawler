@@ -1,0 +1,57 @@
+{% set all_threads = [] %}
+{% if not category or category == 'ongoing' %}
+    {% for t in threads.ongoing %}{% if all_threads.append(t) %}{% endif %}{% endfor %}
+{% endif %}
+{% if not category or category == 'comms' %}
+    {% for t in threads.comms %}{% if all_threads.append(t) %}{% endif %}{% endfor %}
+{% endif %}
+{% if not category or category == 'complete' %}
+    {% for t in threads.complete %}{% if all_threads.append(t) %}{% endif %}{% endfor %}
+{% endif %}
+{% if not category or category == 'incomplete' %}
+    {% for t in threads.incomplete %}{% if all_threads.append(t) %}{% endif %}{% endfor %}
+{% endif %}
+
+<div class="table-wrap">
+<table class="data-table">
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Category</th>
+            <th>Last Poster</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for t in all_threads %}
+        <tr>
+            <td class="truncate" style="max-width: 400px;">
+                <a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+            </td>
+            <td>
+                {% if t.category == 'ongoing' %}
+                <span class="count-badge green">ongoing</span>
+                {% elif t.category == 'comms' %}
+                <span class="count-badge cyan">comms</span>
+                {% elif t.category == 'complete' %}
+                <span class="count-badge pink">complete</span>
+                {% elif t.category == 'incomplete' %}
+                <span class="count-badge yellow">incomplete</span>
+                {% endif %}
+            </td>
+            <td>{{ t.last_poster_name or '—' }}</td>
+            <td>
+                {% if t.is_user_last_poster %}
+                <span class="status-replied" title="Replied">&#10003; Replied</span>
+                {% else %}
+                <span class="status-awaiting" title="Awaiting reply">&#9711; Awaiting</span>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+    {% if not all_threads %}
+        <tr><td colspan="4" class="empty-state">No threads in this category</td></tr>
+    {% endif %}
+    </tbody>
+</table>
+</div>

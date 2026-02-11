@@ -1,0 +1,10 @@
+{% if activity and activity.active %}
+<span class="activity-dot active"></span>
+<span class="text-green">{{ activity.activity }}</span>
+{% if activity.started_at %}
+<span class="text-comment" style="margin-left: auto;">Started {{ activity.started_at|format_time }}</span>
+{% endif %}
+{% else %}
+<span class="activity-dot idle"></span>
+<span class="text-comment">Idle — waiting for next scheduled crawl</span>
+{% endif %}

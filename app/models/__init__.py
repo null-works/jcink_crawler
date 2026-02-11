@@ -30,3 +30,11 @@ from app.models.operations import (
     set_crawl_status,
     get_crawl_status,
 )
+from app.models.dashboard_queries import (
+    search_characters,
+    search_threads_global,
+    search_quotes_global,
+    get_unique_affiliations,
+    get_unique_groups,
+    get_dashboard_stats,
+)

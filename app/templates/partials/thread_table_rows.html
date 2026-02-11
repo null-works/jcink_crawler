@@ -1,0 +1,44 @@
+{% from "components/pagination.html" import paginate %}
+{% for t in threads %}
+<tr>
+    <td class="truncate" style="max-width: 350px;">
+        <a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+    </td>
+    <td>
+        {% if t.char_category == 'ongoing' %}
+        <span class="count-badge green">ongoing</span>
+        {% elif t.char_category == 'comms' %}
+        <span class="count-badge cyan">comms</span>
+        {% elif t.char_category == 'complete' %}
+        <span class="count-badge pink">complete</span>
+        {% elif t.char_category == 'incomplete' %}
+        <span class="count-badge yellow">incomplete</span>
+        {% else %}
+        <span class="count-badge purple">{{ t.char_category }}</span>
+        {% endif %}
+    </td>
+    <td>
+        <a href="/character/{{ t.char_id }}" class="text-purple">{{ t.char_name }}</a>
+    </td>
+    <td>{{ t.last_poster_name or '—' }}</td>
+    <td>
+        {% if t.is_user_last_poster %}
+        <span class="status-replied" title="Replied">&#10003;</span>
+        {% else %}
+        <span class="status-awaiting" title="Awaiting reply">&#9711;</span>
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}
+{% if not threads %}
+<tr><td colspan="5" class="empty-state">No threads found</td></tr>
+{% endif %}
+</table>
+{% set extra = "" %}
+{% if q %} {% set extra = extra ~ "&q=" ~ q %} {% endif %}
+{% if category %} {% set extra = extra ~ "&category=" ~ category %} {% endif %}
+{% if status %} {% set extra = extra ~ "&status=" ~ status %} {% endif %}
+{% if character_id %} {% set extra = extra ~ "&character_id=" ~ character_id %} {% endif %}
+{% if sort %} {% set extra = extra ~ "&sort=" ~ sort %} {% endif %}
+{% if dir %} {% set extra = extra ~ "&dir=" ~ dir %} {% endif %}
+{{ paginate(total, page, per_page, "thread-tbody", "/htmx/threads", extra) }}
