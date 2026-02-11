@@ -105,3 +105,24 @@ docker exec -it jcink-crawler python cli.py watch
 - `GET /api/character/{id}/quotes` — All quotes
 - `POST /api/character/register` — Register a character for tracking
 - `POST /api/crawl/trigger` — Manually trigger a crawl
+
+## Known Considerations
+
+This is a single-deployment service for `imagehut.ch` targeting one JCink forum.
+Many "best practice" concerns (scalability, hardcoded values, connection pooling) are
+intentionally accepted given that context.
+
+**Unauthenticated API endpoints:** The crawl trigger (`POST /api/crawl/trigger`) and
+register (`POST /api/character/register`) endpoints have no authentication. This is a
+known tradeoff — the port is not publicly advertised and the semaphore caps concurrent
+requests, so the blast radius is low. If unexpected crawl activity shows up in the
+dashboard NOC, revisit this by either adding auth or binding the port to `127.0.0.1`
+behind a reverse proxy.
+
+**CORS is wide open:** `allow_origins=["*"]` with `allow_credentials=True`. Acceptable
+for now since the API serves an embedded widget on a known site. Tighten if the dashboard
+auth ever matters more.
+
+**Dashboard secret key:** Defaults to `"change-me-in-production"` in `config.py`. Run
+`python setup_dashboard.py` to generate a real one. Not urgent unless dashboard auth
+is being relied on for something sensitive.
