@@ -329,6 +329,19 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         if value and value != "No Information":
             fields[title] = value
 
+    # Extract power grid from .profile-stat elements (fields 27-32)
+    # Each stat has a .profile-stat-label (INT/STR/etc) and a
+    # .profile-stat-fill with data-value="N" holding the numeric value.
+    for stat in soup.select("div.profile-stat"):
+        label_el = stat.select_one(".profile-stat-label")
+        fill_el = stat.select_one(".profile-stat-fill")
+        if not label_el or not fill_el:
+            continue
+        label = label_el.get_text(strip=True).lower()
+        value = (fill_el.get("data-value") or "").strip()
+        if value and value != "No Information":
+            fields[f"power grid - {label}"] = value
+
     return ParsedProfile(
         user_id=user_id,
         name=name,
