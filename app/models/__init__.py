@@ -36,5 +36,8 @@ from app.models.dashboard_queries import (
     search_quotes_global,
     get_unique_affiliations,
     get_unique_groups,
+    get_unique_players,
+    search_players,
+    get_player_detail,
     get_dashboard_stats,
 )

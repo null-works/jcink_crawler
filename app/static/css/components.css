@@ -219,6 +219,22 @@
     font-weight: 600;
 }
 
+.avatar-stack {
+    display: flex;
+    align-items: center;
+}
+
+.avatar-stack .avatar-sm,
+.avatar-stack .avatar-placeholder {
+    margin-left: -8px;
+    border: 2px solid var(--bg);
+}
+
+.avatar-stack .avatar-sm:first-child,
+.avatar-stack .avatar-placeholder:first-child {
+    margin-left: 0;
+}
+
 /* === Chips / Filter Chips === */
 .chip-group {
     display: flex;

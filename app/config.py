@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     bot_username: str = ""
     bot_password: str = ""
     affiliation_field_key: str = "affiliation"
+    player_field_key: str = "player"
     excluded_names: str = "Watcher,Null,Spider,Kat,Randompercision"
     dashboard_password_b64: str = ""
     dashboard_secret_key: str = "change-me-in-production"
