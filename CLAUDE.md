@@ -127,5 +127,5 @@ for now since the API serves an embedded widget on a known site. Tighten if the 
 auth ever matters more.
 
 **Dashboard secret key:** Defaults to `"change-me-in-production"` in `config.py`. Run
-`python setup_dashboard.py` to generate a real one. Not urgent unless dashboard auth
-is being relied on for something sensitive.
+`python setup_dashboard.py` on the host (not inside Docker) to generate a real one.
+Not urgent unless dashboard auth is being relied on for something sensitive.
