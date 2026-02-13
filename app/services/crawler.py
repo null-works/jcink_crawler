@@ -315,6 +315,210 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     return results
 
 
+async def crawl_single_thread(
+    thread_id: str,
+    db_path: str,
+    user_id: str | None = None,
+    forum_id: str | None = None,
+) -> dict:
+    """Crawl a single thread by ID — lightweight targeted re-crawl.
+
+    Used by the webhook endpoint when the theme reports a new post/topic.
+    Much faster than crawl_character_threads() since it skips the JCink
+    search entirely and fetches only the one thread.
+
+    Args:
+        thread_id: JCink topic ID
+        db_path: Path to SQLite database
+        user_id: Optional user ID to link the thread to
+        forum_id: Optional forum ID for categorization
+
+    Returns:
+        Summary dict
+    """
+    from app.services.parser import categorize_thread
+
+    base_url = settings.forum_base_url
+    thread_url = f"{base_url}/index.php?showtopic={thread_id}"
+
+    print(f"[Crawler] Targeted crawl for thread {thread_id}")
+    set_activity(f"Targeted crawl: thread {thread_id}", character_id=user_id)
+
+    # Fetch thread first page
+    thread_html = await fetch_page_with_delay(thread_url)
+    if not thread_html:
+        clear_activity()
+        return {"error": "Failed to fetch thread"}
+
+    if is_board_message(thread_html):
+        clear_activity()
+        return {"error": "Board message (cooldown)"}
+
+    # Get last page for last poster
+    max_st = parse_thread_pagination(thread_html)
+    last_page_html = None
+    if max_st > 0:
+        last_page_url = f"{thread_url}&st={max_st}"
+        last_page_html = await fetch_page_with_delay(last_page_url)
+
+    poster_html = last_page_html or thread_html
+
+    # Extract last poster
+    last_poster = parse_last_poster(poster_html)
+    last_poster_name = last_poster.name if last_poster else None
+    last_poster_id = last_poster.user_id if last_poster else None
+
+    # Fetch last poster avatar
+    last_poster_avatar = None
+    if last_poster_id:
+        avatar_html = await fetch_page_with_delay(
+            f"{base_url}/index.php?showuser={last_poster_id}"
+        )
+        if avatar_html:
+            last_poster_avatar = parse_avatar_from_profile(avatar_html)
+
+    # Extract thread title from the page
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(thread_html, "html.parser")
+    title_el = soup.select_one("title")
+    title = "Unknown Thread"
+    if title_el:
+        raw_title = title_el.get_text(strip=True)
+        # JCink titles are often "Board Name -> Thread Title"
+        if "->" in raw_title:
+            title = raw_title.split("->")[-1].strip()
+        else:
+            title = raw_title
+
+    # Determine forum_id from the page if not provided
+    if not forum_id:
+        forum_link = soup.select_one('a[href*="showforum="]')
+        if forum_link:
+            import re
+            f_match = re.search(r"showforum=(\d+)", forum_link.get("href", ""))
+            if f_match:
+                forum_id = f_match.group(1)
+
+    category = categorize_thread(forum_id)
+
+    # Get forum name from page
+    forum_name = None
+    forum_link = soup.select_one('a[href*="showforum="]')
+    if forum_link:
+        forum_name = forum_link.get_text(strip=True)
+
+    # Load known characters for quote extraction
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT id, name FROM characters")
+        rows = await cursor.fetchall()
+        all_characters = {row["id"]: row["name"] for row in rows}
+
+        # Check which characters still need quote scraping for this thread
+        cursor = await db.execute(
+            "SELECT character_id FROM quote_crawl_log WHERE thread_id = ?",
+            (thread_id,),
+        )
+        already_scraped = {row["character_id"] for row in await cursor.fetchall()}
+
+    # Collect all thread pages for quote extraction
+    all_pages = [thread_html]
+    if max_st > 0:
+        remaining_urls = []
+        for st in range(25, max_st + 1, 25):
+            if st == max_st and last_page_html:
+                all_pages.append(last_page_html)
+            else:
+                remaining_urls.append(f"{thread_url}&st={st}")
+        if remaining_urls:
+            intermediate_htmls = await fetch_pages_concurrent(remaining_urls)
+            all_pages.extend(h for h in intermediate_htmls if h)
+
+    # Extract authors from all pages
+    thread_author_ids: set[str] = set()
+    for page_html in all_pages:
+        thread_author_ids.update(extract_thread_authors(page_html))
+
+    # Extract quotes for characters who need this thread scraped
+    quotes_by_character: dict[str, list[dict]] = {}
+    chars_to_mark: list[str] = []
+    for cid, cname in all_characters.items():
+        if cid not in already_scraped:
+            char_quotes = []
+            for page_html in all_pages:
+                char_quotes.extend(extract_quotes_from_html(page_html, cname))
+            quotes_by_character[cid] = char_quotes
+            chars_to_mark.append(cid)
+
+    # Determine if user is last poster
+    character_name = all_characters.get(user_id) if user_id else None
+    is_user_last = (
+        last_poster_name and character_name
+        and last_poster_name.lower() == character_name.lower()
+    )
+
+    # Write everything to DB
+    quotes_added = 0
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+
+        await upsert_thread(
+            db,
+            thread_id=thread_id,
+            title=title,
+            url=thread_url,
+            forum_id=forum_id,
+            forum_name=forum_name,
+            category=category,
+            last_poster_id=last_poster_id,
+            last_poster_name=last_poster_name,
+            last_poster_avatar=last_poster_avatar,
+        )
+
+        # Link to requesting user
+        if user_id:
+            await link_character_thread(
+                db,
+                character_id=user_id,
+                thread_id=thread_id,
+                category=category,
+                is_user_last_poster=bool(is_user_last),
+            )
+
+        # Also link other known authors
+        for author_id in thread_author_ids:
+            if author_id in all_characters and author_id != user_id:
+                is_author_last = last_poster_id == author_id if last_poster_id else False
+                await link_character_thread(
+                    db,
+                    character_id=author_id,
+                    thread_id=thread_id,
+                    category=category,
+                    is_user_last_poster=is_author_last,
+                )
+
+        # Save quotes
+        for cid, char_quotes in quotes_by_character.items():
+            for q in char_quotes:
+                added = await add_quote(db, cid, q["text"], thread_id, title)
+                if added:
+                    quotes_added += 1
+        for cid in chars_to_mark:
+            await mark_thread_quote_scraped(db, thread_id, cid)
+
+        await db.commit()
+
+    clear_activity()
+    print(f"[Crawler] Targeted crawl complete: thread {thread_id}, {quotes_added} quotes added")
+    return {
+        "thread_id": thread_id,
+        "title": title,
+        "category": category,
+        "last_poster": last_poster_name,
+        "quotes_added": quotes_added,
+    }
+
+
 async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     """Crawl a character's profile page for field data.
 

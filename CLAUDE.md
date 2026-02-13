@@ -98,6 +98,8 @@ docker exec -it jcink-crawler python cli.py watch
 - `GET /health` — Health check
 - `GET /api/status` — Service stats
 - `GET /api/characters` — List all tracked characters
+- `GET /api/claims` — Bulk claims data (all characters with face_claim, species, codename, alias, affiliation, connections, thread_counts)
+- `GET /api/characters/fields?ids=42,55&fields=square_image,short_quote` — Batch profile fields for multiple characters
 - `GET /api/character/{id}` — Full character profile + threads + fields
 - `GET /api/character/{id}/threads` — Categorized thread list
 - `GET /api/character/{id}/thread-counts` — Lightweight counts only
@@ -105,6 +107,7 @@ docker exec -it jcink-crawler python cli.py watch
 - `GET /api/character/{id}/quotes` — All quotes
 - `POST /api/character/register` — Register a character for tracking
 - `POST /api/crawl/trigger` — Manually trigger a crawl
+- `POST /api/webhook/activity` — Theme webhook for real-time updates (new_post, new_topic, profile_edit)
 
 ## Known Considerations
 

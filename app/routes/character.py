@@ -29,7 +29,7 @@ from app.services import (
     crawl_character_profile,
     register_character,
 )
-from app.services.crawler import discover_characters
+from app.services.crawler import discover_characters, crawl_single_thread
 from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
 from app.services.activity import get_activity
 
@@ -201,11 +201,23 @@ async def webhook_activity(
         )
         return {"status": "accepted", "action": "profile_recrawl", "user_id": data.user_id}
 
-    if data.event in ("new_post", "new_topic") and data.user_id:
-        background_tasks.add_task(
-            crawl_character_threads, data.user_id, settings.database_path
-        )
-        return {"status": "accepted", "action": "thread_recrawl", "user_id": data.user_id}
+    if data.event in ("new_post", "new_topic"):
+        if data.thread_id:
+            # Targeted: crawl just this one thread
+            background_tasks.add_task(
+                crawl_single_thread,
+                data.thread_id,
+                settings.database_path,
+                user_id=data.user_id,
+                forum_id=data.forum_id,
+            )
+            return {"status": "accepted", "action": "thread_recrawl", "thread_id": data.thread_id}
+        elif data.user_id:
+            # Fallback: full thread crawl if no thread_id provided
+            background_tasks.add_task(
+                crawl_character_threads, data.user_id, settings.database_path
+            )
+            return {"status": "accepted", "action": "thread_recrawl", "user_id": data.user_id}
 
     return {"status": "accepted", "action": "none"}
 

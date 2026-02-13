@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 import aiosqlite
 
 from app.database import init_db, DATABASE_PATH
-from app.models.operations import upsert_character, get_character, get_all_quotes, get_thread_counts
-from app.services.crawler import crawl_character_threads, crawl_character_profile, register_character
+from app.models.operations import upsert_character, get_character, get_all_quotes, get_thread_counts, get_character_threads
+from app.services.crawler import crawl_character_threads, crawl_character_profile, crawl_single_thread, register_character
 
 
 @pytest.fixture(autouse=True)
@@ -215,4 +215,130 @@ class TestRegisterCharacter:
     async def test_profile_failure_stops_registration(self):
         with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, return_value=None):
             result = await register_character("42", DATABASE_PATH)
+        assert "error" in result
+
+
+SINGLE_THREAD_PAGE = """
+<html>
+<head><title>The Forum -> A Great Adventure</title></head>
+<body>
+<a href="/index.php?showforum=20">Some Forum</a>
+<div class="pr-a">
+    <div class="pr-j"><a href="/index.php?showuser=42">Tony Stark</a></div>
+    <div class="postcolor">
+        <b>"I am Iron Man and everyone knows it"</b>
+    </div>
+</div>
+<div class="pr-a">
+    <div class="pr-j"><a href="/index.php?showuser=99">Steve Rogers</a></div>
+    <div class="postcolor">
+        <b>"I can do this all day and it is great"</b>
+    </div>
+</div>
+</body>
+</html>
+"""
+
+
+class TestCrawlSingleThread:
+    async def test_successful_single_thread_crawl(self):
+        """Crawl a single thread and verify DB updates."""
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(db, "42", "Tony Stark", "https://example.com/42")
+            await upsert_character(db, "99", "Steve Rogers", "https://example.com/99")
+
+        async def mock_fetch(url):
+            if "showtopic=100" in url:
+                return SINGLE_THREAD_PAGE
+            if "showuser=" in url:
+                return PROFILE_HTML
+            return "<html></html>"
+
+        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, side_effect=mock_fetch):
+            result = await crawl_single_thread("100", DATABASE_PATH, user_id="42")
+
+        assert "error" not in result
+        assert result["thread_id"] == "100"
+        assert result["title"] == "A Great Adventure"
+        assert result["last_poster"] == "Steve Rogers"
+
+        # Verify thread was linked to requesting user
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            threads = await get_character_threads(db, "42")
+            assert threads.counts["total"] >= 1
+
+    async def test_single_thread_with_forum_id(self):
+        """Forum ID should determine thread category."""
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(db, "42", "Tony Stark", "https://example.com/42")
+
+        async def mock_fetch(url):
+            if "showtopic=" in url:
+                return SINGLE_THREAD_PAGE
+            if "showuser=" in url:
+                return PROFILE_HTML
+            return "<html></html>"
+
+        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, side_effect=mock_fetch):
+            result = await crawl_single_thread("100", DATABASE_PATH, user_id="42", forum_id="49")
+
+        assert result["category"] == "complete"
+
+    async def test_single_thread_extracts_quotes(self):
+        """Quotes should be extracted for known characters."""
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(db, "42", "Tony Stark", "https://example.com/42")
+
+        async def mock_fetch(url):
+            if "showtopic=" in url:
+                return SINGLE_THREAD_PAGE
+            if "showuser=" in url:
+                return PROFILE_HTML
+            return "<html></html>"
+
+        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, side_effect=mock_fetch):
+            result = await crawl_single_thread("100", DATABASE_PATH, user_id="42")
+
+        assert result["quotes_added"] >= 1
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            quotes = await get_all_quotes(db, "42")
+            assert any("Iron Man" in q.quote_text for q in quotes)
+
+    async def test_single_thread_links_other_authors(self):
+        """Thread should be linked to other known characters who posted in it."""
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(db, "42", "Tony Stark", "https://example.com/42")
+            await upsert_character(db, "99", "Steve Rogers", "https://example.com/99")
+
+        async def mock_fetch(url):
+            if "showtopic=" in url:
+                return SINGLE_THREAD_PAGE
+            if "showuser=" in url:
+                return PROFILE_HTML
+            return "<html></html>"
+
+        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, side_effect=mock_fetch):
+            await crawl_single_thread("100", DATABASE_PATH, user_id="42")
+
+        # Steve (user 99) also posted, so should be linked
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            threads = await get_character_threads(db, "99")
+            assert threads.counts["total"] >= 1
+
+    async def test_single_thread_failed_fetch(self):
+        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, return_value=None):
+            result = await crawl_single_thread("100", DATABASE_PATH)
+        assert "error" in result
+
+    async def test_single_thread_board_message(self):
+        board_msg = "<html><head><title>Board Message</title></head><body>X</body></html>"
+        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, return_value=board_msg):
+            result = await crawl_single_thread("100", DATABASE_PATH)
         assert "error" in result
