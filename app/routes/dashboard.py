@@ -20,6 +20,9 @@ from app.models import (
     search_quotes_global,
     get_unique_affiliations,
     get_unique_groups,
+    get_unique_players,
+    search_players,
+    get_player_detail,
     get_dashboard_stats,
 )
 from app.services import crawl_character_threads, crawl_character_profile, register_character
@@ -145,6 +148,7 @@ async def dashboard_page(
     q: str | None = None,
     affiliation: str | None = None,
     group: str | None = None,
+    player: str | None = None,
     sort: str = "name",
     dir: str = "asc",
     page: int = 1,
@@ -156,9 +160,10 @@ async def dashboard_page(
 
     stats = await get_dashboard_stats(db)
     affiliations_list = affiliation.split(",") if affiliation else None
-    characters, total = await search_characters(db, q, affiliations_list, group, sort, dir, page)
+    characters, total = await search_characters(db, q, affiliations_list, group, player, sort, dir, page)
     all_affiliations = await get_unique_affiliations(db)
     all_groups = await get_unique_groups(db)
+    all_players = await get_unique_players(db)
     activity = get_activity()
 
     return templates.TemplateResponse(request, "pages/dashboard.html", {
@@ -167,10 +172,12 @@ async def dashboard_page(
         "total": total,
         "affiliations": all_affiliations,
         "groups": all_groups,
+        "players": all_players,
         "activity": activity,
         "q": q,
         "affiliation": affiliation,
         "group": group,
+        "player": player,
         "sort": sort,
         "dir": dir,
         "page": page,
@@ -221,6 +228,7 @@ async def threads_page(
     category: str | None = None,
     status: str | None = None,
     character_id: str | None = None,
+    player: str | None = None,
     sort: str = "title",
     dir: str = "asc",
     page: int = 1,
@@ -230,8 +238,9 @@ async def threads_page(
     if redirect:
         return redirect
 
-    threads, total = await search_threads_global(db, q, category, status, character_id, sort, dir, page)
+    threads, total = await search_threads_global(db, q, category, status, character_id, player, sort, dir, page)
     all_chars = await get_all_characters(db)
+    all_players = await get_unique_players(db)
     activity = get_activity()
 
     # If HTMX request, return just the table rows
@@ -245,6 +254,7 @@ async def threads_page(
             "category": category,
             "status": status,
             "character_id": character_id,
+            "player": player,
             "sort": sort,
             "dir": dir,
         })
@@ -253,11 +263,13 @@ async def threads_page(
         "threads": threads,
         "total": total,
         "all_characters": all_chars,
+        "all_players": all_players,
         "activity": activity,
         "q": q,
         "category": category,
         "status": status,
         "character_id": character_id,
+        "player": player,
         "sort": sort,
         "dir": dir,
         "page": page,
@@ -329,6 +341,69 @@ async def admin_page(
     })
 
 
+@router.get("/players", response_class=HTMLResponse)
+async def players_page(
+    request: Request,
+    q: str | None = None,
+    sort: str = "player",
+    dir: str = "asc",
+    page: int = 1,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    players, total = await search_players(db, q, sort, dir, page)
+    stats = await get_dashboard_stats(db)
+    activity = get_activity()
+
+    if request.headers.get("HX-Request") == "true":
+        return templates.TemplateResponse(request, "partials/player_table_rows.html", {
+            "players": players,
+            "total": total,
+            "page": page,
+            "per_page": 25,
+            "q": q,
+            "sort": sort,
+            "dir": dir,
+        })
+
+    return templates.TemplateResponse(request, "pages/players.html", {
+        "players": players,
+        "total": total,
+        "stats": stats,
+        "activity": activity,
+        "q": q,
+        "sort": sort,
+        "dir": dir,
+        "page": page,
+        "per_page": 25,
+    })
+
+
+@router.get("/player/{player_name}", response_class=HTMLResponse)
+async def player_detail_page(
+    request: Request,
+    player_name: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    player = await get_player_detail(db, player_name)
+    if not player:
+        return HTMLResponse(status_code=404, content="Player not found")
+
+    activity = get_activity()
+
+    return templates.TemplateResponse(request, "pages/player_detail.html", {
+        "player": player,
+        "activity": activity,
+    })
+
+
 # --- HTMX Partial Routes ---
 
 @router.get("/htmx/characters", response_class=HTMLResponse)
@@ -337,6 +412,7 @@ async def htmx_characters(
     q: str | None = None,
     affiliation: str | None = None,
     group: str | None = None,
+    player: str | None = None,
     sort: str = "name",
     dir: str = "asc",
     page: int = 1,
@@ -347,7 +423,7 @@ async def htmx_characters(
         return auth_err
 
     affiliations_list = affiliation.split(",") if affiliation else None
-    characters, total = await search_characters(db, q, affiliations_list, group, sort, dir, page)
+    characters, total = await search_characters(db, q, affiliations_list, group, player, sort, dir, page)
     return templates.TemplateResponse(request, "partials/character_table_rows.html", {
         "characters": characters,
         "total": total,
@@ -356,6 +432,32 @@ async def htmx_characters(
         "q": q,
         "affiliation": affiliation,
         "group": group,
+        "player": player,
+        "sort": sort,
+        "dir": dir,
+    })
+
+
+@router.get("/htmx/players", response_class=HTMLResponse)
+async def htmx_players(
+    request: Request,
+    q: str | None = None,
+    sort: str = "player",
+    dir: str = "asc",
+    page: int = 1,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    players, total = await search_players(db, q, sort, dir, page)
+    return templates.TemplateResponse(request, "partials/player_table_rows.html", {
+        "players": players,
+        "total": total,
+        "page": page,
+        "per_page": 25,
+        "q": q,
         "sort": sort,
         "dir": dir,
     })
@@ -387,6 +489,7 @@ async def htmx_threads(
     category: str | None = None,
     status: str | None = None,
     character_id: str | None = None,
+    player: str | None = None,
     sort: str = "title",
     dir: str = "asc",
     page: int = 1,
@@ -396,7 +499,7 @@ async def htmx_threads(
     if auth_err:
         return auth_err
 
-    threads, total = await search_threads_global(db, q, category, status, character_id, sort, dir, page)
+    threads, total = await search_threads_global(db, q, category, status, character_id, player, sort, dir, page)
     return templates.TemplateResponse(request, "partials/thread_table_rows.html", {
         "threads": threads,
         "total": total,
@@ -406,6 +509,7 @@ async def htmx_threads(
         "category": category,
         "status": status,
         "character_id": character_id,
+        "player": player,
         "sort": sort,
         "dir": dir,
     })

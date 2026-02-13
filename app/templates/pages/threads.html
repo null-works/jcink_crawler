@@ -18,30 +18,30 @@
     <div class="separator hide-mobile"></div>
 
     <div class="chip-group">
-        <button class="chip {{ 'active' if not category }}" onclick="setThreadFilter('category', '')"
+        <button class="chip {{ 'active' if not category }}"
                 hx-get="/htmx/threads"
                 hx-target="#thread-tbody"
-                hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']"
+                hx-include="[name='q'], [name='status'], [name='character_id'], [name='player'], [name='sort'], [name='dir']"
                 hx-vals='{"category": ""}'>All</button>
-        <button class="chip chip-green {{ 'active' if category == 'ongoing' }}" onclick="setThreadFilter('category', 'ongoing')"
+        <button class="chip chip-green {{ 'active' if category == 'ongoing' }}"
                 hx-get="/htmx/threads"
                 hx-target="#thread-tbody"
-                hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']"
+                hx-include="[name='q'], [name='status'], [name='character_id'], [name='player'], [name='sort'], [name='dir']"
                 hx-vals='{"category": "ongoing"}'>Ongoing</button>
         <button class="chip chip-cyan {{ 'active' if category == 'comms' }}"
                 hx-get="/htmx/threads"
                 hx-target="#thread-tbody"
-                hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']"
+                hx-include="[name='q'], [name='status'], [name='character_id'], [name='player'], [name='sort'], [name='dir']"
                 hx-vals='{"category": "comms"}'>Comms</button>
         <button class="chip chip-pink {{ 'active' if category == 'complete' }}"
                 hx-get="/htmx/threads"
                 hx-target="#thread-tbody"
-                hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']"
+                hx-include="[name='q'], [name='status'], [name='character_id'], [name='player'], [name='sort'], [name='dir']"
                 hx-vals='{"category": "complete"}'>Complete</button>
         <button class="chip chip-yellow {{ 'active' if category == 'incomplete' }}"
                 hx-get="/htmx/threads"
                 hx-target="#thread-tbody"
-                hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']"
+                hx-include="[name='q'], [name='status'], [name='character_id'], [name='player'], [name='sort'], [name='dir']"
                 hx-vals='{"category": "incomplete"}'>Incomplete</button>
     </div>
 
@@ -51,18 +51,31 @@
             hx-get="/htmx/threads"
             hx-trigger="change"
             hx-target="#thread-tbody"
-            hx-include="[name='q'], [name='character_id'], [name='sort'], [name='dir']">
+            hx-include="[name='q'], [name='character_id'], [name='player'], [name='sort'], [name='dir']">
         <option value="" {{ 'selected' if not status }}>All Status</option>
         <option value="awaiting" {{ 'selected' if status == 'awaiting' }}>Awaiting Reply</option>
         <option value="replied" {{ 'selected' if status == 'replied' }}>Replied</option>
     </select>
+
+    {% if all_players %}
+    <select name="player" class="form-input thread-filter"
+            hx-get="/htmx/threads"
+            hx-trigger="change"
+            hx-target="#thread-tbody"
+            hx-include="[name='q'], [name='status'], [name='character_id'], [name='sort'], [name='dir']">
+        <option value="">All Players</option>
+        {% for p in all_players %}
+        <option value="{{ p }}" {{ 'selected' if player == p }}>{{ p }}</option>
+        {% endfor %}
+    </select>
+    {% endif %}
 
     {% if all_characters %}
     <select name="character_id" class="form-input thread-filter"
             hx-get="/htmx/threads"
             hx-trigger="change"
             hx-target="#thread-tbody"
-            hx-include="[name='q'], [name='status'], [name='sort'], [name='dir']">
+            hx-include="[name='q'], [name='status'], [name='player'], [name='sort'], [name='dir']">
         <option value="">All Characters</option>
         {% for c in all_characters %}
         <option value="{{ c.id }}" {{ 'selected' if character_id == c.id }}>{{ c.name }}</option>
@@ -81,19 +94,19 @@
         <tr>
             <th class="sortable {{ 'sort-asc' if sort == 'title' and dir == 'asc' }}{{ 'sort-desc' if sort == 'title' and dir == 'desc' }}"
                 hx-get="/htmx/threads?sort=title&dir={{ 'desc' if sort == 'title' and dir == 'asc' else 'asc' }}"
-                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Title</th>
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id'], [name='player']">Title</th>
             <th class="sortable {{ 'sort-asc' if sort == 'category' and dir == 'asc' }}{{ 'sort-desc' if sort == 'category' and dir == 'desc' }}"
                 hx-get="/htmx/threads?sort=category&dir={{ 'desc' if sort == 'category' and dir == 'asc' else 'asc' }}"
-                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Category</th>
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id'], [name='player']">Category</th>
             <th class="sortable {{ 'sort-asc' if sort == 'char_name' and dir == 'asc' }}{{ 'sort-desc' if sort == 'char_name' and dir == 'desc' }}"
                 hx-get="/htmx/threads?sort=char_name&dir={{ 'desc' if sort == 'char_name' and dir == 'asc' else 'asc' }}"
-                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Character</th>
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id'], [name='player']">Character</th>
             <th class="sortable {{ 'sort-asc' if sort == 'last_poster_name' and dir == 'asc' }}{{ 'sort-desc' if sort == 'last_poster_name' and dir == 'desc' }}"
                 hx-get="/htmx/threads?sort=last_poster_name&dir={{ 'desc' if sort == 'last_poster_name' and dir == 'asc' else 'asc' }}"
-                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Last Poster</th>
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id'], [name='player']">Last Poster</th>
             <th class="sortable {{ 'sort-asc' if sort == 'is_user_last_poster' and dir == 'asc' }}{{ 'sort-desc' if sort == 'is_user_last_poster' and dir == 'desc' }}"
                 hx-get="/htmx/threads?sort=is_user_last_poster&dir={{ 'desc' if sort == 'is_user_last_poster' and dir == 'asc' else 'asc' }}"
-                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id']">Status</th>
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id'], [name='player']">Status</th>
         </tr>
     </thead>
     <tbody id="thread-tbody">

@@ -1,0 +1,39 @@
+{% from "components/pagination.html" import paginate %}
+{% for p in players %}
+<tr class="clickable-row" onclick="window.location='/player/{{ p.player_name|urlencode }}'">
+    <td class="bold">{{ p.player_name }}</td>
+    <td><span class="count-badge purple">{{ p.character_count }}</span></td>
+    <td>
+        <div class="avatar-stack">
+            {% for c in p.characters[:5] %}
+            {% if c.avatar_url %}
+            <img src="{{ c.avatar_url }}" alt="{{ c.name }}" class="avatar-sm" title="{{ c.name }}" loading="lazy">
+            {% else %}
+            <span class="avatar-placeholder" title="{{ c.name }}">{{ c.name[0] }}</span>
+            {% endif %}
+            {% endfor %}
+            {% if p.characters|length > 5 %}
+            <span class="avatar-placeholder" title="{{ p.characters|length - 5 }} more">+{{ p.characters|length - 5 }}</span>
+            {% endif %}
+        </div>
+    </td>
+    <td class="bold">{{ p.total_threads }}</td>
+    <td>
+        {% if p.awaiting_threads > 0 %}
+        <span class="count-badge yellow">{{ p.awaiting_threads }}</span>
+        {% else %}
+        <span class="text-comment">0</span>
+        {% endif %}
+    </td>
+    <td class="text-comment hide-mobile">{{ p.last_active|format_time }}</td>
+</tr>
+{% endfor %}
+{% if not players %}
+<tr><td colspan="6" class="empty-state">No players found</td></tr>
+{% endif %}
+</table>
+{% set extra = "" %}
+{% if q %} {% set extra = extra ~ "&q=" ~ q %} {% endif %}
+{% if sort %} {% set extra = extra ~ "&sort=" ~ sort %} {% endif %}
+{% if dir %} {% set extra = extra ~ "&dir=" ~ dir %} {% endif %}
+{{ paginate(total, page, per_page, "player-tbody", "/htmx/players", extra) }}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{{ player.player_name }} - The Watcher{% endblock %}
+{% block content %}
+
+{# Player header card #}
+<div class="card">
+    <div class="char-header">
+        <div class="char-info">
+            <h1>{{ player.player_name }}</h1>
+            <div class="group-name">Player</div>
+
+            <div class="char-counts">
+                <div class="count-item">
+                    <div class="num text-purple">{{ player.characters|length }}</div>
+                    <div class="label">Characters</div>
+                </div>
+                <div class="count-item">
+                    <div class="num text-green">{{ player.total_threads }}</div>
+                    <div class="label">Threads</div>
+                </div>
+                <div class="count-item">
+                    <div class="num text-yellow">{{ player.total_awaiting }}</div>
+                    <div class="label">Awaiting</div>
+                </div>
+                <div class="count-item">
+                    <div class="num text-pink">{{ player.total_quotes }}</div>
+                    <div class="label">Quotes</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Character roster #}
+<div class="card">
+    <h3 class="card-title" style="margin-bottom: 1rem;">Character Roster</h3>
+    <div class="table-wrap">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 48px;"></th>
+                <th>Name</th>
+                <th>Affiliation</th>
+                <th>Ongoing</th>
+                <th>Comms</th>
+                <th class="hide-mobile">Complete</th>
+                <th>Awaiting</th>
+                <th class="hide-mobile">Quotes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for char in player.characters %}
+            <tr class="clickable-row" onclick="window.location='/character/{{ char.id }}'">
+                <td>
+                    {% if char.avatar_url %}
+                    <img src="{{ char.avatar_url }}" alt="" class="avatar-sm" loading="lazy">
+                    {% else %}
+                    <span class="avatar-placeholder">?</span>
+                    {% endif %}
+                </td>
+                <td class="bold">{{ char.name }}</td>
+                <td class="text-cyan">{{ char.affiliation or '—' }}</td>
+                <td><span class="count-badge green">{{ char.thread_counts.get('ongoing', 0) }}</span></td>
+                <td><span class="count-badge cyan">{{ char.thread_counts.get('comms', 0) }}</span></td>
+                <td class="hide-mobile"><span class="count-badge pink">{{ char.thread_counts.get('complete', 0) }}</span></td>
+                <td>
+                    {% if char.awaiting > 0 %}
+                    <span class="count-badge yellow">{{ char.awaiting }}</span>
+                    {% else %}
+                    <span class="text-comment">0</span>
+                    {% endif %}
+                </td>
+                <td class="hide-mobile">{{ char.quote_count }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+{# Awaiting reply threads #}
+{% if player.awaiting_threads %}
+<div class="card">
+    <h3 class="card-title" style="margin-bottom: 1rem;">
+        Awaiting Reply <span class="count-badge yellow">{{ player.awaiting_threads|length }}</span>
+    </h3>
+    <div class="table-wrap">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Thread</th>
+                <th>Character</th>
+                <th>Last Poster</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in player.awaiting_threads %}
+            <tr>
+                <td class="truncate" style="max-width: 350px;">
+                    <a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+                </td>
+                <td>
+                    <a href="/character/{{ t.char_id }}" class="text-purple">{{ t.char_name }}</a>
+                </td>
+                <td>
+                    {% if t.last_poster_avatar %}
+                    <img src="{{ t.last_poster_avatar }}" alt="" class="avatar-sm" style="vertical-align: middle; margin-right: 0.25rem;" loading="lazy">
+                    {% endif %}
+                    {{ t.last_poster_name or '—' }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

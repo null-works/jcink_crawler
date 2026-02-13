@@ -39,6 +39,7 @@
 {% if category %} {% set extra = extra ~ "&category=" ~ category %} {% endif %}
 {% if status %} {% set extra = extra ~ "&status=" ~ status %} {% endif %}
 {% if character_id %} {% set extra = extra ~ "&character_id=" ~ character_id %} {% endif %}
+{% if player %} {% set extra = extra ~ "&player=" ~ player %} {% endif %}
 {% if sort %} {% set extra = extra ~ "&sort=" ~ sort %} {% endif %}
 {% if dir %} {% set extra = extra ~ "&dir=" ~ dir %} {% endif %}
 {{ paginate(total, page, per_page, "thread-tbody", "/htmx/threads", extra) }}

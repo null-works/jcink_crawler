@@ -10,7 +10,13 @@
     </td>
     <td class="bold">{{ char.name }}</td>
     <td class="text-cyan">{{ char.affiliation or '—' }}</td>
-    <td class="text-comment">{{ char.group_name or '—' }}</td>
+    <td class="hide-mobile">
+        {% if char.player %}
+        <a href="/player/{{ char.player|urlencode }}" class="text-purple" onclick="event.stopPropagation()">{{ char.player }}</a>
+        {% else %}
+        <span class="text-comment">—</span>
+        {% endif %}
+    </td>
     <td><span class="count-badge green">{{ char.thread_counts.get('ongoing', 0) }}</span></td>
     <td><span class="count-badge cyan">{{ char.thread_counts.get('comms', 0) }}</span></td>
     <td><span class="count-badge pink">{{ char.thread_counts.get('complete', 0) }}</span></td>
@@ -27,6 +33,7 @@
 {% if q %} {% set extra = extra ~ "&q=" ~ q %} {% endif %}
 {% if affiliation %} {% set extra = extra ~ "&affiliation=" ~ affiliation %} {% endif %}
 {% if group %} {% set extra = extra ~ "&group=" ~ group %} {% endif %}
+{% if player %} {% set extra = extra ~ "&player=" ~ player %} {% endif %}
 {% if sort %} {% set extra = extra ~ "&sort=" ~ sort %} {% endif %}
 {% if dir %} {% set extra = extra ~ "&dir=" ~ dir %} {% endif %}
 {{ paginate(total, page, per_page, "character-tbody", "/htmx/characters", extra) }}
