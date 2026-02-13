@@ -7,6 +7,7 @@ from app.database import init_db, DATABASE_PATH
 from app.models.operations import (
     get_character,
     get_all_characters,
+    get_all_claims,
     upsert_character,
     update_character_crawl_time,
     upsert_thread,
@@ -21,6 +22,7 @@ from app.models.operations import (
     mark_thread_quote_scraped,
     upsert_profile_field,
     get_profile_fields,
+    get_characters_fields_batch,
     set_crawl_status,
     get_crawl_status,
 )
@@ -504,5 +506,144 @@ class TestCrawlStatus:
             await set_crawl_status(db, "status", "crawling")
             result = await get_crawl_status(db, "status")
             assert result == "crawling"
+        finally:
+            await db.close()
+
+
+# --- Claims Operations ---
+
+class TestGetAllClaims:
+    async def test_empty_database(self):
+        db = await _get_db()
+        try:
+            result = await get_all_claims(db)
+            assert result == []
+        finally:
+            await db.close()
+
+    async def test_returns_claims_with_fields(self):
+        db = await _get_db()
+        try:
+            await upsert_character(db, "42", "Wanda Maximoff",
+                                   "https://example.com/42", "Purple",
+                                   "https://img.com/wanda.jpg")
+            await upsert_profile_field(db, "42", "face claim", "Elizabeth Olsen")
+            await upsert_profile_field(db, "42", "species", "mutant")
+            await upsert_profile_field(db, "42", "codename", "Scarlet Witch")
+            await upsert_profile_field(db, "42", "alias", "Kim")
+            await upsert_profile_field(db, "42", "affiliation", "Avengers")
+            await upsert_profile_field(db, "42", "connections", "Pietro (twin)")
+            await upsert_thread(db, "100", "Thread", "https://example.com/t/100",
+                                None, None, "ongoing")
+            await link_character_thread(db, "42", "100", "ongoing")
+            await db.commit()
+
+            claims = await get_all_claims(db)
+            assert len(claims) == 1
+            c = claims[0]
+            assert c.id == "42"
+            assert c.name == "Wanda Maximoff"
+            assert c.group_name == "Purple"
+            assert c.group_id == "11"
+            assert c.face_claim == "Elizabeth Olsen"
+            assert c.species == "mutant"
+            assert c.codename == "Scarlet Witch"
+            assert c.alias == "Kim"
+            assert c.affiliation == "Avengers"
+            assert c.connections == "Pietro (twin)"
+            assert c.thread_counts["ongoing"] == 1
+            assert c.thread_counts["total"] == 1
+        finally:
+            await db.close()
+
+    async def test_excludes_filtered_names(self):
+        db = await _get_db()
+        try:
+            await upsert_character(db, "1", "Watcher", "https://example.com/1")
+            await upsert_character(db, "2", "Real Character", "https://example.com/2")
+            await db.commit()
+
+            claims = await get_all_claims(db)
+            assert len(claims) == 1
+            assert claims[0].name == "Real Character"
+        finally:
+            await db.close()
+
+    async def test_missing_fields_are_none(self):
+        db = await _get_db()
+        try:
+            await upsert_character(db, "42", "Test", "https://example.com/42")
+            await db.commit()
+
+            claims = await get_all_claims(db)
+            assert len(claims) == 1
+            assert claims[0].face_claim is None
+            assert claims[0].species is None
+            assert claims[0].connections is None
+        finally:
+            await db.close()
+
+
+# --- Batch Field Operations ---
+
+class TestGetCharactersFieldsBatch:
+    async def test_empty_ids(self):
+        db = await _get_db()
+        try:
+            result = await get_characters_fields_batch(db, [])
+            assert result == {}
+        finally:
+            await db.close()
+
+    async def test_returns_all_fields(self):
+        db = await _get_db()
+        try:
+            await upsert_character(db, "42", "Tony", "https://example.com/42")
+            await upsert_profile_field(db, "42", "square_image", "https://img.com/sq.jpg")
+            await upsert_profile_field(db, "42", "species", "human")
+            await db.commit()
+
+            result = await get_characters_fields_batch(db, ["42"])
+            assert result["42"]["square_image"] == "https://img.com/sq.jpg"
+            assert result["42"]["species"] == "human"
+        finally:
+            await db.close()
+
+    async def test_filters_by_field_keys(self):
+        db = await _get_db()
+        try:
+            await upsert_character(db, "42", "Tony", "https://example.com/42")
+            await upsert_profile_field(db, "42", "square_image", "https://img.com/sq.jpg")
+            await upsert_profile_field(db, "42", "species", "human")
+            await upsert_profile_field(db, "42", "affiliation", "Avengers")
+            await db.commit()
+
+            result = await get_characters_fields_batch(db, ["42"], ["square_image"])
+            assert "square_image" in result["42"]
+            assert "species" not in result["42"]
+            assert "affiliation" not in result["42"]
+        finally:
+            await db.close()
+
+    async def test_multiple_characters(self):
+        db = await _get_db()
+        try:
+            await upsert_character(db, "42", "Tony", "https://example.com/42")
+            await upsert_profile_field(db, "42", "alias", "Shellhead")
+            await upsert_character(db, "55", "Steve", "https://example.com/55")
+            await upsert_profile_field(db, "55", "alias", "Cap")
+            await db.commit()
+
+            result = await get_characters_fields_batch(db, ["42", "55"])
+            assert result["42"]["alias"] == "Shellhead"
+            assert result["55"]["alias"] == "Cap"
+        finally:
+            await db.close()
+
+    async def test_unknown_id_returns_empty_dict(self):
+        db = await _get_db()
+        try:
+            result = await get_characters_fields_batch(db, ["99999"])
+            assert result["99999"] == {}
         finally:
             await db.close()

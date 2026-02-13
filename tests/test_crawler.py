@@ -87,7 +87,7 @@ class TestCrawlCharacterProfile:
             result = await crawl_character_profile("42", DATABASE_PATH)
 
         assert result["name"] == "Tony Stark"
-        assert result["fields_count"] == 3
+        assert result["fields_count"] == 4  # age, affiliation, codename, square_image
         assert result["group"] == "Red"
 
         # Verify DB was updated

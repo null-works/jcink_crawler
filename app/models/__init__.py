@@ -2,6 +2,7 @@ from app.models.character import (
     ThreadCategory,
     CrawlStatus,
     CharacterSummary,
+    ClaimsSummary,
     ThreadInfo,
     CharacterThreads,
     Quote,
@@ -9,10 +10,12 @@ from app.models.character import (
     CrawlStatusResponse,
     CharacterRegister,
     CrawlTrigger,
+    WebhookActivity,
 )
 from app.models.operations import (
     get_character,
     get_all_characters,
+    get_all_claims,
     upsert_character,
     update_character_crawl_time,
     upsert_thread,
@@ -27,6 +30,7 @@ from app.models.operations import (
     mark_thread_quote_scraped,
     upsert_profile_field,
     get_profile_fields,
+    get_characters_fields_batch,
     set_crawl_status,
     get_crawl_status,
 )

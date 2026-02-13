@@ -329,6 +329,41 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         if value and value != "No Information":
             fields[title] = value
 
+    # Extract hero images from background-image styles (fields 7, 8, 21, 9)
+    for selector, key in [
+        (".hero-portrait", "portrait_image"),
+        (".hero-sq-top", "square_image"),
+        (".hero-sq-bot", "secondary_square_image"),
+        (".hero-rect", "rectangle_gif"),
+    ]:
+        el = soup.select_one(selector)
+        if el:
+            style = el.get("style", "")
+            img_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
+            if img_match:
+                fields[key] = img_match.group(1)
+
+    # Extract OOC alias from .profile-ooc-footer (field_1)
+    ooc_footer = soup.select_one(".profile-ooc-footer")
+    if ooc_footer:
+        alias_text = ooc_footer.get_text(strip=True)
+        if alias_text and alias_text != "No Information":
+            fields.setdefault("alias", alias_text)
+
+    # Extract short quote from .profile-short-quote or mini profile area (field_26)
+    short_quote_el = soup.select_one(".profile-short-quote")
+    if short_quote_el:
+        sq_text = short_quote_el.get_text(strip=True)
+        if sq_text and sq_text != "No Information":
+            fields["short_quote"] = sq_text
+
+    # Extract connections from .profile-connections (field_41)
+    connections_el = soup.select_one(".profile-connections")
+    if connections_el:
+        conn_text = connections_el.get_text(strip=True)
+        if conn_text and conn_text != "No Information":
+            fields["connections"] = conn_text
+
     # Extract power grid from .profile-stat elements (fields 27-32)
     # Each stat has a .profile-stat-label (INT/STR/etc) and a
     # .profile-stat-fill with data-value="N" holding the numeric value.

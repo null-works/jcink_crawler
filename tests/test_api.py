@@ -3,6 +3,14 @@ import pytest
 from unittest.mock import AsyncMock, patch
 import aiosqlite
 
+from app.database import DATABASE_PATH
+from app.models.operations import (
+    upsert_character,
+    upsert_profile_field,
+    upsert_thread,
+    link_character_thread,
+)
+
 
 class TestHealthCheck:
     async def test_health(self, client):
@@ -129,4 +137,165 @@ class TestCrawlTriggerEndpoint:
         response = await client.post("/api/crawl/trigger", json={
             "crawl_type": "threads",
         })
+        assert response.status_code == 422
+
+
+class TestClaimsEndpoint:
+    async def _seed_character(self, fields=None):
+        """Helper: insert a character with profile fields."""
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(db, "42", "Wanda Maximoff",
+                                   "https://example.com/42", "Purple",
+                                   "https://img.com/wanda.jpg")
+            if fields:
+                for key, value in fields.items():
+                    await upsert_profile_field(db, "42", key, value)
+            # Add some threads
+            await upsert_thread(db, "100", "Thread A", "https://example.com/t/100",
+                                None, None, "ongoing")
+            await link_character_thread(db, "42", "100", "ongoing")
+            await upsert_thread(db, "101", "Thread B", "https://example.com/t/101",
+                                "49", "Complete", "complete")
+            await link_character_thread(db, "42", "101", "complete")
+            await db.commit()
+
+    async def test_claims_empty(self, client):
+        response = await client.get("/api/claims")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    async def test_claims_returns_character_with_fields(self, client):
+        await self._seed_character({
+            "face claim": "Elizabeth Olsen",
+            "species": "mutant",
+            "codename": "Scarlet Witch",
+            "alias": "Kim",
+            "affiliation": "Avengers",
+            "connections": "Pietro (twin)",
+        })
+        response = await client.get("/api/claims")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        claim = data[0]
+        assert claim["id"] == "42"
+        assert claim["name"] == "Wanda Maximoff"
+        assert claim["group_name"] == "Purple"
+        assert claim["group_id"] == "11"
+        assert claim["avatar_url"] == "https://img.com/wanda.jpg"
+        assert claim["face_claim"] == "Elizabeth Olsen"
+        assert claim["species"] == "mutant"
+        assert claim["codename"] == "Scarlet Witch"
+        assert claim["alias"] == "Kim"
+        assert claim["affiliation"] == "Avengers"
+        assert claim["connections"] == "Pietro (twin)"
+        assert claim["thread_counts"]["ongoing"] == 1
+        assert claim["thread_counts"]["complete"] == 1
+        assert claim["thread_counts"]["total"] == 2
+
+    async def test_claims_missing_fields_are_null(self, client):
+        await self._seed_character()
+        response = await client.get("/api/claims")
+        data = response.json()
+        claim = data[0]
+        assert claim["face_claim"] is None
+        assert claim["species"] is None
+        assert claim["connections"] is None
+
+
+class TestWebhookEndpoint:
+    async def test_webhook_profile_edit(self, client):
+        with patch("app.routes.character.crawl_character_profile", new_callable=AsyncMock):
+            response = await client.post("/api/webhook/activity", json={
+                "event": "profile_edit",
+                "user_id": "42",
+            })
+        assert response.status_code == 202
+        data = response.json()
+        assert data["status"] == "accepted"
+        assert data["action"] == "profile_recrawl"
+
+    async def test_webhook_new_post(self, client):
+        with patch("app.routes.character.crawl_character_threads", new_callable=AsyncMock):
+            response = await client.post("/api/webhook/activity", json={
+                "event": "new_post",
+                "thread_id": "123",
+                "user_id": "42",
+            })
+        assert response.status_code == 202
+        data = response.json()
+        assert data["action"] == "thread_recrawl"
+
+    async def test_webhook_new_topic(self, client):
+        with patch("app.routes.character.crawl_character_threads", new_callable=AsyncMock):
+            response = await client.post("/api/webhook/activity", json={
+                "event": "new_topic",
+                "thread_id": "456",
+                "forum_id": "5",
+                "user_id": "42",
+            })
+        assert response.status_code == 202
+        assert response.json()["action"] == "thread_recrawl"
+
+    async def test_webhook_no_user_id(self, client):
+        response = await client.post("/api/webhook/activity", json={
+            "event": "new_post",
+        })
+        assert response.status_code == 202
+        assert response.json()["action"] == "none"
+
+    async def test_webhook_unknown_event(self, client):
+        response = await client.post("/api/webhook/activity", json={
+            "event": "unknown_thing",
+            "user_id": "42",
+        })
+        assert response.status_code == 202
+        assert response.json()["action"] == "none"
+
+    async def test_webhook_missing_event(self, client):
+        response = await client.post("/api/webhook/activity", json={})
+        assert response.status_code == 422
+
+
+class TestBatchFieldsEndpoint:
+    async def _seed_characters(self):
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(db, "42", "Tony Stark", "https://example.com/42")
+            await upsert_profile_field(db, "42", "square_image", "https://img.com/tony.jpg")
+            await upsert_profile_field(db, "42", "short_quote", "I am Iron Man")
+            await upsert_profile_field(db, "42", "species", "human")
+            await upsert_character(db, "55", "Steve Rogers", "https://example.com/55")
+            await upsert_profile_field(db, "55", "square_image", "https://img.com/steve.jpg")
+            await upsert_profile_field(db, "55", "short_quote", "I can do this all day")
+            await db.commit()
+
+    async def test_batch_fields_all(self, client):
+        await self._seed_characters()
+        response = await client.get("/api/characters/fields?ids=42,55")
+        assert response.status_code == 200
+        data = response.json()
+        assert "42" in data
+        assert "55" in data
+        assert data["42"]["square_image"] == "https://img.com/tony.jpg"
+        assert data["55"]["short_quote"] == "I can do this all day"
+
+    async def test_batch_fields_filtered(self, client):
+        await self._seed_characters()
+        response = await client.get("/api/characters/fields?ids=42&fields=square_image,short_quote")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["42"]["square_image"] == "https://img.com/tony.jpg"
+        assert data["42"]["short_quote"] == "I am Iron Man"
+        assert "species" not in data["42"]
+
+    async def test_batch_fields_unknown_id(self, client):
+        response = await client.get("/api/characters/fields?ids=99999")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["99999"] == {}
+
+    async def test_batch_fields_missing_ids_param(self, client):
+        response = await client.get("/api/characters/fields")
         assert response.status_code == 422

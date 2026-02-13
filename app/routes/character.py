@@ -1,20 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Response
 import aiosqlite
 
 from app.database import get_db
 from app.config import settings
 from app.models import (
     CharacterSummary,
+    ClaimsSummary,
     CharacterThreads,
     CharacterProfile,
     Quote,
     CrawlStatusResponse,
     CharacterRegister,
     CrawlTrigger,
+    WebhookActivity,
     get_character,
     get_all_characters,
+    get_all_claims,
     get_character_threads,
     get_profile_fields,
+    get_characters_fields_batch,
     get_random_quote,
     get_all_quotes,
     get_quote_count,
@@ -38,6 +42,39 @@ router = APIRouter()
 async def list_characters(db: aiosqlite.Connection = Depends(get_db)):
     """List all tracked characters with thread counts."""
     return await get_all_characters(db)
+
+
+@router.get("/claims", response_model=list[ClaimsSummary])
+async def list_claims(db: aiosqlite.Connection = Depends(get_db)):
+    """Bulk endpoint for the claims page.
+
+    Returns ALL characters with claims-specific profile fields
+    (face_claim, species, codename, alias, affiliation, connections)
+    and thread counts in a single response.
+    """
+    return await get_all_claims(db)
+
+
+@router.get("/characters/fields", response_model=dict[str, dict[str, str]])
+async def get_batch_fields(
+    ids: str = Query(..., description="Comma-separated character IDs"),
+    fields: str | None = Query(None, description="Comma-separated field keys to return"),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Batch-fetch profile fields for multiple characters.
+
+    Returns {character_id: {field_key: field_value}} for each requested ID.
+    If `fields` is omitted, returns all fields for each character.
+    """
+    character_ids = [cid.strip() for cid in ids.split(",") if cid.strip()]
+    if not character_ids:
+        return {}
+    field_keys = (
+        [f.strip() for f in fields.split(",") if f.strip()]
+        if fields
+        else None
+    )
+    return await get_characters_fields_batch(db, character_ids, field_keys)
 
 
 @router.get("/character/{character_id}", response_model=CharacterProfile)
@@ -144,6 +181,33 @@ async def get_character_quote_count(
     """Get total quote count for a character."""
     count = await get_quote_count(db, character_id)
     return {"character_id": character_id, "count": count}
+
+
+# --- Webhook Endpoint ---
+
+@router.post("/webhook/activity", status_code=202)
+async def webhook_activity(
+    data: WebhookActivity,
+    background_tasks: BackgroundTasks,
+):
+    """Receive activity webhooks from the theme for targeted re-crawls.
+
+    Accepts new_post, new_topic, and profile_edit events.
+    Acknowledges immediately (202) and processes asynchronously.
+    """
+    if data.event == "profile_edit" and data.user_id:
+        background_tasks.add_task(
+            crawl_character_profile, data.user_id, settings.database_path
+        )
+        return {"status": "accepted", "action": "profile_recrawl", "user_id": data.user_id}
+
+    if data.event in ("new_post", "new_topic") and data.user_id:
+        background_tasks.add_task(
+            crawl_character_threads, data.user_id, settings.database_path
+        )
+        return {"status": "accepted", "action": "thread_recrawl", "user_id": data.user_id}
+
+    return {"status": "accepted", "action": "none"}
 
 
 # --- Admin/Crawl Endpoints ---
