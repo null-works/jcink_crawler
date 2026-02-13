@@ -8,7 +8,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import aiosqlite
 
 from app.database import get_db
-from app.config import settings
+from app.config import settings, APP_VERSION
 from app.models import (
     get_character,
     get_all_characters,
@@ -34,6 +34,7 @@ router = APIRouter()
 
 TEMPLATES_DIR = pathlib.Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates.env.globals["app_version"] = APP_VERSION
 
 COOKIE_NAME = "watcher_session"
 COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days

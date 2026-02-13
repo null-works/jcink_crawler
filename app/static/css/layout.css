@@ -220,3 +220,17 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* === Version tag === */
+.version-tag {
+    position: fixed;
+    bottom: 0;
+    right: 1rem;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    font-size: 0.7rem;
+    color: var(--comment);
+    z-index: 101;
+    pointer-events: none;
+}
