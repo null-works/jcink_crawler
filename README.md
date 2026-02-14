@@ -60,7 +60,7 @@ To customize environment variables (forum URL, bot credentials, crawl intervals)
 5. **Verify it's running**
 
    ```bash
-   curl http://imagehut.ch:8943/health
+   curl https://imagehut.ch:8943/health
    # {"status": "ok"}
    ```
 
@@ -150,11 +150,11 @@ pytest tests/test_operations.py::TestAddQuote
 
 ## CLI Usage
 
-The CLI communicates with the running service over HTTP.
+The CLI communicates with the running service over HTTPS.
 
 ```bash
-# Set the service URL (defaults to http://imagehut.ch:8943)
-export CRAWLER_URL=http://imagehut.ch:8943
+# Set the service URL (defaults to https://imagehut.ch:8943)
+export CRAWLER_URL=https://imagehut.ch:8943
 
 # Service status
 python cli.py status

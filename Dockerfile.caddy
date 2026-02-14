@@ -1,5 +1,0 @@
-FROM caddy:2-alpine
-
-# Override the base image's EXPOSE 80 to prevent Docker
-# from auto-publishing port 80 on hosts with --publish-all
-EXPOSE 8943
