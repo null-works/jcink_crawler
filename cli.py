@@ -28,7 +28,7 @@ from rich import box
 
 console = Console()
 
-DEFAULT_BASE = "http://imagehut.ch:8943"
+DEFAULT_BASE = "https://imagehut.ch:8943"
 
 
 class CrawlerClient:

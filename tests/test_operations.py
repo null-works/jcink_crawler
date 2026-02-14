@@ -583,6 +583,35 @@ class TestGetAllClaims:
         finally:
             await db.close()
 
+    async def test_alias_falls_back_to_player(self):
+        """When 'alias' field is absent, claims should use 'player' field."""
+        db = await _get_db()
+        try:
+            await upsert_character(db, "42", "Tony Stark", "https://example.com/42")
+            await upsert_profile_field(db, "42", "player", "MDK")
+            await db.commit()
+
+            claims = await get_all_claims(db)
+            assert len(claims) == 1
+            assert claims[0].alias == "MDK"
+        finally:
+            await db.close()
+
+    async def test_alias_preferred_over_player(self):
+        """When both 'alias' and 'player' exist, 'alias' takes priority."""
+        db = await _get_db()
+        try:
+            await upsert_character(db, "42", "Tony Stark", "https://example.com/42")
+            await upsert_profile_field(db, "42", "alias", "Shellhead")
+            await upsert_profile_field(db, "42", "player", "MDK")
+            await db.commit()
+
+            claims = await get_all_claims(db)
+            assert len(claims) == 1
+            assert claims[0].alias == "Shellhead"
+        finally:
+            await db.close()
+
 
 # --- Batch Field Operations ---
 

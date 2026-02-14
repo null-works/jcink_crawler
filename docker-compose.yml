@@ -1,10 +1,22 @@
 services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: jcink-caddy
+    restart: unless-stopped
+    ports:
+      - "8943:8943"
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - jcink-crawler
+
   jcink-crawler:
     build: .
     container_name: jcink-crawler
     restart: unless-stopped
-    ports:
-      - "8943:8000"
     volumes:
       - /opt/jcink-crawler/data:/app/data
       - ./app:/app/app
@@ -13,3 +25,7 @@ services:
     env_file:
       - .env
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -373,6 +373,7 @@ _CLAIMS_FIELD_KEYS = (
     "species",
     "codename",
     "alias",
+    "player",
     "affiliation",
     "connections",
 )
@@ -462,7 +463,7 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
             face_claim=fields.get("face claim"),
             species=fields.get("species"),
             codename=fields.get("codename"),
-            alias=fields.get("alias"),
+            alias=fields.get("alias") or fields.get("player"),
             affiliation=fields.get("affiliation"),
             connections=fields.get("connections"),
             thread_counts=thread_counts,

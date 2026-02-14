@@ -42,5 +42,5 @@ echo "        Done."
 
 echo
 echo "  Deploy complete!"
-echo "  Dashboard: http://localhost:8943/dashboard"
+echo "  Dashboard: https://imagehut.ch:8943/dashboard"
 echo
