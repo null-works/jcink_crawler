@@ -7,7 +7,7 @@ imagehut.ch:8943 {
 
 	tls {
 		issuer acme {
-			preferred_challenges tls-alpn
+			disable_http_challenge
 		}
 	}
 }
