@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - The Watcher{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <p class="subtitle">Forum activity overview</p>
+</div>
+
+{# Stats cards #}
+<section class="stats-grid" id="stats-grid"
+         hx-get="/htmx/stats" hx-trigger="every 30s" hx-swap="innerHTML">
+    {% include "partials/stats_values.html" %}
+</section>
+
+{# Charts #}
+<div id="overview-charts" hx-get="/htmx/overview-charts" hx-trigger="every 60s" hx-swap="innerHTML">
+    {% include "partials/overview_charts.html" %}
+</div>
+{% endblock %}

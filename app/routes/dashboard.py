@@ -24,6 +24,7 @@ from app.models import (
     search_players,
     get_player_detail,
     get_dashboard_stats,
+    get_dashboard_chart_data,
 )
 from app.services import crawl_character_threads, crawl_character_profile, register_character
 from app.services.crawler import discover_characters
@@ -144,7 +145,27 @@ async def root():
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(
+async def dashboard_overview(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    stats = await get_dashboard_stats(db)
+    chart_data = await get_dashboard_chart_data(db)
+    activity = get_activity()
+
+    return templates.TemplateResponse(request, "pages/overview.html", {
+        "stats": stats,
+        "chart_data": chart_data,
+        "activity": activity,
+    })
+
+
+@router.get("/characters", response_class=HTMLResponse)
+async def characters_page(
     request: Request,
     q: str | None = None,
     affiliation: str | None = None,
@@ -167,7 +188,7 @@ async def dashboard_page(
     all_players = await get_unique_players(db)
     activity = get_activity()
 
-    return templates.TemplateResponse(request, "pages/dashboard.html", {
+    return templates.TemplateResponse(request, "pages/characters.html", {
         "stats": stats,
         "characters": characters,
         "total": total,
@@ -480,6 +501,21 @@ async def htmx_stats(
     stats = await get_dashboard_stats(db)
     return templates.TemplateResponse(request, "partials/stats_values.html", {
         "stats": stats,
+    })
+
+
+@router.get("/htmx/overview-charts", response_class=HTMLResponse)
+async def htmx_overview_charts(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    chart_data = await get_dashboard_chart_data(db)
+    return templates.TemplateResponse(request, "partials/overview_charts.html", {
+        "chart_data": chart_data,
     })
 
 

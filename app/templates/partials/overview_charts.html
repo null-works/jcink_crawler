@@ -1,0 +1,232 @@
+{# Row 1: Thread distribution + Reply status #}
+<div class="chart-row">
+    <div class="chart-card">
+        <h3 class="chart-title">Threads by Category</h3>
+        <div class="chart-container chart-container-sm">
+            <canvas id="chart-threads-category"></canvas>
+        </div>
+    </div>
+    <div class="chart-card">
+        <h3 class="chart-title">Ongoing Thread Status</h3>
+        <div class="chart-container chart-container-sm">
+            <canvas id="chart-reply-status"></canvas>
+        </div>
+    </div>
+    <div class="chart-card">
+        <h3 class="chart-title">Characters by Affiliation</h3>
+        <div class="chart-container chart-container-sm">
+            <canvas id="chart-affiliation"></canvas>
+        </div>
+    </div>
+</div>
+
+{# Row 2: Top characters + Top players #}
+<div class="chart-row">
+    <div class="chart-card chart-card-wide">
+        <h3 class="chart-title">Most Active Characters</h3>
+        <div class="chart-container">
+            <canvas id="chart-top-characters"></canvas>
+        </div>
+    </div>
+    <div class="chart-card chart-card-wide">
+        <h3 class="chart-title">Threads by Player</h3>
+        <div class="chart-container">
+            <canvas id="chart-threads-player"></canvas>
+        </div>
+    </div>
+</div>
+
+{# Row 3: Top quoters + Recent activity #}
+<div class="chart-row">
+    <div class="chart-card chart-card-wide">
+        <h3 class="chart-title">Most Quoted Characters</h3>
+        <div class="chart-container">
+            <canvas id="chart-top-quoters"></canvas>
+        </div>
+    </div>
+    <div class="chart-card chart-card-wide">
+        <h3 class="chart-title">Recent Crawl Activity</h3>
+        <div class="recent-activity">
+            {% for item in chart_data.recent_crawls %}
+            <a href="/character/{{ item.id }}" class="activity-item">
+                {% if item.avatar_url %}
+                <img src="{{ item.avatar_url }}" class="avatar-sm" alt="">
+                {% else %}
+                <span class="avatar-placeholder">?</span>
+                {% endif %}
+                <div class="activity-detail">
+                    <span class="activity-name">{{ item.name }}</span>
+                    {% if item.affiliation %}
+                    <span class="activity-aff">{{ item.affiliation }}</span>
+                    {% endif %}
+                </div>
+                <span class="activity-time">{{ item.last_thread_crawl|format_time }}</span>
+            </a>
+            {% else %}
+            <div class="empty-state">No crawl activity yet</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const dracula = {
+        green: '#50fa7b', cyan: '#8be9fd', pink: '#ff79c6', yellow: '#f1fa8c',
+        purple: '#bd93f9', orange: '#ffb86c', red: '#ff5555', comment: '#6272a4',
+        fg: '#f8f8f2', current: '#44475a', bg: '#282a36'
+    };
+    const palette = [dracula.purple, dracula.pink, dracula.cyan, dracula.green, dracula.orange, dracula.yellow, dracula.red];
+
+    Chart.defaults.color = dracula.comment;
+    Chart.defaults.borderColor = dracula.current;
+    Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+
+    // Threads by Category — doughnut
+    const catData = {{ chart_data.threads_by_category | tojson }};
+    const catLabels = ['Ongoing', 'Comms', 'Complete', 'Incomplete'];
+    const catKeys = ['ongoing', 'comms', 'complete', 'incomplete'];
+    const catColors = [dracula.green, dracula.cyan, dracula.pink, dracula.yellow];
+    new Chart(document.getElementById('chart-threads-category'), {
+        type: 'doughnut',
+        data: {
+            labels: catLabels,
+            datasets: [{
+                data: catKeys.map(k => catData[k] || 0),
+                backgroundColor: catColors,
+                borderColor: dracula.bg,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            cutout: '60%',
+            plugins: {
+                legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10 } }
+            }
+        }
+    });
+
+    // Reply Status — doughnut
+    const replyData = {{ chart_data.reply_status | tojson }};
+    new Chart(document.getElementById('chart-reply-status'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Awaiting Reply', 'Replied'],
+            datasets: [{
+                data: [replyData.awaiting || 0, replyData.replied || 0],
+                backgroundColor: [dracula.yellow, dracula.green],
+                borderColor: dracula.bg,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            cutout: '60%',
+            plugins: {
+                legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10 } }
+            }
+        }
+    });
+
+    // Characters by Affiliation — doughnut
+    const affData = {{ chart_data.chars_by_affiliation | tojson }};
+    new Chart(document.getElementById('chart-affiliation'), {
+        type: 'doughnut',
+        data: {
+            labels: affData.map(d => d.label),
+            datasets: [{
+                data: affData.map(d => d.count),
+                backgroundColor: palette.concat(palette).slice(0, affData.length),
+                borderColor: dracula.bg,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            cutout: '60%',
+            plugins: {
+                legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10 } }
+            }
+        }
+    });
+
+    // Top Characters — horizontal bar
+    const topChars = {{ chart_data.top_characters | tojson }};
+    new Chart(document.getElementById('chart-top-characters'), {
+        type: 'bar',
+        data: {
+            labels: topChars.map(d => d.label),
+            datasets: [{
+                label: 'Threads',
+                data: topChars.map(d => d.count),
+                backgroundColor: dracula.purple + '99',
+                borderColor: dracula.purple,
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { color: dracula.current }, ticks: { precision: 0 } },
+                y: { grid: { display: false } }
+            }
+        }
+    });
+
+    // Threads by Player — horizontal bar
+    const playerData = {{ chart_data.threads_by_player | tojson }};
+    new Chart(document.getElementById('chart-threads-player'), {
+        type: 'bar',
+        data: {
+            labels: playerData.map(d => d.label),
+            datasets: [{
+                label: 'Threads',
+                data: playerData.map(d => d.count),
+                backgroundColor: dracula.cyan + '99',
+                borderColor: dracula.cyan,
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { color: dracula.current }, ticks: { precision: 0 } },
+                y: { grid: { display: false } }
+            }
+        }
+    });
+
+    // Top Quoters — horizontal bar
+    const quoterData = {{ chart_data.top_quoters | tojson }};
+    new Chart(document.getElementById('chart-top-quoters'), {
+        type: 'bar',
+        data: {
+            labels: quoterData.map(d => d.label),
+            datasets: [{
+                label: 'Quotes',
+                data: quoterData.map(d => d.count),
+                backgroundColor: dracula.pink + '99',
+                borderColor: dracula.pink,
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { color: dracula.current }, ticks: { precision: 0 } },
+                y: { grid: { display: false } }
+            }
+        }
+    });
+})();
+</script>

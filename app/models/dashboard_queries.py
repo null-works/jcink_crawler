@@ -468,3 +468,118 @@ async def get_dashboard_stats(db: aiosqlite.Connection) -> dict:
         "total_players": total_players,
         "last_crawl": last_crawl,
     }
+
+
+async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
+    """Get data for dashboard overview charts."""
+    excluded = settings.excluded_name_set
+
+    # Thread counts by category
+    cursor = await db.execute(
+        "SELECT category, COUNT(*) as cnt FROM character_threads GROUP BY category"
+    )
+    rows = await cursor.fetchall()
+    threads_by_category = {r["category"]: r["cnt"] for r in rows}
+
+    # Awaiting vs replied (ongoing threads only)
+    cursor = await db.execute(
+        "SELECT is_user_last_poster, COUNT(*) as cnt FROM character_threads WHERE category = 'ongoing' GROUP BY is_user_last_poster"
+    )
+    rows = await cursor.fetchall()
+    reply_status = {}
+    for r in rows:
+        key = "replied" if r["is_user_last_poster"] else "awaiting"
+        reply_status[key] = r["cnt"]
+
+    # Characters per affiliation
+    cursor = await db.execute(
+        """SELECT pf.field_value AS affiliation, COUNT(DISTINCT c.id) AS cnt
+           FROM characters c
+           JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
+           WHERE pf.field_value IS NOT NULL AND pf.field_value != ''
+           GROUP BY pf.field_value
+           ORDER BY cnt DESC""",
+        (settings.affiliation_field_key,),
+    )
+    rows = await cursor.fetchall()
+    chars_by_affiliation = [
+        {"label": r["affiliation"], "count": r["cnt"]}
+        for r in rows
+        if r["affiliation"]
+    ]
+
+    # Top 10 characters by thread count
+    cursor = await db.execute(
+        """SELECT c.name, COUNT(ct.thread_id) AS cnt
+           FROM characters c
+           JOIN character_threads ct ON ct.character_id = c.id
+           GROUP BY c.id
+           ORDER BY cnt DESC
+           LIMIT 10"""
+    )
+    rows = await cursor.fetchall()
+    top_characters = [
+        {"label": r["name"], "count": r["cnt"]}
+        for r in rows
+        if r["name"].lower() not in excluded
+    ]
+
+    # Top 10 characters by quote count
+    cursor = await db.execute(
+        """SELECT c.name, COUNT(q.id) AS cnt
+           FROM characters c
+           JOIN quotes q ON q.character_id = c.id
+           GROUP BY c.id
+           ORDER BY cnt DESC
+           LIMIT 10"""
+    )
+    rows = await cursor.fetchall()
+    top_quoters = [
+        {"label": r["name"], "count": r["cnt"]}
+        for r in rows
+        if r["name"].lower() not in excluded
+    ]
+
+    # Threads per player
+    cursor = await db.execute(
+        """SELECT pf.field_value AS player, COUNT(DISTINCT ct.thread_id) AS cnt
+           FROM profile_fields pf
+           JOIN character_threads ct ON ct.character_id = pf.character_id
+           WHERE pf.field_key = ? AND pf.field_value IS NOT NULL AND pf.field_value != ''
+           GROUP BY pf.field_value
+           ORDER BY cnt DESC
+           LIMIT 10""",
+        (settings.player_field_key,),
+    )
+    rows = await cursor.fetchall()
+    threads_by_player = [
+        {"label": r["player"], "count": r["cnt"]}
+        for r in rows
+    ]
+
+    # Recent activity — most recently crawled characters
+    cursor = await db.execute(
+        """SELECT c.id, c.name, c.avatar_url, c.last_thread_crawl, c.last_profile_crawl,
+                  pf.field_value AS affiliation
+           FROM characters c
+           LEFT JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
+           WHERE c.last_thread_crawl IS NOT NULL
+           ORDER BY c.last_thread_crawl DESC
+           LIMIT 10""",
+        (settings.affiliation_field_key,),
+    )
+    rows = await cursor.fetchall()
+    recent_crawls = [
+        dict(r) for r in rows
+        if r["name"].lower() not in excluded
+    ]
+
+    return {
+        "threads_by_category": threads_by_category,
+        "reply_status": reply_status,
+        "chars_by_affiliation": chars_by_affiliation,
+        "top_characters": top_characters,
+        "top_quoters": top_quoters,
+        "threads_by_player": threads_by_player,
+        "recent_crawls": recent_crawls,
+    }

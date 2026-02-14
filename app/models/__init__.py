@@ -44,4 +44,5 @@ from app.models.dashboard_queries import (
     search_players,
     get_player_detail,
     get_dashboard_stats,
+    get_dashboard_chart_data,
 )

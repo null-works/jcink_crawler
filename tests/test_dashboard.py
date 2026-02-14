@@ -71,8 +71,13 @@ class TestDashboardNoAuth:
         assert "Threads" in response.text
         assert "Quotes" in response.text
 
-    async def test_dashboard_contains_character_table(self, client):
+    async def test_dashboard_contains_charts(self, client):
         response = await client.get("/dashboard")
+        assert "chart-card" in response.text
+
+    async def test_characters_page_contains_table(self, client):
+        response = await client.get("/characters")
+        assert response.status_code == 200
         assert "data-table" in response.text
 
     async def test_threads_page(self, client):
