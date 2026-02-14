@@ -3,7 +3,7 @@ import base64
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.5.0"
 
 
 class Settings(BaseSettings):
