@@ -4,7 +4,7 @@ from app.config import settings
 ALLOWED_CHAR_SORTS = {"name", "id", "affiliation", "player", "total_threads", "last_thread_crawl"}
 ALLOWED_THREAD_SORTS = {"title", "category", "last_poster_name", "forum_name", "char_name", "is_user_last_poster"}
 ALLOWED_QUOTE_SORTS = {"created_at", "quote_text"}
-ALLOWED_PLAYER_SORTS = {"player", "character_count", "total_threads", "awaiting_threads", "last_active"}
+ALLOWED_PLAYER_SORTS = {"player", "character_count", "total_threads", "awaiting_threads", "ongoing_threads", "last_active"}
 
 
 async def search_characters(
@@ -294,6 +294,7 @@ async def search_players(
         "character_count": f"character_count {direction}",
         "total_threads": f"total_threads {direction}",
         "awaiting_threads": f"awaiting_threads {direction}",
+        "ongoing_threads": f"ongoing_threads {direction}",
         "last_active": f"last_active {direction}",
     }
     order = sort_map.get(sort_by, f"player_name {direction}")
@@ -310,13 +311,17 @@ async def search_players(
              JOIN profile_fields pf3 ON pf3.character_id = ct3.character_id AND pf3.field_key = ?
              WHERE pf3.field_value = pf_player.field_value
                AND ct3.category = 'ongoing' AND ct3.is_user_last_poster = 0) AS awaiting_threads,
+            (SELECT COUNT(*) FROM character_threads ct4
+             JOIN profile_fields pf4 ON pf4.character_id = ct4.character_id AND pf4.field_key = ?
+             WHERE pf4.field_value = pf_player.field_value
+               AND ct4.category = 'ongoing') AS ongoing_threads,
             MAX(c.last_thread_crawl) AS last_active
         {base}
         GROUP BY pf_player.field_value
         ORDER BY {order}
         LIMIT ? OFFSET ?
     """
-    all_params = [settings.player_field_key, settings.player_field_key] + params + [per_page, offset]
+    all_params = [settings.player_field_key, settings.player_field_key, settings.player_field_key] + params + [per_page, offset]
     cursor = await db.execute(select_sql, all_params)
     rows = await cursor.fetchall()
 

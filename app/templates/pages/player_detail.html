@@ -3,11 +3,16 @@
 {% block content %}
 
 {# Player header card #}
+{% set ns = namespace(total_ongoing=0) %}
+{% for c in player.characters %}{% set ns.total_ongoing = ns.total_ongoing + c.thread_counts.get('ongoing', 0) %}{% endfor %}
+{% set total_ongoing = ns.total_ongoing %}
+{% set al = total_ongoing|activity_level %}
 <div class="card">
     <div class="char-header">
         <div class="char-info">
             <h1>{{ player.player_name }}</h1>
             <div class="group-name">Player</div>
+            <span class="activity-badge {{ al.css }}">{{ al.label }}</span>
 
             <div class="char-counts">
                 <div class="count-item">
@@ -19,6 +24,10 @@
                     <div class="label">Threads</div>
                 </div>
                 <div class="count-item">
+                    <div class="num text-cyan">{{ total_ongoing }}</div>
+                    <div class="label">Ongoing</div>
+                </div>
+                <div class="count-item">
                     <div class="num text-yellow">{{ player.total_awaiting }}</div>
                     <div class="label">Awaiting</div>
                 </div>
@@ -26,6 +35,10 @@
                     <div class="num text-pink">{{ player.total_quotes }}</div>
                     <div class="label">Quotes</div>
                 </div>
+            </div>
+
+            <div class="activity-bar-track" style="width: 200px;" title="{{ total_ongoing }} ongoing threads">
+                <div class="activity-bar-fill {{ al.color }}" style="width: {{ [total_ongoing * 10, 100]|min }}%"></div>
             </div>
         </div>
     </div>
@@ -41,6 +54,7 @@
                 <th style="width: 48px;"></th>
                 <th>Name</th>
                 <th>Affiliation</th>
+                <th>Activity</th>
                 <th>Ongoing</th>
                 <th>Comms</th>
                 <th class="hide-mobile">Complete</th>
@@ -50,6 +64,8 @@
         </thead>
         <tbody>
             {% for char in player.characters %}
+            {% set char_ongoing = char.thread_counts.get('ongoing', 0) %}
+            {% set char_al = char_ongoing|activity_level %}
             <tr class="clickable-row" onclick="window.location='/character/{{ char.id }}'">
                 <td>
                     {% if char.avatar_url %}
@@ -60,7 +76,13 @@
                 </td>
                 <td class="bold">{{ char.name }}</td>
                 <td class="text-cyan">{{ char.affiliation or '—' }}</td>
-                <td><span class="count-badge green">{{ char.thread_counts.get('ongoing', 0) }}</span></td>
+                <td>
+                    <span class="activity-badge {{ char_al.css }}">{{ char_al.label }}</span>
+                    <div class="activity-bar-track" title="{{ char_ongoing }} ongoing">
+                        <div class="activity-bar-fill {{ char_al.color }}" style="width: {{ [char_ongoing * 20, 100]|min }}%"></div>
+                    </div>
+                </td>
+                <td><span class="count-badge green">{{ char_ongoing }}</span></td>
                 <td><span class="count-badge cyan">{{ char.thread_counts.get('comms', 0) }}</span></td>
                 <td class="hide-mobile"><span class="count-badge pink">{{ char.thread_counts.get('complete', 0) }}</span></td>
                 <td>

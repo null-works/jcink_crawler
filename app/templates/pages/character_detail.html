@@ -18,6 +18,8 @@
             {% if character.affiliation %}
             <span class="count-badge cyan">{{ character.affiliation }}</span>
             {% endif %}
+            {% set char_al = threads.counts.ongoing|activity_level %}
+            <span class="activity-badge {{ char_al.css }}">{{ char_al.label }}</span>
 
             <div class="char-counts">
                 <div class="count-item">
@@ -49,6 +51,9 @@
                 <div class="bar-seg cyan" style="width: {{ (threads.counts.comms / total_t * 100)|round }}%" title="Comms: {{ threads.counts.comms }}"></div>
                 <div class="bar-seg pink" style="width: {{ (threads.counts.complete / total_t * 100)|round }}%" title="Complete: {{ threads.counts.complete }}"></div>
                 <div class="bar-seg yellow" style="width: {{ (threads.counts.incomplete / total_t * 100)|round }}%" title="Incomplete: {{ threads.counts.incomplete }}"></div>
+            </div>
+            <div class="activity-bar-track" style="width: 200px;" title="{{ threads.counts.ongoing }} ongoing threads">
+                <div class="activity-bar-fill {{ char_al.color }}" style="width: {{ [threads.counts.ongoing * 20, 100]|min }}%"></div>
             </div>
         </div>
 

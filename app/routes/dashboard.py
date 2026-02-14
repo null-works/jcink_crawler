@@ -73,6 +73,25 @@ def format_time(ts) -> str:
 templates.env.filters["format_time"] = format_time
 
 
+def activity_level(ongoing_count) -> dict:
+    """Derive activity level from ongoing thread count."""
+    try:
+        n = int(ongoing_count)
+    except (TypeError, ValueError):
+        n = 0
+    if n >= 5:
+        return {"label": "Very Active", "css": "badge-very-active", "color": "purple"}
+    elif n >= 3:
+        return {"label": "Active", "css": "badge-active", "color": "green"}
+    elif n >= 1:
+        return {"label": "Low Activity", "css": "badge-low-activity", "color": "yellow"}
+    else:
+        return {"label": "Inactive", "css": "badge-inactive", "color": "red"}
+
+
+templates.env.filters["activity_level"] = activity_level
+
+
 # --- Auth helpers ---
 
 def _get_serializer() -> URLSafeTimedSerializer:
