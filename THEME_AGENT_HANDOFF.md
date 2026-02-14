@@ -6,6 +6,39 @@ All endpoints are under `/api/`. No authentication required.
 
 ---
 
+## ACTION NEEDED: Fix Mixed Content Errors
+
+**Problem:** The crawler API now runs behind Nginx with TLS (`https://imagehut.ch:8943`).
+The JCink theme's JavaScript is still calling `http://imagehut.ch:8943` (plain HTTP).
+Browsers block these requests as **mixed content** because the forum itself is served
+over HTTPS.
+
+**Symptom:** Browser console shows:
+```
+Mixed Content: The page at 'https://therewasanidea.jcink.net/...' was loaded over HTTPS,
+but requested an insecure resource 'http://imagehut.ch:8943/api/claims'.
+This request has been blocked; the content must be served over HTTPS.
+```
+
+**Fix:** Find every API URL in the JCink theme code and change `http://` to `https://`:
+
+```diff
+- fetch("http://imagehut.ch:8943/api/claims")
++ fetch("https://imagehut.ch:8943/api/claims")
+```
+
+**Where to look:** All `fetch()` calls, `XMLHttpRequest` URLs, and any JS constants/variables
+that reference `imagehut.ch:8943`. These are likely in:
+- Board wrappers (global header/footer)
+- Custom JS includes
+- Individual skin templates that render claims, roster, hover cards, or thread trackers
+
+**Scope:** This is a find-and-replace across theme JS — every instance of
+`http://imagehut.ch:8943` → `https://imagehut.ch:8943`. No API changes, no endpoint
+changes, no payload changes. The API itself is unchanged; only the protocol in the URL.
+
+---
+
 ## Endpoints
 
 ### 1. GET `/api/claims` — Bulk claims data
