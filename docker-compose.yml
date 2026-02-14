@@ -5,7 +5,6 @@ services:
     restart: unless-stopped
     ports:
       - "8943:8943"
-      - "80:80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

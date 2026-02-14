@@ -1,3 +1,9 @@
 imagehut.ch:8943 {
 	reverse_proxy jcink-crawler:8000
+
+	tls {
+		issuer acme {
+			preferred_challenges tls-alpn
+		}
+	}
 }
