@@ -1,3 +1,7 @@
+{
+	auto_https disable_redirects
+}
+
 imagehut.ch:8943 {
 	reverse_proxy jcink-crawler:8000
 
