@@ -1,9 +1,11 @@
 import base64
+from datetime import datetime, timezone
 
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 APP_VERSION = "2.5.0"
+APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
 class Settings(BaseSettings):
