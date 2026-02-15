@@ -622,8 +622,7 @@ select.form-input {
 }
 
 .char-info {
-    flex: 1;
-    min-width: 0;
+    flex-shrink: 0;
 }
 
 .char-info h1 {
