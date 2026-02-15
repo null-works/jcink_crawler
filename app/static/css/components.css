@@ -433,18 +433,15 @@ select.form-input {
 
 /* === Power Grid === */
 .powergrid-inline {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;
-}
-
-.powergrid-inline .powergrid {
-    max-width: 300px;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 300px;
 }
 
 .char-actions {
+    margin-left: auto;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -619,6 +616,7 @@ select.form-input {
     display: flex;
     align-items: flex-start;
     gap: 1.5rem;
+    position: relative;
 }
 
 .char-info {
@@ -1005,7 +1003,7 @@ select.form-input {
     .char-header { flex-direction: column; align-items: center; text-align: center; }
     .char-counts { justify-content: center; }
     .chart-row { grid-template-columns: 1fr; }
-    .powergrid-inline { margin-left: 0; width: 100%; max-width: 280px; }
+    .powergrid-inline { position: static; transform: none; width: 100%; max-width: 280px; }
     .char-actions { flex-direction: row; flex-wrap: wrap; justify-content: center; }
 }
 
