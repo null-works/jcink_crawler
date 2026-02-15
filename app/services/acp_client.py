@@ -199,10 +199,12 @@ def extract_post_records(raw: dict[str, list[list]]) -> list[dict]:
 class ACPClient:
     """Client for JCink's Admin Control Panel MySQL dump feature."""
 
-    def __init__(self):
+    def __init__(self, username: str | None = None, password: str | None = None):
         self._client: httpx.AsyncClient | None = None
         self._token: str | None = None
         self._forum_name: str | None = None
+        self._username = username or settings.admin_username
+        self._password = password or settings.admin_password
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -221,7 +223,7 @@ class ACPClient:
         JCink ACP login: GET /admin.php?login=yes&username=X&password=Y
         On success, redirects to a URL containing adsess=TOKEN.
         """
-        if not settings.admin_username or not settings.admin_password:
+        if not self._username or not self._password:
             print("[ACP] No admin credentials configured")
             return False
 
@@ -238,8 +240,8 @@ class ACPClient:
         login_url = (
             f"{settings.forum_base_url}/admin.php"
             f"?login=yes"
-            f"&username={url_quote(settings.admin_username)}"
-            f"&password={url_quote(settings.admin_password)}"
+            f"&username={url_quote(self._username)}"
+            f"&password={url_quote(self._password)}"
         )
 
         try:

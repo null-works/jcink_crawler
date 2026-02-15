@@ -627,29 +627,44 @@ async def register_character(user_id: str, db_path: str) -> dict:
     }
 
 
-async def sync_posts_from_acp(db_path: str) -> dict:
+async def sync_posts_from_acp(db_path: str, username: str | None = None, password: str | None = None) -> dict:
     """Sync post records using JCink Admin CP SQL dump.
 
     Logs into the ACP, dumps the posts table, and updates our
     local posts table with accurate dates from the database.
-    This supplements the HTML-based post extraction with data
-    that has precise Unix timestamps.
+
+    Credentials are resolved in order:
+    1. Explicit username/password params
+    2. Database crawl_status entries (acp_username / acp_password)
+    3. Environment variables (ADMIN_USERNAME / ADMIN_PASSWORD)
 
     Args:
         db_path: Path to SQLite database
+        username: Optional ACP username override
+        password: Optional ACP password override
 
     Returns:
         Summary dict with counts
     """
     from app.services.acp_client import ACPClient
+    from app.models.operations import get_crawl_status
 
-    if not settings.admin_username or not settings.admin_password:
-        return {"error": "No admin credentials configured"}
+    # Resolve credentials: params > DB > env
+    if not username or not password:
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            db_user = await get_crawl_status(db, "acp_username")
+            db_pass = await get_crawl_status(db, "acp_password")
+        username = username or db_user or settings.admin_username
+        password = password or db_pass or settings.admin_password
+
+    if not username or not password:
+        return {"error": "No admin credentials configured — set them in Admin > ACP Settings"}
 
     print("[Crawler] Starting ACP post sync")
     set_activity("Syncing posts from ACP")
 
-    client = ACPClient()
+    client = ACPClient(username=username, password=password)
     try:
         posts = await client.fetch_posts()
         if not posts:
@@ -715,6 +730,12 @@ async def sync_posts_from_acp(db_path: str) -> dict:
                     counts_updated += 1
 
             await db.commit()
+
+        # Record last sync time
+        from app.models.operations import set_crawl_status
+        async with aiosqlite.connect(db_path) as db:
+            from datetime import datetime, timezone
+            await set_crawl_status(db, "acp_last_sync", datetime.now(timezone.utc).isoformat())
 
         clear_activity()
         summary = {

@@ -554,13 +554,28 @@ _DATE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# JCink uses relative dates for recent posts
+_TODAY_RE = re.compile(r'\bToday\b', re.IGNORECASE)
+_YESTERDAY_RE = re.compile(r'\bYesterday\b', re.IGNORECASE)
+
 
 def _parse_jcink_date(text: str) -> str | None:
     """Try to parse a JCink date string into ISO format (YYYY-MM-DD).
 
-    Handles formats like "Jan 15 2026, 08:30 PM".
+    Handles:
+    - Absolute: "Jan 15 2026, 08:30 PM"
+    - Relative: "Today, 08:30 PM" / "Yesterday, 05:12 AM"
+
     Returns date string or None if unparseable.
     """
+    from datetime import datetime, timedelta, timezone
+
+    # Check for "Today" / "Yesterday" first (JCink replaces dates for recent posts)
+    if _TODAY_RE.search(text):
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if _YESTERDAY_RE.search(text):
+        return (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
     match = _DATE_RE.search(text)
     if not match:
         return None
@@ -576,7 +591,7 @@ def extract_post_records(html: str) -> list[dict]:
 
     Parses each .pr-a post container for:
     - author user ID (from .pr-j author link)
-    - post date (best-effort from post header text)
+    - post date (from .pr-d date container, or fallback to header text)
 
     Returns list of dicts: {'character_id': str, 'post_date': str | None}
     """
@@ -595,13 +610,19 @@ def extract_post_records(html: str) -> list[dict]:
             continue
         character_id = match.group(1)
 
-        # Extract post date — search post header text (everything outside .postcolor)
+        # Extract post date — try .pr-d first (TWAI theme date container),
+        # then fall back to searching all header text
         post_date = None
-        post_copy = copy(post)
-        for body in post_copy.select(".postcolor"):
-            body.decompose()
-        header_text = post_copy.get_text(" ", strip=True)
-        post_date = _parse_jcink_date(header_text)
+        date_el = post.select_one(".pr-d")
+        if date_el:
+            post_date = _parse_jcink_date(date_el.get_text(" ", strip=True))
+
+        if not post_date:
+            post_copy = copy(post)
+            for body in post_copy.select(".postcolor"):
+                body.decompose()
+            header_text = post_copy.get_text(" ", strip=True)
+            post_date = _parse_jcink_date(header_text)
 
         records.append({"character_id": character_id, "post_date": post_date})
 

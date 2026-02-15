@@ -26,8 +26,9 @@ from app.models import (
     get_dashboard_stats,
     get_dashboard_chart_data,
 )
+from app.models.operations import set_crawl_status, get_crawl_status
 from app.services import crawl_character_threads, crawl_character_profile, register_character
-from app.services.crawler import discover_characters
+from app.services.crawler import discover_characters, sync_posts_from_acp
 from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
 from app.services.activity import get_activity
 
@@ -376,10 +377,18 @@ async def admin_page(
     activity = get_activity()
     characters, _ = await search_characters(db, per_page=500)
 
+    # ACP state
+    acp_username = await get_crawl_status(db, "acp_username") or settings.admin_username
+    acp_configured = bool(acp_username)
+    acp_last_sync = await get_crawl_status(db, "acp_last_sync")
+
     return templates.TemplateResponse(request, "pages/admin.html", {
         "stats": stats,
         "activity": activity,
         "characters": characters,
+        "acp_configured": acp_configured,
+        "acp_username": acp_username or "",
+        "acp_last_sync": acp_last_sync,
     })
 
 
@@ -705,6 +714,8 @@ async def htmx_crawl(
         background_tasks.add_task(_crawl_all_threads)
     elif crawl_type == "all-profiles":
         background_tasks.add_task(_crawl_all_profiles)
+    elif crawl_type == "sync-posts":
+        background_tasks.add_task(sync_posts_from_acp, settings.database_path)
     elif character_id:
         if crawl_type == "threads":
             background_tasks.add_task(crawl_character_threads, character_id, settings.database_path)
@@ -716,3 +727,45 @@ async def htmx_crawl(
         return HTMLResponse('<span class="text-red">Character ID required for this crawl type</span>')
 
     return HTMLResponse(f'<span class="text-green">Crawl queued: {crawl_type}</span>')
+
+
+@router.post("/htmx/acp-credentials", response_class=HTMLResponse)
+async def htmx_save_acp_credentials(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    username = form.get("acp_username", "").strip()
+    password = form.get("acp_password", "").strip()
+
+    if not username or not password:
+        return HTMLResponse('<span class="text-red">Both username and password are required</span>')
+
+    await set_crawl_status(db, "acp_username", username)
+    await set_crawl_status(db, "acp_password", password)
+
+    return HTMLResponse(f'<span class="text-green">ACP credentials saved for {username}</span>')
+
+
+@router.post("/htmx/acp-sync", response_class=HTMLResponse)
+async def htmx_acp_sync(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    # Check if credentials are configured
+    acp_user = await get_crawl_status(db, "acp_username") or settings.admin_username
+    acp_pass = await get_crawl_status(db, "acp_password") or settings.admin_password
+    if not acp_user or not acp_pass:
+        return HTMLResponse('<span class="text-red">No ACP credentials configured — save them first</span>')
+
+    background_tasks.add_task(sync_posts_from_acp, settings.database_path)
+    return HTMLResponse('<span class="text-green">ACP post sync started — check activity indicator for progress</span>')

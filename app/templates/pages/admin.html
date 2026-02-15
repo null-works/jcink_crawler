@@ -76,6 +76,56 @@
     </div>
 </div>
 
+{# ACP Post Sync #}
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">ACP Post Sync</h3>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 1rem;">
+        Logs into JCink's Admin Control Panel and dumps the posts database for accurate post dates and activity tracking.
+        This gives exact post counts and timestamps from the forum's SQL database instead of scraping HTML.
+    </p>
+
+    <div class="admin-grid" style="margin-bottom: 1rem;">
+        {# Credentials #}
+        <div style="flex: 1;">
+            <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--text-secondary);">ACP Credentials</h4>
+            <form hx-post="/htmx/acp-credentials" hx-target="#acp-cred-result" hx-swap="innerHTML">
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <input type="text" name="acp_username" class="form-input"
+                           placeholder="Admin username" value="{{ acp_username }}" required>
+                    <input type="password" name="acp_password" class="form-input"
+                           placeholder="Admin password" required>
+                    <button type="submit" class="btn btn-purple">Save Credentials</button>
+                </div>
+            </form>
+            <div id="acp-cred-result" class="result"></div>
+        </div>
+
+        {# Sync trigger #}
+        <div style="flex: 1;">
+            <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--text-secondary);">Run Sync</h4>
+            {% if acp_configured %}
+            <p class="text-comment" style="font-size: 0.8rem; margin-bottom: 0.5rem;">
+                Configured as: <span class="text-green">{{ acp_username }}</span>
+                {% if acp_last_sync %}
+                <br>Last sync: {{ acp_last_sync|format_time }}
+                {% endif %}
+            </p>
+            <button class="btn btn-green"
+                    hx-post="/htmx/acp-sync"
+                    hx-target="#acp-sync-result"
+                    hx-swap="innerHTML">Sync Posts from ACP</button>
+            {% else %}
+            <p class="text-comment" style="font-size: 0.85rem;">
+                <span class="text-yellow">No credentials configured.</span>
+                Enter your JCink admin username and password, then save.
+            </p>
+            <button class="btn btn-ghost" disabled>Sync Posts from ACP</button>
+            {% endif %}
+            <div id="acp-sync-result" class="result"></div>
+        </div>
+    </div>
+</div>
+
 {# Service info #}
 <div class="card" style="margin-top: 1.5rem;">
     <h3 class="card-title" style="margin-bottom: 0.75rem;">Service Info</h3>
