@@ -29,7 +29,7 @@ from app.services import (
     crawl_character_profile,
     register_character,
 )
-from app.services.crawler import discover_characters, crawl_single_thread
+from app.services.crawler import discover_characters, crawl_single_thread, sync_posts_from_acp
 from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
 from app.services.activity import get_activity
 
@@ -244,6 +244,10 @@ async def trigger_crawl(
         background_tasks.add_task(_crawl_all_profiles)
         return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-profiles"}
 
+    if data.crawl_type == "sync-posts":
+        background_tasks.add_task(sync_posts_from_acp, settings.database_path)
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "sync-posts"}
+
     if not data.character_id:
         raise HTTPException(status_code=422, detail="character_id is required for threads/profile crawls")
 
@@ -256,7 +260,7 @@ async def trigger_crawl(
             crawl_character_profile, data.character_id, settings.database_path
         )
     else:
-        raise HTTPException(status_code=400, detail="Invalid crawl_type. Use 'threads', 'profile', or 'discover'")
+        raise HTTPException(status_code=400, detail="Invalid crawl_type. Use 'threads', 'profile', 'discover', or 'sync-posts'")
 
     return {
         "status": "crawl_queued",

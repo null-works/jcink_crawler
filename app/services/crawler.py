@@ -627,6 +627,109 @@ async def register_character(user_id: str, db_path: str) -> dict:
     }
 
 
+async def sync_posts_from_acp(db_path: str) -> dict:
+    """Sync post records using JCink Admin CP SQL dump.
+
+    Logs into the ACP, dumps the posts table, and updates our
+    local posts table with accurate dates from the database.
+    This supplements the HTML-based post extraction with data
+    that has precise Unix timestamps.
+
+    Args:
+        db_path: Path to SQLite database
+
+    Returns:
+        Summary dict with counts
+    """
+    from app.services.acp_client import ACPClient
+
+    if not settings.admin_username or not settings.admin_password:
+        return {"error": "No admin credentials configured"}
+
+    print("[Crawler] Starting ACP post sync")
+    set_activity("Syncing posts from ACP")
+
+    client = ACPClient()
+    try:
+        posts = await client.fetch_posts()
+        if not posts:
+            clear_activity()
+            return {"error": "No post data retrieved from ACP", "posts_synced": 0}
+
+        print(f"[Crawler] ACP returned {len(posts)} total posts")
+        set_activity(f"Processing {len(posts)} posts from ACP")
+
+        # Load tracked character IDs and thread IDs
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+
+            cursor = await db.execute("SELECT id FROM characters")
+            tracked_chars = {row["id"] for row in await cursor.fetchall()}
+
+            cursor = await db.execute("SELECT id FROM threads")
+            tracked_threads = {row["id"] for row in await cursor.fetchall()}
+
+        # Filter to posts by tracked characters in tracked threads
+        relevant = [
+            p for p in posts
+            if p["character_id"] in tracked_chars
+            and p.get("thread_id") in tracked_threads
+        ]
+        print(f"[Crawler] {len(relevant)} posts match tracked characters & threads")
+
+        # Group by thread for efficient DB operations
+        by_thread: dict[str, list[dict]] = {}
+        for p in relevant:
+            tid = p["thread_id"]
+            by_thread.setdefault(tid, []).append(p)
+
+        # Also count posts per (character, thread) pair for character_threads.post_count
+        post_counts: dict[tuple[str, str], int] = {}
+        for p in relevant:
+            key = (p["character_id"], p["thread_id"])
+            post_counts[key] = post_counts.get(key, 0) + 1
+
+        # Update database
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+
+            # Replace post records per thread
+            threads_updated = 0
+            for tid, thread_posts in by_thread.items():
+                await db.execute("DELETE FROM posts WHERE thread_id = ?", (tid,))
+                for p in thread_posts:
+                    await db.execute(
+                        "INSERT INTO posts (character_id, thread_id, post_date) VALUES (?, ?, ?)",
+                        (p["character_id"], tid, p.get("post_date")),
+                    )
+                threads_updated += 1
+
+            # Update character_threads.post_count
+            counts_updated = 0
+            for (cid, tid), count in post_counts.items():
+                result = await db.execute(
+                    "UPDATE character_threads SET post_count = ? WHERE character_id = ? AND thread_id = ?",
+                    (count, cid, tid),
+                )
+                if result.rowcount > 0:
+                    counts_updated += 1
+
+            await db.commit()
+
+        clear_activity()
+        summary = {
+            "total_acp_posts": len(posts),
+            "relevant_posts": len(relevant),
+            "threads_updated": threads_updated,
+            "counts_updated": counts_updated,
+        }
+        print(f"[Crawler] ACP sync complete: {summary}")
+        return summary
+
+    finally:
+        await client.close()
+
+
 async def discover_characters(db_path: str) -> dict:
     """Auto-discover characters by crawling the full forum member list.
 

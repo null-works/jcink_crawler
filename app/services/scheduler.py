@@ -4,7 +4,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 import aiosqlite
 
 from app.config import settings
-from app.services.crawler import crawl_character_threads, crawl_character_profile, discover_characters
+from app.services.crawler import crawl_character_threads, crawl_character_profile, discover_characters, sync_posts_from_acp
 from app.services.activity import set_activity, clear_activity
 
 
@@ -76,6 +76,16 @@ async def _crawl_all_profiles():
     print("[Scheduler] Scheduled profile crawl complete")
 
 
+async def _sync_posts_acp():
+    """Sync post data from JCink Admin CP SQL dump."""
+    print("[Scheduler] Starting scheduled ACP post sync")
+    try:
+        result = await sync_posts_from_acp(settings.database_path)
+        print(f"[Scheduler] ACP sync complete: {result}")
+    except Exception as e:
+        print(f"[Scheduler] Error during ACP sync: {e}")
+
+
 async def _discover_all_characters():
     """Auto-discover new characters from the forum member list."""
     print("[Scheduler] Starting scheduled character discovery")
@@ -117,12 +127,23 @@ def start_scheduler():
         replace_existing=True,
     )
 
+    # Optional ACP post sync (only if interval > 0 and credentials configured)
+    if settings.acp_sync_interval_minutes > 0 and settings.admin_username:
+        _scheduler.add_job(
+            _sync_posts_acp,
+            trigger=IntervalTrigger(minutes=settings.acp_sync_interval_minutes),
+            id="sync_posts_acp",
+            name="Sync posts from ACP SQL dump",
+            replace_existing=True,
+        )
+
     _scheduler.start()
 
     # Trigger discovery immediately on startup
     asyncio.get_running_loop().create_task(_discover_all_characters())
 
-    print(f"[Scheduler] Started - discovery every {settings.crawl_discovery_interval_minutes}min, threads every {settings.crawl_threads_interval_minutes}min, profiles every {settings.crawl_profiles_interval_minutes}min")
+    acp_msg = f", ACP sync every {settings.acp_sync_interval_minutes}min" if settings.acp_sync_interval_minutes > 0 else ""
+    print(f"[Scheduler] Started - discovery every {settings.crawl_discovery_interval_minutes}min, threads every {settings.crawl_threads_interval_minutes}min, profiles every {settings.crawl_profiles_interval_minutes}min{acp_msg}")
 
 
 def stop_scheduler():
