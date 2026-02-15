@@ -9,6 +9,8 @@ from app.services.parser import (
     parse_last_poster,
     parse_thread_pagination,
     parse_profile_page,
+    parse_application_url,
+    parse_power_grid,
     parse_avatar_from_profile,
     extract_quotes_from_html,
     extract_thread_authors,
@@ -579,6 +581,22 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
         return {"error": "Failed to fetch profile page"}
 
     profile = parse_profile_page(html, character_id)
+
+    # Power grid fallback: if .profile-stat extraction didn't find power grid
+    # data (common when JS doesn't render), try the application thread page.
+    _PG_KEYS = {"power grid - int", "power grid - str", "power grid - spd",
+                "power grid - dur", "power grid - pwr", "power grid - cmb"}
+    if not (_PG_KEYS & set(profile.fields.keys())):
+        app_url = parse_application_url(html)
+        if app_url:
+            print(f"[Crawler] No power grid from profile, trying application: {app_url}")
+            app_html = await fetch_page_with_delay(app_url)
+            if app_html:
+                pg_fields = parse_power_grid(app_html)
+                if pg_fields:
+                    print(f"[Crawler] Power grid from application: {pg_fields}")
+                    profile.fields.update(pg_fields)
+
     if profile.name:
         set_activity(
             f"Crawling profile for {profile.name}",
@@ -1225,21 +1243,9 @@ async def discover_characters(db_path: str) -> dict:
             set_activity(f"Discovered {profile.name}", character_id=uid, character_name=profile.name)
 
             try:
-                async with aiosqlite.connect(db_path) as db:
-                    db.row_factory = aiosqlite.Row
-                    await upsert_character(
-                        db,
-                        character_id=uid,
-                        name=profile.name,
-                        profile_url=profile_url,
-                        group_name=profile.group_name,
-                        avatar_url=profile.avatar_url,
-                    )
-                    for key, value in profile.fields.items():
-                        await upsert_profile_field(db, uid, key, value)
-                    await update_character_crawl_time(db, uid, "profile")
-                    await db.commit()
-
+                # Full profile crawl handles Playwright + app thread fallback
+                # for power grid data, rather than just storing the httpx parse.
+                await crawl_character_profile(uid, db_path)
                 existing_ids.add(uid)
                 await crawl_character_threads(uid, db_path)
                 new_count += 1

@@ -4,6 +4,8 @@ from app.services.parser import (
     parse_last_poster,
     extract_quotes_from_html,
     parse_avatar_from_profile,
+    parse_application_url,
+    parse_power_grid,
     categorize_thread,
     is_board_message,
     parse_search_redirect,
@@ -767,3 +769,94 @@ class TestParseProfileOOCFields:
         assert "connections" not in profile.fields
 
 
+class TestParseApplicationUrl:
+    def test_extracts_application_link(self):
+        html = """
+        <div class="pf-ad">
+          <a href="https://therewasanidea.jcink.net/index.php?showtopic=22" title="view application">
+            <div class="pf-ae"><i class="las la-id-card"></i></div>
+          </a>
+        </div>
+        """
+        assert parse_application_url(html) == "https://therewasanidea.jcink.net/index.php?showtopic=22"
+
+    def test_returns_none_for_no_information(self):
+        html = """
+        <a href="<i>No Information</i>" title="view application">link</a>
+        """
+        assert parse_application_url(html) is None
+
+    def test_returns_none_when_missing(self):
+        html = "<html><body>No links</body></html>"
+        assert parse_application_url(html) is None
+
+    def test_relative_url_gets_base(self):
+        html = """
+        <a href="/index.php?showtopic=100" title="view application">link</a>
+        """
+        result = parse_application_url(html)
+        assert result.startswith("https://")
+        assert "showtopic=100" in result
+
+
+class TestParsePowerGrid:
+    def test_extracts_stats_and_converts_to_scale(self):
+        """Percentages should be converted to 1-7 integer scale."""
+        html = """
+        <div class="sa-n">
+          <div class="sa-o">intelligence</div>
+          <div class="sa-p"><div class="sa-q" style="width: 42.86%;"></div></div>
+        </div>
+        <div class="sa-n">
+          <div class="sa-o">strength</div>
+          <div class="sa-p"><div class="sa-q" style="width: 85.71%;"></div></div>
+        </div>
+        <div class="sa-n">
+          <div class="sa-o">speed</div>
+          <div class="sa-p"><div class="sa-q" style="width: 28.57%;"></div></div>
+        </div>
+        <div class="sa-n">
+          <div class="sa-o">durability</div>
+          <div class="sa-p"><div class="sa-q" style="width: 100%;"></div></div>
+        </div>
+        <div class="sa-n">
+          <div class="sa-o">energy projection</div>
+          <div class="sa-p"><div class="sa-q" style="width: 14.28%;"></div></div>
+        </div>
+        <div class="sa-n">
+          <div class="sa-o">fighting skills</div>
+          <div class="sa-p"><div class="sa-q" style="width: 71.43%;"></div></div>
+        </div>
+        """
+        fields = parse_power_grid(html)
+        assert fields["power grid - int"] == "3"
+        assert fields["power grid - str"] == "6"
+        assert fields["power grid - spd"] == "2"
+        assert fields["power grid - dur"] == "7"
+        assert fields["power grid - pwr"] == "1"
+        assert fields["power grid - cmb"] == "5"
+
+    def test_skips_zero_percent(self):
+        html = """
+        <div class="sa-n">
+          <div class="sa-o">intelligence</div>
+          <div class="sa-p"><div class="sa-q" style="width: 0%;"></div></div>
+        </div>
+        """
+        fields = parse_power_grid(html)
+        assert "power grid - int" not in fields
+
+    def test_empty_page(self):
+        html = "<html><body>No power grid</body></html>"
+        fields = parse_power_grid(html)
+        assert fields == {}
+
+    def test_ignores_unknown_stat_names(self):
+        html = """
+        <div class="sa-n">
+          <div class="sa-o">charisma</div>
+          <div class="sa-p"><div class="sa-q" style="width: 50%;"></div></div>
+        </div>
+        """
+        fields = parse_power_grid(html)
+        assert fields == {}
