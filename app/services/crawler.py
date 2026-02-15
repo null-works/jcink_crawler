@@ -1023,57 +1023,54 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
 
 
 async def crawl_recent_threads(db_path: str) -> dict:
-    """Crawl recently active threads to capture latest post records.
+    """Crawl all threads visible in RP forum listings to capture post records.
 
-    Uses JCink's "Today's Active Topics" search to find threads with recent
-    activity. This is much more reliable than per-character searches for
-    capturing recent posts because it requires only one search request
-    (no per-character cooldown risk).
+    Browses each non-excluded forum's topic listing page and collects thread
+    URLs. Then fetches each thread (all pages) and extracts post records.
+    This doesn't use JCink search at all, so there's no flood control risk.
 
     Only updates post records (for activity tracking) — does not update
     thread metadata or character links (the per-character crawl handles that).
     """
+    import re
+    from bs4 import BeautifulSoup
+
     base_url = settings.forum_base_url
-    active_url = f"{base_url}/index.php?act=Search&CODE=getactive"
+    excluded_forums = settings.excluded_forum_ids
 
-    print("[Crawler] Fetching today's active topics")
-    set_activity("Crawling recent threads")
+    print("[Crawler] Browsing forum listings for threads")
+    set_activity("Scanning forum listings")
 
-    html = await fetch_page(active_url)
-    if not html:
+    # Step 1: Get all forum IDs from the main index page
+    index_html = await fetch_page_with_delay(f"{base_url}/index.php")
+    if not index_html:
         clear_activity()
-        return {"error": "Failed to fetch active topics"}
+        return {"error": "Failed to fetch forum index"}
 
-    redirect_url = parse_search_redirect(html)
-    if redirect_url:
-        await asyncio.sleep(settings.request_delay_seconds)
-        html = await fetch_page(redirect_url)
+    soup = BeautifulSoup(index_html, "html.parser")
+    forum_ids = set()
+    for link in soup.select('a[href*="showforum="]'):
+        m = re.search(r"showforum=(\d+)", link.get("href", ""))
+        if m and m.group(1) not in excluded_forums:
+            forum_ids.add(m.group(1))
+
+    print(f"[Crawler] Found {len(forum_ids)} non-excluded forums")
+
+    # Step 2: Browse each forum's first page to collect thread IDs
+    thread_ids = set()
+    for fid in forum_ids:
+        html = await fetch_page_with_delay(f"{base_url}/index.php?showforum={fid}")
         if not html:
-            clear_activity()
-            return {"error": "Failed to follow active topics redirect"}
+            continue
+        fsoup = BeautifulSoup(html, "html.parser")
+        for link in fsoup.select('a[href*="showtopic="]'):
+            m = re.search(r"showtopic=(\d+)", link.get("href", ""))
+            if m:
+                thread_ids.add(m.group(1))
 
-    if is_board_message(html):
-        clear_activity()
-        return {"error": "Active topics search hit cooldown"}
+    print(f"[Crawler] Found {len(thread_ids)} threads across all forums")
 
-    threads, page_urls = parse_search_results(html)
-
-    # Fetch additional search result pages
-    if page_urls:
-        page_htmls = await fetch_pages_concurrent(page_urls)
-        seen_ids = {t.thread_id for t in threads}
-        for page_html in page_htmls:
-            if not page_html or is_board_message(page_html):
-                break
-            page_threads, _ = parse_search_results(page_html)
-            for t in page_threads:
-                if t.thread_id not in seen_ids:
-                    threads.append(t)
-                    seen_ids.add(t.thread_id)
-
-    print(f"[Crawler] Active topics: {len(threads)} threads")
-
-    if not threads:
+    if not thread_ids:
         clear_activity()
         return {"threads": 0, "posts_stored": 0}
 
@@ -1083,13 +1080,15 @@ async def crawl_recent_threads(db_path: str) -> dict:
         cursor = await db.execute("SELECT id FROM characters")
         tracked_chars = {row["id"] for row in await cursor.fetchall()}
 
-    # Fetch each thread and extract post records
+    # Step 3: Fetch each thread (all pages) and extract post records
     posts_stored = 0
     threads_processed = 0
+    total = len(thread_ids)
 
-    async def _fetch_thread_posts(thread):
+    async def _fetch_thread_posts(tid: str):
         """Fetch all pages of a thread and extract post records."""
-        thread_html = await fetch_page_with_delay(thread.url)
+        url = f"{base_url}/index.php?showtopic={tid}"
+        thread_html = await fetch_page_with_delay(url)
         if not thread_html:
             return None
 
@@ -1098,16 +1097,13 @@ async def crawl_recent_threads(db_path: str) -> dict:
 
         if max_st > 0:
             remaining_urls = []
-            last_page_html = None
-            sep = "&" if "?" in thread.url else "?"
-            last_page_url = f"{thread.url}{sep}st={max_st}"
-            last_page_html = await fetch_page_with_delay(last_page_url)
+            last_page_html = await fetch_page_with_delay(f"{url}&st={max_st}")
 
             for st in range(25, max_st + 1, 25):
                 if st == max_st and last_page_html:
                     all_pages.append(last_page_html)
                 else:
-                    remaining_urls.append(f"{thread.url}{sep}st={st}")
+                    remaining_urls.append(f"{url}&st={st}")
 
             if remaining_urls:
                 intermediate_htmls = await fetch_pages_concurrent(remaining_urls)
@@ -1118,9 +1114,10 @@ async def crawl_recent_threads(db_path: str) -> dict:
         records = []
         for page_html in all_pages:
             records.extend(extract_post_records(page_html))
-        return {"thread_id": thread.thread_id, "records": records}
+        return {"thread_id": tid, "records": records}
 
-    tasks = [_fetch_thread_posts(t) for t in threads]
+    set_activity(f"Fetching {total} threads from forum listings")
+    tasks = [_fetch_thread_posts(tid) for tid in thread_ids]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     async with aiosqlite.connect(db_path) as db:
