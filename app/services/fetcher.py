@@ -173,11 +173,39 @@ async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", ti
                 # Wait for JS to render the power grid card
                 try:
                     await page.wait_for_selector(wait_selector, timeout=timeout_ms)
+                    print(f"[Fetcher] Playwright found '{wait_selector}' on {url}")
                 except Exception:
-                    # Selector didn't appear — page may not have power grid,
-                    # still return whatever rendered
-                    pass
+                    print(f"[Fetcher] Playwright: '{wait_selector}' not found on {url} after {timeout_ms}ms")
+
+                # Wait a moment for any remaining JS to finish
+                await page.wait_for_timeout(1000)
                 html = await page.content()
+
+                # Diagnostic: log what elements exist for debugging power grid
+                from bs4 import BeautifulSoup
+                diag_soup = BeautifulSoup(html, "html.parser")
+                stat_count = len(diag_soup.select("div.profile-stat"))
+                pf_k_count = len(diag_soup.select("div.pf-k"))
+                pf_ab_count = len(diag_soup.select("div.pf-ab"))
+                dossier = diag_soup.select_one("dl.profile-dossier")
+                dossier_keys = []
+                if dossier:
+                    dossier_keys = [dt.get_text(strip=True) for dt in dossier.select("dt")]
+                pf_ab_titles = [el.get("title", "") for el in diag_soup.select("div.pf-ab")]
+                print(f"[Fetcher] Rendered HTML diagnostics for {url}:")
+                print(f"  div.profile-stat count: {stat_count}")
+                print(f"  div.pf-k count: {pf_k_count}")
+                print(f"  div.pf-ab count: {pf_ab_count}")
+                if dossier_keys:
+                    print(f"  Dossier keys: {dossier_keys}")
+                if pf_ab_titles:
+                    print(f"  pf-ab titles: {pf_ab_titles}")
+                # Check for any elements containing power grid stat names
+                page_text = diag_soup.get_text()
+                for stat_name in ["INT", "STR", "SPD", "DUR", "PWR", "CMB"]:
+                    if stat_name in page_text:
+                        print(f"  Found '{stat_name}' in page text")
+
                 return html
             finally:
                 await browser.close()

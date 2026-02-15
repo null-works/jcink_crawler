@@ -367,15 +367,21 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     # Extract power grid from .profile-stat elements (fields 27-32)
     # Each stat has a .profile-stat-label (INT/STR/etc) and a
     # .profile-stat-fill with data-value="N" holding the numeric value.
-    for stat in soup.select("div.profile-stat"):
+    profile_stats = soup.select("div.profile-stat")
+    print(f"[Parser] Power grid: found {len(profile_stats)} div.profile-stat elements")
+    for stat in profile_stats:
         label_el = stat.select_one(".profile-stat-label")
         fill_el = stat.select_one(".profile-stat-fill")
         if not label_el or not fill_el:
+            print(f"[Parser] Power grid: stat element missing label or fill: {stat}")
             continue
         label = label_el.get_text(strip=True).lower()
         value = (fill_el.get("data-value") or "").strip()
+        print(f"[Parser] Power grid: {label} = '{value}' (data-value attr)")
         if value and value != "No Information":
             fields[f"power grid - {label}"] = value
+
+    print(f"[Parser] All extracted field keys for {user_id}: {list(fields.keys())}")
 
     return ParsedProfile(
         user_id=user_id,
