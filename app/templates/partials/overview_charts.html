@@ -165,7 +165,14 @@
         },
         options: {
             responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ctx.parsed.y + ' post' + (ctx.parsed.y !== 1 ? 's' : '')
+                    }
+                }
+            },
             scales: {
                 x: { grid: { color: dracula.current }, ticks: { maxTicksLimit: 10 } },
                 y: { grid: { color: dracula.current }, beginAtZero: true, ticks: { precision: 0 } }
