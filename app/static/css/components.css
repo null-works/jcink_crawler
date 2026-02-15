@@ -934,6 +934,33 @@ select.form-input {
     color: var(--comment);
 }
 
+/* === Activity Check Badges === */
+.ac-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
+.ac-safe {
+    background: rgba(80, 250, 123, 0.2);
+    color: var(--green);
+    border: 1px solid rgba(80, 250, 123, 0.5);
+}
+
+.ac-unsafe {
+    background: rgba(255, 85, 85, 0.2);
+    color: var(--red);
+    border: 1px solid rgba(255, 85, 85, 0.5);
+}
+
 /* === Responsive helpers === */
 @media (max-width: 768px) {
     .hide-mobile { display: none !important; }

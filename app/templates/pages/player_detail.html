@@ -24,8 +24,12 @@
                     <div class="label">Threads</div>
                 </div>
                 <div class="count-item">
-                    <div class="num text-cyan">{{ total_ongoing }}</div>
-                    <div class="label">Ongoing</div>
+                    <div class="num text-cyan">{{ player.total_posts }}</div>
+                    <div class="label">Total Posts</div>
+                </div>
+                <div class="count-item">
+                    <div class="num text-orange">{{ player.total_monthly_posts }}</div>
+                    <div class="label">This Period</div>
                 </div>
                 <div class="count-item">
                     <div class="num text-yellow">{{ player.total_awaiting }}</div>
@@ -44,6 +48,21 @@
     </div>
 </div>
 
+{# Month filter #}
+<div class="card" style="padding: 1rem 1.5rem;">
+    <form method="get" action="/player/{{ player.player_name }}" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+        <label class="text-comment" style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">Activity Period</label>
+        <input type="month" name="month" value="{{ month or '' }}" class="form-input" style="width: auto;">
+        <button type="submit" class="btn btn-purple btn-sm">Filter</button>
+        {% if month %}
+        <a href="/player/{{ player.player_name }}" class="btn btn-ghost btn-sm">Reset</a>
+        {% endif %}
+        <span class="text-comment" style="font-size: 0.8rem;">
+            Showing: {{ player.month_start }} to {{ player.month_end }}
+        </span>
+    </form>
+</div>
+
 {# Character roster #}
 <div class="card">
     <h3 class="card-title" style="margin-bottom: 1rem;">Character Roster</h3>
@@ -54,9 +73,11 @@
                 <th style="width: 48px;"></th>
                 <th>Name</th>
                 <th>Affiliation</th>
-                <th>Activity</th>
+                <th>AC</th>
+                <th>Posts</th>
+                <th>Monthly</th>
                 <th>Ongoing</th>
-                <th>Comms</th>
+                <th class="hide-mobile">Comms</th>
                 <th class="hide-mobile">Complete</th>
                 <th>Awaiting</th>
                 <th class="hide-mobile">Quotes</th>
@@ -65,7 +86,6 @@
         <tbody>
             {% for char in player.characters %}
             {% set char_ongoing = char.thread_counts.get('ongoing', 0) %}
-            {% set char_al = char_ongoing|activity_level %}
             <tr class="clickable-row" onclick="window.location='/character/{{ char.id }}'">
                 <td>
                     {% if char.avatar_url %}
@@ -77,13 +97,20 @@
                 <td class="bold">{{ char.name }}</td>
                 <td class="text-cyan">{{ char.affiliation or '—' }}</td>
                 <td>
-                    <span class="activity-badge {{ char_al.css }}">{{ char_al.label }}</span>
-                    <div class="activity-bar-track" title="{{ char_ongoing }} ongoing">
-                        <div class="activity-bar-fill {{ char_al.color }}" style="width: {{ [char_ongoing * 20, 100]|min }}%"></div>
-                    </div>
+                    {% if char.activity_safe %}
+                    <span class="ac-badge ac-safe" title="{{ char.monthly_posts }} posts this period">SAFE</span>
+                    {% else %}
+                    <span class="ac-badge ac-unsafe" title="{{ char.monthly_posts }} posts this period — needs {{ 2 - char.monthly_posts }} more">DANGER</span>
+                    {% endif %}
+                </td>
+                <td><span class="count-badge purple">{{ char.post_count }}</span></td>
+                <td>
+                    <span class="count-badge {% if char.monthly_posts >= 2 %}green{% elif char.monthly_posts == 1 %}yellow{% else %}red{% endif %}">
+                        {{ char.monthly_posts }}
+                    </span>
                 </td>
                 <td><span class="count-badge green">{{ char_ongoing }}</span></td>
-                <td><span class="count-badge cyan">{{ char.thread_counts.get('comms', 0) }}</span></td>
+                <td class="hide-mobile"><span class="count-badge cyan">{{ char.thread_counts.get('comms', 0) }}</span></td>
                 <td class="hide-mobile"><span class="count-badge pink">{{ char.thread_counts.get('complete', 0) }}</span></td>
                 <td>
                     {% if char.awaiting > 0 %}

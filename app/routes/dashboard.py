@@ -428,13 +428,29 @@ async def players_page(
 async def player_detail_page(
     request: Request,
     player_name: str,
+    month: str | None = None,
     db: aiosqlite.Connection = Depends(get_db),
 ):
     redirect = _require_auth(request)
     if redirect:
         return redirect
 
-    player = await get_player_detail(db, player_name)
+    # Parse month filter (format: "YYYY-MM")
+    month_start = None
+    month_end = None
+    if month:
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(month, "%Y-%m")
+            month_start = dt.strftime("%Y-%m-01")
+            if dt.month == 12:
+                month_end = f"{dt.year + 1}-01-01"
+            else:
+                month_end = f"{dt.year}-{dt.month + 1:02d}-01"
+        except ValueError:
+            pass
+
+    player = await get_player_detail(db, player_name, month_start, month_end)
     if not player:
         return HTMLResponse(status_code=404, content="Player not found")
 
@@ -443,6 +459,7 @@ async def player_detail_page(
     return templates.TemplateResponse(request, "pages/player_detail.html", {
         "player": player,
         "activity": activity,
+        "month": month,
     })
 
 

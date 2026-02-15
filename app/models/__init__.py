@@ -33,6 +33,7 @@ from app.models.operations import (
     get_characters_fields_batch,
     set_crawl_status,
     get_crawl_status,
+    replace_thread_posts,
 )
 from app.models.dashboard_queries import (
     search_characters,

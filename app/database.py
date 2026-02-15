@@ -102,6 +102,19 @@ async def init_db():
             )
         """)
 
+        # Individual post records — tracks who posted where and when
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                character_id TEXT NOT NULL,
+                thread_id TEXT NOT NULL,
+                post_date TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (character_id) REFERENCES characters(id),
+                FOREIGN KEY (thread_id) REFERENCES threads(id)
+            )
+        """)
+
         # Crawl status - track overall crawl state
         await db.execute("""
             CREATE TABLE IF NOT EXISTS crawl_status (
@@ -132,5 +145,19 @@ async def init_db():
             CREATE INDEX IF NOT EXISTS idx_threads_category
             ON threads(category)
         """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_posts_character_date
+            ON posts(character_id, post_date)
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_posts_thread
+            ON posts(thread_id)
+        """)
+
+        # Add post_count to character_threads if it doesn't exist
+        try:
+            await db.execute("ALTER TABLE character_threads ADD COLUMN post_count INTEGER DEFAULT 0")
+        except Exception:
+            pass  # Column already exists
 
         await db.commit()

@@ -349,9 +349,29 @@ async def search_players(
 async def get_player_detail(
     db: aiosqlite.Connection,
     player_name: str,
+    month_start: str | None = None,
+    month_end: str | None = None,
 ) -> dict | None:
-    """Get full player detail: characters, thread breakdown, quotes count."""
+    """Get full player detail: characters, thread breakdown, quotes count, post counts.
+
+    Args:
+        player_name: Player name to look up.
+        month_start: ISO date string for activity period start (e.g. "2026-02-01").
+        month_end: ISO date string for activity period end (e.g. "2026-03-01").
+    """
+    from datetime import datetime, timezone
+
     excluded = settings.excluded_name_set
+
+    # Default to current calendar month if no range provided
+    if not month_start or not month_end:
+        now = datetime.now(timezone.utc)
+        month_start = now.strftime("%Y-%m-01")
+        # First day of next month
+        if now.month == 12:
+            month_end = f"{now.year + 1}-01-01"
+        else:
+            month_end = f"{now.year}-{now.month + 1:02d}-01"
 
     # Get all characters for this player
     cursor = await db.execute(
@@ -368,14 +388,18 @@ async def get_player_detail(
     if not characters:
         return None
 
-    # Gather thread counts and awaiting threads per character
+    # Gather thread counts, awaiting, quotes, and post data per character
     total_threads = 0
     total_awaiting = 0
     total_quotes = 0
+    total_posts = 0
+    total_monthly_posts = 0
     for char in characters:
+        cid = char["id"]
+
         tc = await db.execute(
             "SELECT category, COUNT(*) as count FROM character_threads WHERE character_id = ? GROUP BY category",
-            (char["id"],),
+            (cid,),
         )
         tc_rows = await tc.fetchall()
         counts = {tr["category"]: tr["count"] for tr in tc_rows}
@@ -385,7 +409,7 @@ async def get_player_detail(
 
         aw = await db.execute(
             "SELECT COUNT(*) as cnt FROM character_threads WHERE character_id = ? AND category = 'ongoing' AND is_user_last_poster = 0",
-            (char["id"],),
+            (cid,),
         )
         aw_row = await aw.fetchone()
         char["awaiting"] = aw_row["cnt"] if aw_row else 0
@@ -393,11 +417,32 @@ async def get_player_detail(
 
         qc = await db.execute(
             "SELECT COUNT(*) as cnt FROM quotes WHERE character_id = ?",
-            (char["id"],),
+            (cid,),
         )
         qc_row = await qc.fetchone()
         char["quote_count"] = qc_row["cnt"] if qc_row else 0
         total_quotes += char["quote_count"]
+
+        # Total post count (all time) from character_threads.post_count
+        pc = await db.execute(
+            "SELECT COALESCE(SUM(post_count), 0) as cnt FROM character_threads WHERE character_id = ?",
+            (cid,),
+        )
+        pc_row = await pc.fetchone()
+        char["post_count"] = pc_row["cnt"] if pc_row else 0
+        total_posts += char["post_count"]
+
+        # Monthly post count from posts table (date-filtered)
+        mc = await db.execute(
+            "SELECT COUNT(*) as cnt FROM posts WHERE character_id = ? AND post_date >= ? AND post_date < ?",
+            (cid, month_start, month_end),
+        )
+        mc_row = await mc.fetchone()
+        char["monthly_posts"] = mc_row["cnt"] if mc_row else 0
+        total_monthly_posts += char["monthly_posts"]
+
+        # Activity check: 2+ posts in the period = safe
+        char["activity_safe"] = char["monthly_posts"] >= 2
 
     # Get awaiting threads across all characters for this player
     char_ids = [c["id"] for c in characters]
@@ -422,6 +467,10 @@ async def get_player_detail(
         "total_threads": total_threads,
         "total_awaiting": total_awaiting,
         "total_quotes": total_quotes,
+        "total_posts": total_posts,
+        "total_monthly_posts": total_monthly_posts,
+        "month_start": month_start,
+        "month_end": month_end,
         "awaiting_threads": awaiting_threads,
     }
 

@@ -543,6 +543,71 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
     return quotes
 
 
+_MONTH_MAP = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+# Matches "Jan 15 2026, 08:30 PM" or "Jan 15 2026, 20:30"
+_DATE_RE = re.compile(
+    r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{4})',
+    re.IGNORECASE,
+)
+
+
+def _parse_jcink_date(text: str) -> str | None:
+    """Try to parse a JCink date string into ISO format (YYYY-MM-DD).
+
+    Handles formats like "Jan 15 2026, 08:30 PM".
+    Returns date string or None if unparseable.
+    """
+    match = _DATE_RE.search(text)
+    if not match:
+        return None
+    month_str, day_str, year_str = match.group(1), match.group(2), match.group(3)
+    month = _MONTH_MAP.get(month_str.lower())
+    if not month:
+        return None
+    return f"{year_str}-{month:02d}-{int(day_str):02d}"
+
+
+def extract_post_records(html: str) -> list[dict]:
+    """Extract individual post records from a thread page.
+
+    Parses each .pr-a post container for:
+    - author user ID (from .pr-j author link)
+    - post date (best-effort from post header text)
+
+    Returns list of dicts: {'character_id': str, 'post_date': str | None}
+    """
+    from copy import copy
+
+    soup = BeautifulSoup(html, "html.parser")
+    records = []
+
+    for post in soup.select(".pr-a"):
+        # Extract author user ID
+        user_link = post.select_one('.pr-j a[href*="showuser="]')
+        if not user_link:
+            continue
+        match = re.search(r"showuser=(\d+)", user_link.get("href", ""))
+        if not match:
+            continue
+        character_id = match.group(1)
+
+        # Extract post date — search post header text (everything outside .postcolor)
+        post_date = None
+        post_copy = copy(post)
+        for body in post_copy.select(".postcolor"):
+            body.decompose()
+        header_text = post_copy.get_text(" ", strip=True)
+        post_date = _parse_jcink_date(header_text)
+
+        records.append({"character_id": character_id, "post_date": post_date})
+
+    return records
+
+
 def parse_member_list(html: str) -> list[dict]:
     """Parse JCink member list page for user IDs and names.
 

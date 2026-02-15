@@ -12,6 +12,7 @@ from app.services.parser import (
     parse_avatar_from_profile,
     extract_quotes_from_html,
     extract_thread_authors,
+    extract_post_records,
     parse_member_list,
     parse_member_list_pagination,
     is_board_message,
@@ -23,6 +24,7 @@ from app.models.operations import (
     link_character_thread,
     add_quote,
     mark_thread_quote_scraped,
+    replace_thread_posts,
     upsert_profile_field,
     get_character,
 )
@@ -186,33 +188,38 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             if (thread.thread_id, cid) not in scraped_pairs
         }
 
-        # Extract authors from pages we already have (no extra HTTP)
+        # Collect all available pages (reuse already-fetched HTML)
+        all_pages = [thread_html]
+        if max_st > 0:
+            remaining_urls = []
+            for st in range(25, max_st + 1, 25):
+                if st == max_st and last_page_html:
+                    all_pages.append(last_page_html)
+                else:
+                    sep = "&" if "?" in thread.url else "?"
+                    remaining_urls.append(f"{thread.url}{sep}st={st}")
+
+            if remaining_urls:
+                intermediate_htmls = await fetch_pages_concurrent(remaining_urls)
+                for ph in intermediate_htmls:
+                    if ph:
+                        all_pages.append(ph)
+
+        # Extract authors and post records from all pages
         thread_author_ids: set[str] = set()
-        thread_author_ids.update(extract_thread_authors(thread_html))
-        if last_page_html:
-            thread_author_ids.update(extract_thread_authors(last_page_html))
+        all_post_records: list[dict] = []
+        for page_html in all_pages:
+            thread_author_ids.update(extract_thread_authors(page_html))
+            all_post_records.extend(extract_post_records(page_html))
 
+        # Count posts per character for this thread
+        post_counts_by_char: dict[str, int] = {}
+        for rec in all_post_records:
+            cid = rec["character_id"]
+            post_counts_by_char[cid] = post_counts_by_char.get(cid, 0) + 1
+
+        # Extract quotes for characters that need this thread scraped
         if chars_needing_scrape:
-            # Collect all pages for quote extraction (reuse already-fetched)
-            all_pages = [thread_html]
-            if max_st > 0:
-                remaining_urls = []
-                for st in range(25, max_st + 1, 25):
-                    if st == max_st and last_page_html:
-                        all_pages.append(last_page_html)
-                    else:
-                        sep = "&" if "?" in thread.url else "?"
-                        remaining_urls.append(f"{thread.url}{sep}st={st}")
-
-                if remaining_urls:
-                    intermediate_htmls = await fetch_pages_concurrent(remaining_urls)
-                    for ph in intermediate_htmls:
-                        if ph:
-                            all_pages.append(ph)
-                            # Also grab authors from intermediate pages
-                            thread_author_ids.update(extract_thread_authors(ph))
-
-            # Extract quotes for every character that needs this thread scraped
             for cid, cname in chars_needing_scrape.items():
                 char_quotes = []
                 for page_html in all_pages:
@@ -230,6 +237,8 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             "quotes_by_character": quotes_by_character,
             "characters_to_mark_scraped": characters_to_mark_scraped,
             "thread_author_ids": thread_author_ids,
+            "post_records": all_post_records,
+            "post_counts_by_char": post_counts_by_char,
         }
 
     # Step 4: Process all threads concurrently
@@ -263,12 +272,14 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                 last_poster_name=result["last_poster_name"],
                 last_poster_avatar=result["last_poster_avatar"],
             )
+            post_counts = result.get("post_counts_by_char", {})
             await link_character_thread(
                 db,
                 character_id=character_id,
                 thread_id=thread.thread_id,
                 category=thread.category,
                 is_user_last_poster=result["is_user_last"],
+                post_count=post_counts.get(character_id, 0),
             )
 
             # Opportunistically link this thread to other known characters
@@ -286,7 +297,13 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                         thread_id=thread.thread_id,
                         category=thread.category,
                         is_user_last_poster=is_author_last,
+                        post_count=post_counts.get(author_id, 0),
                     )
+
+            # Store individual post records (for date-based activity queries)
+            post_records = result.get("post_records", [])
+            if post_records:
+                await replace_thread_posts(db, thread.thread_id, post_records)
 
             results[thread.category] = results.get(thread.category, 0) + 1
 
@@ -434,10 +451,18 @@ async def crawl_single_thread(
             intermediate_htmls = await fetch_pages_concurrent(remaining_urls)
             all_pages.extend(h for h in intermediate_htmls if h)
 
-    # Extract authors from all pages
+    # Extract authors and post records from all pages
     thread_author_ids: set[str] = set()
+    all_post_records: list[dict] = []
     for page_html in all_pages:
         thread_author_ids.update(extract_thread_authors(page_html))
+        all_post_records.extend(extract_post_records(page_html))
+
+    # Count posts per character for this thread
+    post_counts_by_char: dict[str, int] = {}
+    for rec in all_post_records:
+        cid = rec["character_id"]
+        post_counts_by_char[cid] = post_counts_by_char.get(cid, 0) + 1
 
     # Extract quotes for characters who need this thread scraped
     quotes_by_character: dict[str, list[dict]] = {}
@@ -483,6 +508,7 @@ async def crawl_single_thread(
                 thread_id=thread_id,
                 category=category,
                 is_user_last_poster=bool(is_user_last),
+                post_count=post_counts_by_char.get(user_id, 0),
             )
 
         # Also link other known authors
@@ -495,7 +521,12 @@ async def crawl_single_thread(
                     thread_id=thread_id,
                     category=category,
                     is_user_last_poster=is_author_last,
+                    post_count=post_counts_by_char.get(author_id, 0),
                 )
+
+        # Store post records for date-based activity queries
+        if all_post_records:
+            await replace_thread_posts(db, thread_id, all_post_records)
 
         # Save quotes
         for cid, char_quotes in quotes_by_character.items():

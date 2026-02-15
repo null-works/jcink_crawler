@@ -150,15 +150,17 @@ async def link_character_thread(
     thread_id: str,
     category: str,
     is_user_last_poster: bool = False,
+    post_count: int = 0,
 ) -> None:
     """Link a character to a thread."""
     await db.execute("""
-        INSERT INTO character_threads (character_id, thread_id, category, is_user_last_poster)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO character_threads (character_id, thread_id, category, is_user_last_poster, post_count)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(character_id, thread_id) DO UPDATE SET
             category = excluded.category,
-            is_user_last_poster = excluded.is_user_last_poster
-    """, (character_id, thread_id, category, int(is_user_last_poster)))
+            is_user_last_poster = excluded.is_user_last_poster,
+            post_count = excluded.post_count
+    """, (character_id, thread_id, category, int(is_user_last_poster), post_count))
 
 
 async def get_character_threads(
@@ -543,3 +545,23 @@ async def get_crawl_status(
     )
     row = await cursor.fetchone()
     return row["value"] if row else None
+
+
+# --- Post Operations ---
+
+async def replace_thread_posts(
+    db: aiosqlite.Connection,
+    thread_id: str,
+    records: list[dict],
+) -> None:
+    """Replace all post records for a thread with fresh data.
+
+    Deletes existing records and inserts new ones in one pass.
+    Each record: {'character_id': str, 'post_date': str | None}
+    """
+    await db.execute("DELETE FROM posts WHERE thread_id = ?", (thread_id,))
+    for rec in records:
+        await db.execute(
+            "INSERT INTO posts (character_id, thread_id, post_date) VALUES (?, ?, ?)",
+            (rec["character_id"], thread_id, rec.get("post_date")),
+        )
