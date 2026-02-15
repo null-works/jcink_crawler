@@ -538,6 +538,8 @@ async def get_dashboard_stats(db: aiosqlite.Connection) -> dict:
 
 async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     """Get data for dashboard overview charts."""
+    from datetime import datetime, timedelta, timezone
+
     excluded = settings.excluded_name_set
 
     # Thread counts by category
@@ -547,15 +549,32 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     rows = await cursor.fetchall()
     threads_by_category = {r["category"]: r["cnt"] for r in rows}
 
-    # Awaiting vs replied (ongoing threads only)
+    # Posts over last 3 months — grouped by month
+    now = datetime.now(timezone.utc)
+    three_months_ago = (now.replace(day=1) - timedelta(days=90)).replace(day=1)
     cursor = await db.execute(
-        "SELECT is_user_last_poster, COUNT(*) as cnt FROM character_threads WHERE category = 'ongoing' GROUP BY is_user_last_poster"
+        """SELECT strftime('%Y-%m', post_date) AS month, COUNT(*) AS cnt
+           FROM posts
+           WHERE post_date >= ?
+           GROUP BY month
+           ORDER BY month""",
+        (three_months_ago.strftime("%Y-%m-%d"),),
     )
     rows = await cursor.fetchall()
-    reply_status = {}
-    for r in rows:
-        key = "replied" if r["is_user_last_poster"] else "awaiting"
-        reply_status[key] = r["cnt"]
+    posts_by_month = [{"label": r["month"], "count": r["cnt"]} for r in rows if r["month"]]
+
+    # Posts over last 30 days — grouped by day
+    thirty_days_ago = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+    cursor = await db.execute(
+        """SELECT post_date AS day, COUNT(*) AS cnt
+           FROM posts
+           WHERE post_date >= ?
+           GROUP BY day
+           ORDER BY day""",
+        (thirty_days_ago,),
+    )
+    rows = await cursor.fetchall()
+    posts_by_day = [{"label": r["day"], "count": r["cnt"]} for r in rows if r["day"]]
 
     # Characters per affiliation
     cursor = await db.execute(
@@ -642,7 +661,8 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
 
     return {
         "threads_by_category": threads_by_category,
-        "reply_status": reply_status,
+        "posts_by_month": posts_by_month,
+        "posts_by_day": posts_by_day,
         "chars_by_affiliation": chars_by_affiliation,
         "top_characters": top_characters,
         "top_quoters": top_quoters,

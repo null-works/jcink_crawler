@@ -1,4 +1,4 @@
-{# Row 1: Thread distribution + Reply status #}
+{# Row 1: Thread distribution + Affiliation + Post line graphs #}
 <div class="chart-row">
     <div class="chart-card">
         <h3 class="chart-title">Threads by Category</h3>
@@ -7,15 +7,25 @@
         </div>
     </div>
     <div class="chart-card">
-        <h3 class="chart-title">Ongoing Thread Status</h3>
-        <div class="chart-container chart-container-sm">
-            <canvas id="chart-reply-status"></canvas>
-        </div>
-    </div>
-    <div class="chart-card">
         <h3 class="chart-title">Characters by Affiliation</h3>
         <div class="chart-container chart-container-sm">
             <canvas id="chart-affiliation"></canvas>
+        </div>
+    </div>
+</div>
+
+{# Row 1b: Post activity line graphs #}
+<div class="chart-row">
+    <div class="chart-card chart-card-wide">
+        <h3 class="chart-title">Posts Over the Last 3 Months</h3>
+        <div class="chart-container">
+            <canvas id="chart-posts-monthly"></canvas>
+        </div>
+    </div>
+    <div class="chart-card chart-card-wide">
+        <h3 class="chart-title">Posts Over the Last 30 Days</h3>
+        <div class="chart-container">
+            <canvas id="chart-posts-daily"></canvas>
         </div>
     </div>
 </div>
@@ -107,24 +117,58 @@
         }
     });
 
-    // Reply Status — doughnut
-    const replyData = {{ chart_data.reply_status | tojson }};
-    new Chart(document.getElementById('chart-reply-status'), {
-        type: 'doughnut',
+    // Posts over last 3 months — line
+    const monthlyData = {{ chart_data.posts_by_month | tojson }};
+    new Chart(document.getElementById('chart-posts-monthly'), {
+        type: 'line',
         data: {
-            labels: ['Awaiting Reply', 'Replied'],
+            labels: monthlyData.map(d => d.label),
             datasets: [{
-                data: [replyData.awaiting || 0, replyData.replied || 0],
-                backgroundColor: [dracula.yellow, dracula.green],
-                borderColor: dracula.bg,
-                borderWidth: 2
+                label: 'Posts',
+                data: monthlyData.map(d => d.count),
+                borderColor: dracula.purple,
+                backgroundColor: dracula.purple + '33',
+                fill: true,
+                tension: 0.3,
+                pointBackgroundColor: dracula.purple,
+                pointRadius: 4,
+                pointHoverRadius: 6
             }]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
-            cutout: '60%',
-            plugins: {
-                legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 10 } }
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { color: dracula.current } },
+                y: { grid: { color: dracula.current }, beginAtZero: true, ticks: { precision: 0 } }
+            }
+        }
+    });
+
+    // Posts over last 30 days — line
+    const dailyData = {{ chart_data.posts_by_day | tojson }};
+    new Chart(document.getElementById('chart-posts-daily'), {
+        type: 'line',
+        data: {
+            labels: dailyData.map(d => d.label.slice(5)),
+            datasets: [{
+                label: 'Posts',
+                data: dailyData.map(d => d.count),
+                borderColor: dracula.cyan,
+                backgroundColor: dracula.cyan + '33',
+                fill: true,
+                tension: 0.3,
+                pointBackgroundColor: dracula.cyan,
+                pointRadius: 3,
+                pointHoverRadius: 5
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { color: dracula.current }, ticks: { maxTicksLimit: 10 } },
+                y: { grid: { color: dracula.current }, beginAtZero: true, ticks: { precision: 0 } }
             }
         }
     });
