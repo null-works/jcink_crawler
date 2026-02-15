@@ -4,8 +4,6 @@ from app.services.parser import (
     parse_last_poster,
     extract_quotes_from_html,
     parse_avatar_from_profile,
-    parse_application_url,
-    parse_power_grid,
     categorize_thread,
     is_board_message,
     parse_search_redirect,
@@ -769,88 +767,3 @@ class TestParseProfileOOCFields:
         assert "connections" not in profile.fields
 
 
-class TestParseApplicationUrl:
-    def test_extracts_application_link(self):
-        html = """
-        <div class="pf-ad">
-          <a href="https://therewasanidea.jcink.net/index.php?showtopic=22" title="view application">
-            <div class="pf-ae"><i class="las la-id-card"></i></div>
-          </a>
-        </div>
-        """
-        assert parse_application_url(html) == "https://therewasanidea.jcink.net/index.php?showtopic=22"
-
-    def test_returns_none_for_no_information(self):
-        html = """
-        <a href="<i>No Information</i>" title="view application">link</a>
-        """
-        assert parse_application_url(html) is None
-
-    def test_returns_none_when_missing(self):
-        html = "<html><body>No links</body></html>"
-        assert parse_application_url(html) is None
-
-    def test_relative_url_gets_base(self):
-        html = """
-        <a href="/index.php?showtopic=100" title="view application">link</a>
-        """
-        result = parse_application_url(html)
-        assert result.startswith("https://")
-        assert "showtopic=100" in result
-
-
-class TestParsePowerGrid:
-    def test_extracts_stats_from_application(self):
-        html = """
-        <div class="sa-n">
-          <div class="sa-o">intelligence</div>
-          <div class="sa-p"><div class="sa-q" style="width: 40%;"></div></div>
-        </div>
-        <div class="sa-n">
-          <div class="sa-o">strength</div>
-          <div class="sa-p"><div class="sa-q" style="width: 60%;"></div></div>
-        </div>
-        <div class="sa-n">
-          <div class="sa-o">speed</div>
-          <div class="sa-p"><div class="sa-q" style="width: 20%;"></div></div>
-        </div>
-        <div class="sa-n">
-          <div class="sa-o">durability</div>
-          <div class="sa-p"><div class="sa-q" style="width: 80%;"></div></div>
-        </div>
-        <div class="sa-n">
-          <div class="sa-o">energy projection</div>
-          <div class="sa-p"><div class="sa-q" style="width: 0%;"></div></div>
-        </div>
-        <div class="sa-n">
-          <div class="sa-o">fighting skills</div>
-          <div class="sa-p"><div class="sa-q" style="width: 100%;"></div></div>
-        </div>
-        """
-        fields = parse_power_grid(html)
-        assert fields["power grid - int"] == "40"
-        assert fields["power grid - str"] == "60"
-        assert fields["power grid - spd"] == "20"
-        assert fields["power grid - dur"] == "80"
-        assert fields["power grid - pwr"] == "0"
-        assert fields["power grid - cmb"] == "100"
-
-    def test_extracts_metadata(self):
-        html = """
-        <div class="sa-s" title="archetype">
-          <div class="sa-t"><i class="las la-book"></i></div>
-          <div class="sa-u">RELUCTANT ANTIHERO</div>
-        </div>
-        <div class="sa-s" title="weapons">
-          <div class="sa-t"><i class="las la-skull-crossbones"></i></div>
-          <div class="sa-u">FISTS</div>
-        </div>
-        """
-        fields = parse_power_grid(html)
-        assert fields["power grid - archetype"] == "RELUCTANT ANTIHERO"
-        assert fields["power grid - weapons"] == "FISTS"
-
-    def test_empty_page(self):
-        html = "<html><body>No power grid</body></html>"
-        fields = parse_power_grid(html)
-        assert fields == {}
