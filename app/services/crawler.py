@@ -1022,6 +1022,129 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
     }
 
 
+async def crawl_recent_threads(db_path: str) -> dict:
+    """Crawl recently active threads to capture latest post records.
+
+    Uses JCink's "Today's Active Topics" search to find threads with recent
+    activity. This is much more reliable than per-character searches for
+    capturing recent posts because it requires only one search request
+    (no per-character cooldown risk).
+
+    Only updates post records (for activity tracking) — does not update
+    thread metadata or character links (the per-character crawl handles that).
+    """
+    base_url = settings.forum_base_url
+    active_url = f"{base_url}/index.php?act=Search&CODE=getactive"
+
+    print("[Crawler] Fetching today's active topics")
+    set_activity("Crawling recent threads")
+
+    html = await fetch_page(active_url)
+    if not html:
+        clear_activity()
+        return {"error": "Failed to fetch active topics"}
+
+    redirect_url = parse_search_redirect(html)
+    if redirect_url:
+        await asyncio.sleep(settings.request_delay_seconds)
+        html = await fetch_page(redirect_url)
+        if not html:
+            clear_activity()
+            return {"error": "Failed to follow active topics redirect"}
+
+    if is_board_message(html):
+        clear_activity()
+        return {"error": "Active topics search hit cooldown"}
+
+    threads, page_urls = parse_search_results(html)
+
+    # Fetch additional search result pages
+    if page_urls:
+        page_htmls = await fetch_pages_concurrent(page_urls)
+        seen_ids = {t.thread_id for t in threads}
+        for page_html in page_htmls:
+            if not page_html or is_board_message(page_html):
+                break
+            page_threads, _ = parse_search_results(page_html)
+            for t in page_threads:
+                if t.thread_id not in seen_ids:
+                    threads.append(t)
+                    seen_ids.add(t.thread_id)
+
+    print(f"[Crawler] Active topics: {len(threads)} threads")
+
+    if not threads:
+        clear_activity()
+        return {"threads": 0, "posts_stored": 0}
+
+    # Load tracked character IDs
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT id FROM characters")
+        tracked_chars = {row["id"] for row in await cursor.fetchall()}
+
+    # Fetch each thread and extract post records
+    posts_stored = 0
+    threads_processed = 0
+
+    async def _fetch_thread_posts(thread):
+        """Fetch all pages of a thread and extract post records."""
+        thread_html = await fetch_page_with_delay(thread.url)
+        if not thread_html:
+            return None
+
+        max_st = parse_thread_pagination(thread_html)
+        all_pages = [thread_html]
+
+        if max_st > 0:
+            remaining_urls = []
+            last_page_html = None
+            sep = "&" if "?" in thread.url else "?"
+            last_page_url = f"{thread.url}{sep}st={max_st}"
+            last_page_html = await fetch_page_with_delay(last_page_url)
+
+            for st in range(25, max_st + 1, 25):
+                if st == max_st and last_page_html:
+                    all_pages.append(last_page_html)
+                else:
+                    remaining_urls.append(f"{thread.url}{sep}st={st}")
+
+            if remaining_urls:
+                intermediate_htmls = await fetch_pages_concurrent(remaining_urls)
+                for ph in intermediate_htmls:
+                    if ph:
+                        all_pages.append(ph)
+
+        records = []
+        for page_html in all_pages:
+            records.extend(extract_post_records(page_html))
+        return {"thread_id": thread.thread_id, "records": records}
+
+    tasks = [_fetch_thread_posts(t) for t in threads]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        for result in results:
+            if isinstance(result, Exception) or result is None:
+                continue
+
+            thread_id = result["thread_id"]
+            records = result["records"]
+            # Only store posts by tracked characters
+            relevant = [r for r in records if r["character_id"] in tracked_chars]
+            if relevant:
+                await replace_thread_posts(db, thread_id, relevant)
+                posts_stored += len(relevant)
+                threads_processed += 1
+
+        await db.commit()
+
+    clear_activity()
+    print(f"[Crawler] Recent threads: {threads_processed} threads, {posts_stored} posts stored")
+    return {"threads": threads_processed, "posts_stored": posts_stored}
+
+
 async def discover_characters(db_path: str) -> dict:
     """Auto-discover characters by crawling the full forum member list.
 

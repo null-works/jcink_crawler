@@ -4,7 +4,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 import aiosqlite
 
 from app.config import settings
-from app.services.crawler import crawl_character_threads, crawl_character_profile, discover_characters, sync_posts_from_acp, crawl_quotes_only
+from app.services.crawler import crawl_character_threads, crawl_character_profile, discover_characters, sync_posts_from_acp, crawl_quotes_only, crawl_recent_threads
 from app.services.activity import set_activity, clear_activity
 
 
@@ -52,7 +52,14 @@ async def _crawl_all_threads():
         except Exception as e:
             print(f"[Scheduler] ACP sync error: {e} — falling back to HTML crawl")
 
-    # Fallback: full HTML crawl per character
+    # Quick pass: crawl today's active topics first (one search, no per-character cooldown)
+    try:
+        recent = await crawl_recent_threads(settings.database_path)
+        print(f"[Scheduler] Recent threads pass: {recent}")
+    except Exception as e:
+        print(f"[Scheduler] Recent threads error: {e}")
+
+    # Full HTML crawl per character (slower, may hit search cooldown)
     print("[Scheduler] Starting scheduled HTML thread crawl for all characters")
     excluded = settings.excluded_name_set
     async with aiosqlite.connect(settings.database_path) as db:
