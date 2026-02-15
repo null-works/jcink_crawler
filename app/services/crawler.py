@@ -57,24 +57,32 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     print(f"[Crawler] Starting thread crawl for character {character_id}")
     set_activity(f"Crawling threads", character_id=character_id)
 
-    # Step 1: Hit search, handle redirect
-    html = await fetch_page(search_url)
-    if not html:
-        print(f"[Crawler] Failed to fetch search page for {character_id}")
-        return {"error": "Failed to fetch search page"}
-
-    # Check for redirect
-    redirect_url = parse_search_redirect(html)
-    if redirect_url:
-        print(f"[Crawler] Following redirect to {redirect_url}")
-        await asyncio.sleep(settings.request_delay_seconds)
-        html = await fetch_page(redirect_url)
+    # Step 1: Hit search, handle redirect (with cooldown retry)
+    html = None
+    for attempt in range(3):
+        html = await fetch_page(search_url)
         if not html:
-            return {"error": "Failed to follow search redirect"}
+            print(f"[Crawler] Failed to fetch search page for {character_id}")
+            return {"error": "Failed to fetch search page"}
 
-    if is_board_message(html):
-        print(f"[Crawler] Got board message (cooldown), will retry later")
-        return {"error": "Search cooldown, will retry"}
+        # Check for redirect
+        redirect_url = parse_search_redirect(html)
+        if redirect_url:
+            print(f"[Crawler] Following redirect to {redirect_url}")
+            await asyncio.sleep(settings.request_delay_seconds)
+            html = await fetch_page(redirect_url)
+            if not html:
+                return {"error": "Failed to follow search redirect"}
+
+        if is_board_message(html):
+            if attempt < 2:
+                wait = 30 * (attempt + 1)
+                print(f"[Crawler] Search cooldown for {character_id}, waiting {wait}s (attempt {attempt + 1}/3)")
+                await asyncio.sleep(wait)
+                continue
+            print(f"[Crawler] Search cooldown persists for {character_id} after 3 attempts")
+            return {"error": "Search cooldown, retries exhausted"}
+        break  # Success — got search results
 
     # Step 2: Parse first page of results
     all_threads, page_urls = parse_search_results(html)

@@ -124,8 +124,11 @@ class TestCrawlCharacterThreads:
         """
         board_msg = "<html><head><title>Board Message</title></head><body>X</body></html>"
 
+        # Retry loop tries up to 3 attempts: each attempt does search + redirect follow
         with patch("app.services.crawler.fetch_page", new_callable=AsyncMock,
-                    side_effect=[redirect_html, board_msg]), \
+                    side_effect=[redirect_html, board_msg,
+                                 redirect_html, board_msg,
+                                 redirect_html, board_msg]), \
              patch("asyncio.sleep", new_callable=AsyncMock):
             result = await crawl_character_threads("42", DATABASE_PATH)
         assert "error" in result

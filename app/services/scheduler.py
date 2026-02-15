@@ -77,8 +77,8 @@ async def _crawl_all_threads():
             await crawl_character_threads(char["id"], settings.database_path)
         except Exception as e:
             print(f"[Scheduler] Error crawling threads for {char['name']} ({char['id']}): {e}")
-        # Extra delay between characters to be polite
-        await asyncio.sleep(settings.request_delay_seconds * 2)
+        # Longer delay between characters to avoid JCink search flood control
+        await asyncio.sleep(15)
 
     clear_activity()
     print("[Scheduler] Scheduled thread crawl complete")
