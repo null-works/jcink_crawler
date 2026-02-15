@@ -496,6 +496,14 @@ select.form-input {
     height: 40px;
 }
 
+.activity-bar-inner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+}
+
 .activity-dot {
     width: 8px;
     height: 8px;
