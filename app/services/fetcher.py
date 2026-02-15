@@ -136,6 +136,41 @@ async def fetch_page_with_delay(url: str) -> str | None:
         return await fetch_page(url)
 
 
+async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", timeout_ms: int = 15000) -> str | None:
+    """Fetch a page using Playwright to execute JS and return rendered HTML.
+
+    Used for profile pages where the power grid card is built client-side.
+    Falls back to regular httpx fetch if Playwright fails.
+
+    Args:
+        url: Full URL to fetch
+        wait_selector: CSS selector to wait for before capturing HTML
+        timeout_ms: Max time to wait for the selector to appear
+    """
+    try:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                # Wait for JS to render the power grid card
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=timeout_ms)
+                except Exception:
+                    # Selector didn't appear — page may not have power grid,
+                    # still return whatever rendered
+                    pass
+                html = await page.content()
+                return html
+            finally:
+                await browser.close()
+    except Exception as e:
+        print(f"[Fetcher] Playwright render failed for {url}: {e}, falling back to httpx")
+        return await fetch_page(url)
+
+
 async def fetch_pages_concurrent(urls: list[str]) -> list[str | None]:
     """Fetch multiple pages concurrently, respecting rate limits.
 

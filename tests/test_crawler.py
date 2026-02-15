@@ -83,7 +83,7 @@ THREAD_HTML_TONY = """
 
 class TestCrawlCharacterProfile:
     async def test_successful_profile_crawl(self):
-        with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, return_value=PROFILE_HTML):
+        with patch("app.services.crawler.fetch_page_rendered", new_callable=AsyncMock, return_value=PROFILE_HTML):
             result = await crawl_character_profile("42", DATABASE_PATH)
 
         assert result["name"] == "Tony Stark"
@@ -98,7 +98,7 @@ class TestCrawlCharacterProfile:
             assert char.name == "Tony Stark"
 
     async def test_failed_fetch_returns_error(self):
-        with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, return_value=None):
+        with patch("app.services.crawler.fetch_page_rendered", new_callable=AsyncMock, return_value=None):
             result = await crawl_character_profile("42", DATABASE_PATH)
         assert "error" in result
 
@@ -208,7 +208,8 @@ class TestRegisterCharacter:
                 return "<html></html>"
             return "<html></html>"
 
-        with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, side_effect=mock_fetch), \
+        with patch("app.services.crawler.fetch_page_rendered", new_callable=AsyncMock, side_effect=mock_fetch), \
+             patch("app.services.crawler.fetch_page", new_callable=AsyncMock, side_effect=mock_fetch), \
              patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, side_effect=mock_fetch):
             result = await register_character("42", DATABASE_PATH)
 
@@ -216,7 +217,7 @@ class TestRegisterCharacter:
         assert result["profile"]["name"] == "Tony Stark"
 
     async def test_profile_failure_stops_registration(self):
-        with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, return_value=None):
+        with patch("app.services.crawler.fetch_page_rendered", new_callable=AsyncMock, return_value=None):
             result = await register_character("42", DATABASE_PATH)
         assert "error" in result
 

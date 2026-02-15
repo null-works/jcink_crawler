@@ -2,7 +2,7 @@ import asyncio
 import aiosqlite
 from app.config import settings
 from app.services.activity import set_activity, clear_activity
-from app.services.fetcher import fetch_page, fetch_page_with_delay, fetch_pages_concurrent
+from app.services.fetcher import fetch_page, fetch_page_rendered, fetch_page_with_delay, fetch_pages_concurrent
 from app.services.parser import (
     parse_search_results,
     parse_search_redirect,
@@ -574,7 +574,7 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     print(f"[Crawler] Starting profile crawl for {character_id}")
     set_activity(f"Crawling profile for #{character_id}", character_id=character_id)
 
-    html = await fetch_page(profile_url)
+    html = await fetch_page_rendered(profile_url)
     if not html:
         return {"error": "Failed to fetch profile page"}
 
