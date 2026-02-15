@@ -140,6 +140,8 @@ async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", ti
     """Fetch a page using Playwright to execute JS and return rendered HTML.
 
     Used for profile pages where the power grid card is built client-side.
+    Authenticates as the bot account so the browser uses the correct skin
+    (Development) which contains the power grid template.
     Falls back to regular httpx fetch if Playwright fails.
 
     Args:
@@ -154,6 +156,19 @@ async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", ti
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
             try:
+                # Authenticate so the browser gets the bot's skin preference
+                if settings.bot_username and settings.bot_password:
+                    login_url = f"{settings.forum_base_url}/index.php?act=Login&CODE=01"
+                    await page.goto(login_url, wait_until="domcontentloaded", timeout=timeout_ms)
+                    try:
+                        await page.fill('input[name="UserName"]', settings.bot_username)
+                        await page.fill('input[name="PassWord"]', settings.bot_password)
+                        await page.click('input[type="submit"][value*="Log"]')
+                        await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
+                        print(f"[Fetcher] Playwright authenticated as {settings.bot_username}")
+                    except Exception as e:
+                        print(f"[Fetcher] Playwright login failed: {e}, continuing as guest")
+
                 await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                 # Wait for JS to render the power grid card
                 try:
