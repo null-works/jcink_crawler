@@ -136,19 +136,29 @@ async def _discover_all_characters():
         print(f"[Scheduler] Error during character discovery: {e}")
 
 
+async def _startup_sequence():
+    """Run discovery then a full thread crawl on startup.
+
+    Sequenced to avoid concurrent forum requests that trigger flood control.
+    """
+    await _discover_all_characters()
+    print("[Scheduler] Discovery done — starting initial thread crawl")
+    await _crawl_all_threads()
+
+
 def start_scheduler():
     """Start the APScheduler with configured intervals."""
     global _scheduler
     _scheduler = AsyncIOScheduler()
 
-    # Run discovery immediately on startup, then on interval
+    # All jobs run on interval only — startup is handled by _startup_sequence
     _scheduler.add_job(
         _discover_all_characters,
         trigger=IntervalTrigger(minutes=settings.crawl_discovery_interval_minutes),
         id="discover_characters",
         name="Auto-discover characters from member list",
         replace_existing=True,
-        next_run_time=None,  # Will be scheduled; immediate run is separate
+        next_run_time=None,  # Startup handled separately
     )
 
     _scheduler.add_job(
@@ -157,6 +167,7 @@ def start_scheduler():
         id="crawl_threads",
         name="Crawl threads for all characters",
         replace_existing=True,
+        next_run_time=None,  # Startup handled separately
     )
 
     _scheduler.add_job(
@@ -169,8 +180,8 @@ def start_scheduler():
 
     _scheduler.start()
 
-    # Trigger discovery immediately on startup
-    asyncio.get_running_loop().create_task(_discover_all_characters())
+    # Run discovery → thread crawl sequentially on startup
+    asyncio.get_running_loop().create_task(_startup_sequence())
 
     print(f"[Scheduler] Started - discovery every {settings.crawl_discovery_interval_minutes}min, threads every {settings.crawl_threads_interval_minutes}min, profiles every {settings.crawl_profiles_interval_minutes}min")
 

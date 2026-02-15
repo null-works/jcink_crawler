@@ -441,6 +441,12 @@ async def get_player_detail(
         char["monthly_posts"] = mc_row["cnt"] if mc_row else 0
         total_monthly_posts += char["monthly_posts"]
 
+        # Check if we have ANY post data for this character (even outside this month)
+        any_posts = await db.execute(
+            "SELECT 1 FROM posts WHERE character_id = ? LIMIT 1", (cid,),
+        )
+        char["has_post_data"] = await any_posts.fetchone() is not None
+
         # Activity check: 0 = danger, 1 = warning, 2+ = safe
         char["activity_safe"] = char["monthly_posts"] >= 2
         if char["monthly_posts"] >= 2:

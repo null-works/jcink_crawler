@@ -97,7 +97,9 @@
                 <td class="bold">{{ char.name }}</td>
                 <td class="text-cyan">{{ char.affiliation or '—' }}</td>
                 <td>
-                    {% if char.monthly_posts >= 2 %}
+                    {% if not char.has_post_data %}
+                    <span class="ac-badge ac-pending" title="Post data still loading — crawl in progress">PENDING</span>
+                    {% elif char.monthly_posts >= 2 %}
                     <span class="ac-badge ac-safe" title="{{ char.monthly_posts }} posts this period">SAFE</span>
                     {% elif char.monthly_posts == 1 %}
                     <span class="ac-badge ac-warning" title="{{ char.monthly_posts }} post this period — needs 1 more">WARNING</span>
