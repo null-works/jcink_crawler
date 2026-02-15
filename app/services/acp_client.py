@@ -196,6 +196,75 @@ def extract_post_records(raw: dict[str, list[list]]) -> list[dict]:
     return records
 
 
+def extract_topic_records(raw: dict[str, list[list]]) -> list[dict]:
+    """Extract structured topic (thread) records from parsed SQL dump.
+
+    Returns list of dicts with: thread_id, title, forum_id, state,
+    last_poster_id, last_poster_name, last_post_date
+    """
+    topics_rows = raw.get("topics", [])
+    records = []
+
+    min_cols = max(
+        _TOPIC_COL_ID, _TOPIC_COL_TITLE, _TOPIC_COL_STATE,
+        _TOPIC_COL_LAST_POSTER_ID, _TOPIC_COL_LAST_POST_DATE,
+        _TOPIC_COL_LAST_POSTER_NAME, _TOPIC_COL_FORUM_ID,
+    ) + 1
+
+    for row in topics_rows:
+        if len(row) < min_cols:
+            continue
+
+        topic_id = row[_TOPIC_COL_ID]
+        if topic_id is None:
+            continue
+
+        records.append({
+            "thread_id": str(topic_id),
+            "title": row[_TOPIC_COL_TITLE] or "Untitled",
+            "forum_id": str(row[_TOPIC_COL_FORUM_ID]) if row[_TOPIC_COL_FORUM_ID] else None,
+            "state": row[_TOPIC_COL_STATE],
+            "last_poster_id": str(row[_TOPIC_COL_LAST_POSTER_ID]) if row[_TOPIC_COL_LAST_POSTER_ID] else None,
+            "last_poster_name": row[_TOPIC_COL_LAST_POSTER_NAME] if isinstance(row[_TOPIC_COL_LAST_POSTER_NAME], str) else None,
+            "last_post_date": _unix_to_iso(row[_TOPIC_COL_LAST_POST_DATE]),
+        })
+
+    return records
+
+
+def extract_member_records(raw: dict[str, list[list]]) -> list[dict]:
+    """Extract structured member records from parsed SQL dump.
+
+    Returns list of dicts with: member_id, name, post_count
+    """
+    members_rows = raw.get("members", [])
+    records = []
+
+    min_cols = max(_MEMBER_COL_ID, _MEMBER_COL_NAME, _MEMBER_COL_POST_COUNT) + 1
+
+    for row in members_rows:
+        if len(row) < min_cols:
+            continue
+
+        member_id = row[_MEMBER_COL_ID]
+        if member_id is None:
+            continue
+
+        post_count = row[_MEMBER_COL_POST_COUNT]
+        try:
+            post_count = int(post_count) if post_count is not None else 0
+        except (ValueError, TypeError):
+            post_count = 0
+
+        records.append({
+            "member_id": str(member_id),
+            "name": row[_MEMBER_COL_NAME] or "Unknown",
+            "post_count": post_count,
+        })
+
+    return records
+
+
 class ACPClient:
     """Client for JCink's Admin Control Panel MySQL dump feature."""
 

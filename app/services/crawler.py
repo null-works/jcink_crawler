@@ -628,10 +628,17 @@ async def register_character(user_id: str, db_path: str) -> dict:
 
 
 async def sync_posts_from_acp(db_path: str, username: str | None = None, password: str | None = None) -> dict:
-    """Sync post records using JCink Admin CP SQL dump.
+    """Sync thread and post data using JCink Admin CP SQL dump.
 
-    Logs into the ACP, dumps the posts table, and updates our
-    local posts table with accurate dates from the database.
+    This is the primary data sync when ACP is configured. It replaces the
+    thread discovery + last-poster detection that crawl_character_threads does
+    via HTML scraping. After this runs, only quote extraction needs HTML.
+
+    Flow:
+    1. Login to ACP, dump full database
+    2. Parse topics → upsert threads with forum categorization + last poster
+    3. Parse posts → link characters to threads, set post counts, record dates
+    4. Fetch avatars for last posters (with caching)
 
     Credentials are resolved in order:
     1. Explicit username/password params
@@ -646,8 +653,10 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     Returns:
         Summary dict with counts
     """
-    from app.services.acp_client import ACPClient
-    from app.models.operations import get_crawl_status
+    from app.services.acp_client import ACPClient, extract_topic_records, extract_post_records as acp_extract_posts
+    from app.services.parser import categorize_thread
+    from app.models.operations import get_crawl_status, set_crawl_status
+    from datetime import datetime, timezone
 
     # Resolve credentials: params > DB > env
     if not username or not password:
@@ -661,94 +670,348 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     if not username or not password:
         return {"error": "No admin credentials configured — set them in Admin > ACP Settings"}
 
-    print("[Crawler] Starting ACP post sync")
-    set_activity("Syncing posts from ACP")
+    print("[Crawler] Starting ACP full sync")
+    set_activity("Syncing from ACP")
 
     client = ACPClient(username=username, password=password)
     try:
-        posts = await client.fetch_posts()
-        if not posts:
+        raw = await client.fetch_all_data()
+        if not raw:
             clear_activity()
-            return {"error": "No post data retrieved from ACP", "posts_synced": 0}
+            return {"error": "No data retrieved from ACP"}
 
-        print(f"[Crawler] ACP returned {len(posts)} total posts")
-        set_activity(f"Processing {len(posts)} posts from ACP")
+        # Extract structured records from SQL dump
+        topics = extract_topic_records(raw)
+        posts = acp_extract_posts(raw)
+        print(f"[Crawler] ACP dump: {len(topics)} topics, {len(posts)} posts")
 
-        # Load tracked character IDs and thread IDs
+        if not topics and not posts:
+            clear_activity()
+            return {"error": "ACP dump contained no topic or post data"}
+
+        set_activity(f"Processing {len(topics)} topics, {len(posts)} posts from ACP")
+
+        # Load tracked character IDs
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
-
             cursor = await db.execute("SELECT id FROM characters")
             tracked_chars = {row["id"] for row in await cursor.fetchall()}
 
-            cursor = await db.execute("SELECT id FROM threads")
-            tracked_threads = {row["id"] for row in await cursor.fetchall()}
+        # Excluded forum IDs
+        excluded_forums = settings.excluded_forum_ids
 
-        # Filter to posts by tracked characters in tracked threads
-        relevant = [
-            p for p in posts
-            if p["character_id"] in tracked_chars
-            and p.get("thread_id") in tracked_threads
-        ]
-        print(f"[Crawler] {len(relevant)} posts match tracked characters & threads")
+        # ── Phase 1: Upsert threads from topics ──
+        # Build topic lookup for quick access
+        topic_map: dict[str, dict] = {}
+        for t in topics:
+            if t["forum_id"] in excluded_forums:
+                continue
+            topic_map[t["thread_id"]] = t
 
-        # Group by thread for efficient DB operations
-        by_thread: dict[str, list[dict]] = {}
-        for p in relevant:
-            tid = p["thread_id"]
-            by_thread.setdefault(tid, []).append(p)
-
-        # Also count posts per (character, thread) pair for character_threads.post_count
+        # ── Phase 2: Figure out which threads involve tracked characters ──
+        # Group posts by thread, and by (character, thread)
+        posts_by_thread: dict[str, list[dict]] = {}
         post_counts: dict[tuple[str, str], int] = {}
-        for p in relevant:
-            key = (p["character_id"], p["thread_id"])
-            post_counts[key] = post_counts.get(key, 0) + 1
+        chars_in_thread: dict[str, set[str]] = {}
 
-        # Update database
+        for p in posts:
+            tid = p.get("thread_id")
+            cid = p["character_id"]
+            if not tid:
+                continue
+
+            posts_by_thread.setdefault(tid, []).append(p)
+            key = (cid, tid)
+            post_counts[key] = post_counts.get(key, 0) + 1
+            chars_in_thread.setdefault(tid, set()).add(cid)
+
+        # Find threads that have at least one tracked character
+        relevant_thread_ids = set()
+        for tid, char_ids in chars_in_thread.items():
+            if char_ids & tracked_chars:
+                relevant_thread_ids.add(tid)
+
+        print(f"[Crawler] {len(relevant_thread_ids)} threads involve tracked characters")
+
+        # ── Phase 3: Fetch last poster avatars ──
+        # Collect unique last poster IDs that need avatar lookups
+        avatar_cache: dict[str, str | None] = {}
+        poster_ids_needing_avatar: set[str] = set()
+        for tid in relevant_thread_ids:
+            topic = topic_map.get(tid)
+            if topic and topic.get("last_poster_id"):
+                poster_ids_needing_avatar.add(topic["last_poster_id"])
+
+        # Check which avatars we already have in DB
+        if poster_ids_needing_avatar:
+            async with aiosqlite.connect(db_path) as db:
+                db.row_factory = aiosqlite.Row
+                placeholders = ",".join("?" * len(poster_ids_needing_avatar))
+                cursor = await db.execute(
+                    f"SELECT id, avatar_url FROM characters WHERE id IN ({placeholders})",
+                    list(poster_ids_needing_avatar),
+                )
+                for row in await cursor.fetchall():
+                    if row["avatar_url"]:
+                        avatar_cache[row["id"]] = row["avatar_url"]
+
+                # Also check threads table for cached avatars
+                cursor = await db.execute(
+                    f"SELECT last_poster_id, last_poster_avatar FROM threads WHERE last_poster_id IN ({placeholders}) AND last_poster_avatar IS NOT NULL",
+                    list(poster_ids_needing_avatar),
+                )
+                for row in await cursor.fetchall():
+                    if row["last_poster_id"] not in avatar_cache:
+                        avatar_cache[row["last_poster_id"]] = row["last_poster_avatar"]
+
+        # Fetch missing avatars via HTTP (batched, polite)
+        missing_avatar_ids = poster_ids_needing_avatar - set(avatar_cache.keys())
+        if missing_avatar_ids:
+            print(f"[Crawler] Fetching {len(missing_avatar_ids)} last-poster avatars")
+            set_activity(f"Fetching {len(missing_avatar_ids)} avatars")
+            for poster_id in missing_avatar_ids:
+                try:
+                    avatar_html = await fetch_page_with_delay(
+                        f"{settings.forum_base_url}/index.php?showuser={poster_id}"
+                    )
+                    if avatar_html:
+                        avatar_cache[poster_id] = parse_avatar_from_profile(avatar_html)
+                    else:
+                        avatar_cache[poster_id] = None
+                except Exception:
+                    avatar_cache[poster_id] = None
+
+        # ── Phase 4: Write everything to DB ──
+        set_activity("Writing ACP data to database")
+        base_url = settings.forum_base_url
+        threads_upserted = 0
+        links_created = 0
+        posts_stored = 0
+
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
 
-            # Replace post records per thread
-            threads_updated = 0
-            for tid, thread_posts in by_thread.items():
-                await db.execute("DELETE FROM posts WHERE thread_id = ?", (tid,))
-                for p in thread_posts:
-                    await db.execute(
-                        "INSERT INTO posts (character_id, thread_id, post_date) VALUES (?, ?, ?)",
-                        (p["character_id"], tid, p.get("post_date")),
-                    )
-                threads_updated += 1
+            for tid in relevant_thread_ids:
+                topic = topic_map.get(tid)
+                if not topic:
+                    # Thread exists in posts but not in topics — skip thread upsert
+                    # but still process posts for it if thread already exists in our DB
+                    cursor = await db.execute("SELECT id FROM threads WHERE id = ?", (tid,))
+                    if not await cursor.fetchone():
+                        continue
 
-            # Update character_threads.post_count
-            counts_updated = 0
-            for (cid, tid), count in post_counts.items():
-                result = await db.execute(
-                    "UPDATE character_threads SET post_count = ? WHERE character_id = ? AND thread_id = ?",
-                    (count, cid, tid),
-                )
-                if result.rowcount > 0:
-                    counts_updated += 1
+                if topic:
+                    category = categorize_thread(topic["forum_id"])
+                    thread_url = f"{base_url}/index.php?showtopic={tid}"
+                    last_poster_id = topic.get("last_poster_id")
+                    last_poster_avatar = avatar_cache.get(last_poster_id) if last_poster_id else None
+
+                    await upsert_thread(
+                        db,
+                        thread_id=tid,
+                        title=topic["title"],
+                        url=thread_url,
+                        forum_id=topic["forum_id"],
+                        forum_name=None,  # SQL dump doesn't have forum names
+                        category=category,
+                        last_poster_id=last_poster_id,
+                        last_poster_name=topic.get("last_poster_name"),
+                        last_poster_avatar=last_poster_avatar,
+                    )
+                    threads_upserted += 1
+
+                # Link tracked characters to this thread
+                thread_chars = chars_in_thread.get(tid, set())
+                topic_data = topic_map.get(tid)
+                category = categorize_thread(topic_data["forum_id"]) if topic_data else "ongoing"
+
+                for cid in thread_chars:
+                    if cid not in tracked_chars:
+                        continue
+                    is_last = (
+                        topic_data.get("last_poster_id") == cid
+                        if topic_data else False
+                    )
+                    count = post_counts.get((cid, tid), 0)
+                    await link_character_thread(
+                        db,
+                        character_id=cid,
+                        thread_id=tid,
+                        category=category,
+                        is_user_last_poster=is_last,
+                        post_count=count,
+                    )
+                    links_created += 1
+
+                # Store individual post records for date-based activity queries
+                thread_posts = posts_by_thread.get(tid, [])
+                # Only store posts by tracked characters
+                relevant_posts = [p for p in thread_posts if p["character_id"] in tracked_chars]
+                if relevant_posts:
+                    await db.execute("DELETE FROM posts WHERE thread_id = ?", (tid,))
+                    for p in relevant_posts:
+                        await db.execute(
+                            "INSERT INTO posts (character_id, thread_id, post_date) VALUES (?, ?, ?)",
+                            (p["character_id"], tid, p.get("post_date")),
+                        )
+                    posts_stored += len(relevant_posts)
 
             await db.commit()
 
         # Record last sync time
-        from app.models.operations import set_crawl_status
         async with aiosqlite.connect(db_path) as db:
-            from datetime import datetime, timezone
             await set_crawl_status(db, "acp_last_sync", datetime.now(timezone.utc).isoformat())
 
         clear_activity()
         summary = {
-            "total_acp_posts": len(posts),
-            "relevant_posts": len(relevant),
-            "threads_updated": threads_updated,
-            "counts_updated": counts_updated,
+            "total_topics": len(topics),
+            "total_posts": len(posts),
+            "threads_upserted": threads_upserted,
+            "character_links": links_created,
+            "posts_stored": posts_stored,
         }
         print(f"[Crawler] ACP sync complete: {summary}")
         return summary
 
     finally:
         await client.close()
+
+
+async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict:
+    """Crawl thread pages for quote extraction only.
+
+    This is designed to run after sync_posts_from_acp() which already handles
+    thread discovery, post counts, and last poster. This function only needs
+    to fetch the HTML of threads that haven't been quote-scraped yet and
+    extract dialog quotes from the post bodies.
+
+    Uses the quote_crawl_log to skip threads already processed.
+
+    Args:
+        db_path: Path to SQLite database
+        batch_size: Max threads to process per run (default from config)
+
+    Returns:
+        Summary dict with counts
+    """
+    if batch_size is None:
+        batch_size = settings.crawl_quotes_batch_size
+
+    base_url = settings.forum_base_url
+
+    print("[Crawler] Starting quote-only crawl pass")
+    set_activity("Crawling quotes")
+
+    # Load all characters and find threads needing quote scraping
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+
+        # All known characters
+        cursor = await db.execute("SELECT id, name FROM characters")
+        rows = await cursor.fetchall()
+        all_characters = {row["id"]: row["name"] for row in rows}
+
+        if not all_characters:
+            clear_activity()
+            return {"threads_processed": 0, "quotes_added": 0}
+
+        # Find threads that have at least one character not yet quote-scraped.
+        # We look at character_threads to find which threads involve tracked characters,
+        # then check quote_crawl_log to see if they've been scraped.
+        cursor = await db.execute("""
+            SELECT DISTINCT ct.thread_id, t.url
+            FROM character_threads ct
+            JOIN threads t ON t.id = ct.thread_id
+            WHERE NOT EXISTS (
+                SELECT 1 FROM quote_crawl_log qcl
+                WHERE qcl.thread_id = ct.thread_id
+                  AND qcl.character_id = ct.character_id
+            )
+            LIMIT ?
+        """, (batch_size,))
+        threads_to_scrape = [dict(r) for r in await cursor.fetchall()]
+
+    if not threads_to_scrape:
+        clear_activity()
+        print("[Crawler] No threads need quote scraping")
+        return {"threads_processed": 0, "quotes_added": 0}
+
+    print(f"[Crawler] {len(threads_to_scrape)} threads need quote scraping")
+
+    total_quotes = 0
+    threads_processed = 0
+
+    for thread_row in threads_to_scrape:
+        tid = thread_row["thread_id"]
+        thread_url = thread_row["url"] or f"{base_url}/index.php?showtopic={tid}"
+
+        set_activity(
+            f"Scraping quotes ({threads_processed + 1}/{len(threads_to_scrape)})",
+        )
+
+        # Fetch all pages of this thread
+        thread_html = await fetch_page_with_delay(thread_url)
+        if not thread_html or is_board_message(thread_html):
+            continue
+
+        max_st = parse_thread_pagination(thread_html)
+        all_pages = [thread_html]
+
+        if max_st > 0:
+            page_urls = []
+            for st in range(25, max_st + 1, 25):
+                sep = "&" if "?" in thread_url else "?"
+                page_urls.append(f"{thread_url}{sep}st={st}")
+            if page_urls:
+                page_htmls = await fetch_pages_concurrent(page_urls)
+                all_pages.extend(h for h in page_htmls if h)
+
+        # Check which characters still need this thread scraped
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT character_id FROM quote_crawl_log WHERE thread_id = ?",
+                (tid,),
+            )
+            already_scraped = {row["character_id"] for row in await cursor.fetchall()}
+
+        chars_needing = {
+            cid: cname for cid, cname in all_characters.items()
+            if cid not in already_scraped
+        }
+
+        # Extract quotes for each character
+        thread_title = None
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("SELECT title FROM threads WHERE id = ?", (tid,))
+            row = await cursor.fetchone()
+            thread_title = row["title"] if row else "Unknown"
+
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            for cid, cname in chars_needing.items():
+                char_quotes = []
+                for page_html in all_pages:
+                    char_quotes.extend(extract_quotes_from_html(page_html, cname))
+
+                for q in char_quotes:
+                    added = await add_quote(db, cid, q["text"], tid, thread_title)
+                    if added:
+                        total_quotes += 1
+
+                await mark_thread_quote_scraped(db, tid, cid)
+
+            await db.commit()
+
+        threads_processed += 1
+
+    clear_activity()
+    print(f"[Crawler] Quote-only crawl complete: {threads_processed} threads, {total_quotes} quotes")
+    return {
+        "threads_processed": threads_processed,
+        "quotes_added": total_quotes,
+    }
 
 
 async def discover_characters(db_path: str) -> dict:

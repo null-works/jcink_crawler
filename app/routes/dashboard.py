@@ -28,7 +28,7 @@ from app.models import (
 )
 from app.models.operations import set_crawl_status, get_crawl_status
 from app.services import crawl_character_threads, crawl_character_profile, register_character
-from app.services.crawler import discover_characters, sync_posts_from_acp
+from app.services.crawler import discover_characters, sync_posts_from_acp, crawl_quotes_only
 from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
 from app.services.activity import get_activity
 
@@ -716,6 +716,8 @@ async def htmx_crawl(
         background_tasks.add_task(_crawl_all_profiles)
     elif crawl_type == "sync-posts":
         background_tasks.add_task(sync_posts_from_acp, settings.database_path)
+    elif crawl_type == "crawl-quotes":
+        background_tasks.add_task(crawl_quotes_only, settings.database_path)
     elif character_id:
         if crawl_type == "threads":
             background_tasks.add_task(crawl_character_threads, character_id, settings.database_path)

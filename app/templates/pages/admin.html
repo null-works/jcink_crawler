@@ -80,8 +80,8 @@
 <div class="card" style="margin-top: 1.5rem;">
     <h3 class="card-title" style="margin-bottom: 0.5rem;">ACP Post Sync</h3>
     <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 1rem;">
-        Logs into JCink's Admin Control Panel and dumps the posts database for accurate post dates and activity tracking.
-        This gives exact post counts and timestamps from the forum's SQL database instead of scraping HTML.
+        Logs into JCink's Admin Control Panel and dumps the full database. Syncs threads, post counts, last poster data,
+        and accurate timestamps from the SQL database. When configured, this replaces HTML scraping for everything except quotes.
     </p>
 
     <div class="admin-grid" style="margin-bottom: 1rem;">
@@ -110,16 +110,23 @@
                 <br>Last sync: {{ acp_last_sync|format_time }}
                 {% endif %}
             </p>
-            <button class="btn btn-green"
-                    hx-post="/htmx/acp-sync"
-                    hx-target="#acp-sync-result"
-                    hx-swap="innerHTML">Sync Posts from ACP</button>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <button class="btn btn-green"
+                        hx-post="/htmx/acp-sync"
+                        hx-target="#acp-sync-result"
+                        hx-swap="innerHTML">Full ACP Sync</button>
+                <button class="btn btn-purple"
+                        hx-post="/htmx/crawl"
+                        hx-vals='{"crawl_type": "crawl-quotes"}'
+                        hx-target="#acp-sync-result"
+                        hx-swap="innerHTML">Crawl Quotes Only</button>
+            </div>
             {% else %}
             <p class="text-comment" style="font-size: 0.85rem;">
                 <span class="text-yellow">No credentials configured.</span>
                 Enter your JCink admin username and password, then save.
             </p>
-            <button class="btn btn-ghost" disabled>Sync Posts from ACP</button>
+            <button class="btn btn-ghost" disabled>Full ACP Sync</button>
             {% endif %}
             <div id="acp-sync-result" class="result"></div>
         </div>

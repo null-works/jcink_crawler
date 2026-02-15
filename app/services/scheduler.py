@@ -4,16 +4,56 @@ from apscheduler.triggers.interval import IntervalTrigger
 import aiosqlite
 
 from app.config import settings
-from app.services.crawler import crawl_character_threads, crawl_character_profile, discover_characters, sync_posts_from_acp
+from app.services.crawler import crawl_character_threads, crawl_character_profile, discover_characters, sync_posts_from_acp, crawl_quotes_only
 from app.services.activity import set_activity, clear_activity
 
 
 _scheduler: AsyncIOScheduler | None = None
 
 
+async def _acp_available() -> bool:
+    """Check if ACP credentials are configured (env or DB)."""
+    if settings.admin_username and settings.admin_password:
+        return True
+    # Check DB for dashboard-saved credentials
+    try:
+        from app.models.operations import get_crawl_status
+        async with aiosqlite.connect(settings.database_path) as db:
+            db.row_factory = aiosqlite.Row
+            user = await get_crawl_status(db, "acp_username")
+            pwd = await get_crawl_status(db, "acp_password")
+            return bool(user and pwd)
+    except Exception:
+        return False
+
+
 async def _crawl_all_threads():
-    """Crawl threads for all tracked characters."""
-    print("[Scheduler] Starting scheduled thread crawl for all characters")
+    """Crawl threads for all tracked characters.
+
+    When ACP credentials are configured, uses the ACP SQL dump as the primary
+    data source (threads, posts, last poster, counts) and follows up with a
+    quote-only HTML pass. Falls back to full HTML crawling when ACP is not
+    available.
+    """
+    # Try ACP-primary path first
+    if await _acp_available():
+        print("[Scheduler] ACP configured — using SQL dump as primary source")
+        try:
+            result = await sync_posts_from_acp(settings.database_path)
+            if "error" not in result:
+                print(f"[Scheduler] ACP sync succeeded: {result}")
+                # Follow up with quote-only HTML pass
+                print("[Scheduler] Starting quote-only HTML pass")
+                quote_result = await crawl_quotes_only(settings.database_path)
+                print(f"[Scheduler] Quote pass: {quote_result}")
+                return
+            else:
+                print(f"[Scheduler] ACP sync failed: {result.get('error')} — falling back to HTML crawl")
+        except Exception as e:
+            print(f"[Scheduler] ACP sync error: {e} — falling back to HTML crawl")
+
+    # Fallback: full HTML crawl per character
+    print("[Scheduler] Starting scheduled HTML thread crawl for all characters")
     excluded = settings.excluded_name_set
     async with aiosqlite.connect(settings.database_path) as db:
         db.row_factory = aiosqlite.Row
@@ -127,23 +167,12 @@ def start_scheduler():
         replace_existing=True,
     )
 
-    # Optional ACP post sync (only if interval > 0 and credentials configured)
-    if settings.acp_sync_interval_minutes > 0 and settings.admin_username:
-        _scheduler.add_job(
-            _sync_posts_acp,
-            trigger=IntervalTrigger(minutes=settings.acp_sync_interval_minutes),
-            id="sync_posts_acp",
-            name="Sync posts from ACP SQL dump",
-            replace_existing=True,
-        )
-
     _scheduler.start()
 
     # Trigger discovery immediately on startup
     asyncio.get_running_loop().create_task(_discover_all_characters())
 
-    acp_msg = f", ACP sync every {settings.acp_sync_interval_minutes}min" if settings.acp_sync_interval_minutes > 0 else ""
-    print(f"[Scheduler] Started - discovery every {settings.crawl_discovery_interval_minutes}min, threads every {settings.crawl_threads_interval_minutes}min, profiles every {settings.crawl_profiles_interval_minutes}min{acp_msg}")
+    print(f"[Scheduler] Started - discovery every {settings.crawl_discovery_interval_minutes}min, threads every {settings.crawl_threads_interval_minutes}min, profiles every {settings.crawl_profiles_interval_minutes}min")
 
 
 def stop_scheduler():
