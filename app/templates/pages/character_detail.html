@@ -57,7 +57,28 @@
             </div>
         </div>
 
-        <div style="margin-left: auto; display: flex; flex-direction: column; gap: 0.5rem;">
+        {# Power Grid - inline in header #}
+        {% set pg_keys = ['power grid - int', 'power grid - str', 'power grid - spd', 'power grid - dur', 'power grid - pwr', 'power grid - cmb'] %}
+        {% set pg_labels = {'power grid - int': 'INT', 'power grid - str': 'STR', 'power grid - spd': 'SPD', 'power grid - dur': 'DUR', 'power grid - pwr': 'PWR', 'power grid - cmb': 'CMB'} %}
+        {% set pg_stats = [] %}
+        {% for k in pg_keys %}
+            {% if pg_stats.append({'label': pg_labels[k], 'value': fields.get(k, '')|int(0), 'has_data': fields.get(k) is not none and fields.get(k) != ''}) %}{% endif %}
+        {% endfor %}
+        <div class="powergrid-inline">
+            <div class="powergrid">
+                {% for stat in pg_stats %}
+                <div class="powergrid-stat">
+                    <span class="powergrid-label">{{ stat.label }}</span>
+                    <div class="powergrid-track">
+                        <div class="powergrid-fill" style="width: {{ (stat.value / 7 * 100)|round if stat.has_data else 0 }}%"></div>
+                    </div>
+                    <span class="powergrid-value">{{ stat.value if stat.has_data else '—' }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="char-actions">
             {% if character.profile_url %}
             <a href="{{ character.profile_url }}" target="_blank" class="btn btn-ghost btn-sm">View Profile</a>
             {% endif %}
@@ -83,28 +104,6 @@
         &middot; ID: <span class="mono">{{ character.id }}</span>
     </div>
     {% endif %}
-</div>
-
-{# Power Grid #}
-{% set pg_keys = ['power grid - int', 'power grid - str', 'power grid - spd', 'power grid - dur', 'power grid - pwr', 'power grid - cmb'] %}
-{% set pg_labels = {'power grid - int': 'INT', 'power grid - str': 'STR', 'power grid - spd': 'SPD', 'power grid - dur': 'DUR', 'power grid - pwr': 'PWR', 'power grid - cmb': 'CMB'} %}
-{% set pg_stats = [] %}
-{% for k in pg_keys %}
-    {% if pg_stats.append({'label': pg_labels[k], 'value': fields.get(k, '')|int(0), 'has_data': fields.get(k) is not none and fields.get(k) != ''}) %}{% endif %}
-{% endfor %}
-<div class="card">
-    <h3 class="card-title" style="margin-bottom: 1rem;">Power Grid</h3>
-    <div class="powergrid">
-        {% for stat in pg_stats %}
-        <div class="powergrid-stat">
-            <span class="powergrid-label">{{ stat.label }}</span>
-            <div class="powergrid-track">
-                <div class="powergrid-fill" style="width: {{ (stat.value / 7 * 100)|round if stat.has_data else 0 }}%"></div>
-            </div>
-            <span class="powergrid-value">{{ stat.value if stat.has_data else '—' }}</span>
-        </div>
-        {% endfor %}
-    </div>
 </div>
 
 {# Profile fields (excluding power grid) #}
