@@ -441,8 +441,14 @@ async def get_player_detail(
         char["monthly_posts"] = mc_row["cnt"] if mc_row else 0
         total_monthly_posts += char["monthly_posts"]
 
-        # Activity check: 2+ posts in the period = safe
+        # Activity check: 0 = danger, 1 = warning, 2+ = safe
         char["activity_safe"] = char["monthly_posts"] >= 2
+        if char["monthly_posts"] >= 2:
+            char["activity_status"] = "safe"
+        elif char["monthly_posts"] == 1:
+            char["activity_status"] = "warning"
+        else:
+            char["activity_status"] = "danger"
 
     # Get awaiting threads across all characters for this player
     char_ids = [c["id"] for c in characters]

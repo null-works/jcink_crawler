@@ -160,4 +160,9 @@ async def init_db():
         except Exception:
             pass  # Column already exists
 
+        # Clean up posts with NULL dates — these are stale records from before
+        # the date parser fix. Deleting them forces the next crawl to re-populate
+        # with proper dates, which is needed for activity check queries.
+        await db.execute("DELETE FROM posts WHERE post_date IS NULL")
+
         await db.commit()

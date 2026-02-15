@@ -97,10 +97,12 @@
                 <td class="bold">{{ char.name }}</td>
                 <td class="text-cyan">{{ char.affiliation or '—' }}</td>
                 <td>
-                    {% if char.activity_safe %}
+                    {% if char.monthly_posts >= 2 %}
                     <span class="ac-badge ac-safe" title="{{ char.monthly_posts }} posts this period">SAFE</span>
+                    {% elif char.monthly_posts == 1 %}
+                    <span class="ac-badge ac-warning" title="{{ char.monthly_posts }} post this period — needs 1 more">WARNING</span>
                     {% else %}
-                    <span class="ac-badge ac-unsafe" title="{{ char.monthly_posts }} posts this period — needs {{ 2 - char.monthly_posts }} more">DANGER</span>
+                    <span class="ac-badge ac-unsafe" title="0 posts this period — needs 2">DANGER</span>
                     {% endif %}
                 </td>
                 <td><span class="count-badge purple">{{ char.post_count }}</span></td>

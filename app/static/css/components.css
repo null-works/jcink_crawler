@@ -955,6 +955,12 @@ select.form-input {
     border: 1px solid rgba(80, 250, 123, 0.5);
 }
 
+.ac-warning {
+    background: rgba(255, 183, 77, 0.2);
+    color: var(--orange);
+    border: 1px solid rgba(255, 183, 77, 0.5);
+}
+
 .ac-unsafe {
     background: rgba(255, 85, 85, 0.2);
     color: var(--red);
