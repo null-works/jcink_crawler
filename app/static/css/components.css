@@ -433,11 +433,15 @@ select.form-input {
 
 /* === Power Grid === */
 .powergrid-inline {
-    margin-left: auto;
-    flex-shrink: 0;
-    width: 300px;
+    flex: 1;
     display: flex;
     align-items: center;
+    justify-content: center;
+    min-width: 0;
+}
+
+.powergrid-inline .powergrid {
+    max-width: 300px;
 }
 
 .char-actions {
