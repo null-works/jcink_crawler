@@ -137,7 +137,7 @@ async def upsert_thread(
             category = excluded.category,
             last_poster_id = excluded.last_poster_id,
             last_poster_name = excluded.last_poster_name,
-            last_poster_avatar = excluded.last_poster_avatar,
+            last_poster_avatar = COALESCE(excluded.last_poster_avatar, threads.last_poster_avatar),
             last_crawled = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
     """, (thread_id, title, url, forum_id, forum_name, category,

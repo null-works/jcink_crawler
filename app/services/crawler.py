@@ -167,8 +167,8 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         last_poster_name = last_poster.name if last_poster else None
         last_poster_id = last_poster.user_id if last_poster else None
         is_user_last = (
-            last_poster_name.lower() == character_name.lower()
-            if last_poster_name and character_name
+            last_poster_id == character_id
+            if last_poster_id
             else False
         )
 
@@ -486,10 +486,10 @@ async def crawl_single_thread(
             chars_to_mark.append(cid)
 
     # Determine if user is last poster
-    character_name = all_characters.get(user_id) if user_id else None
     is_user_last = (
-        last_poster_name and character_name
-        and last_poster_name.lower() == character_name.lower()
+        last_poster_id == user_id
+        if last_poster_id and user_id
+        else False
     )
 
     # Write everything to DB
