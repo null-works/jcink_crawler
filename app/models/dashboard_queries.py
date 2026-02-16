@@ -165,10 +165,13 @@ async def search_threads_global(
     offset = (max(page, 1) - 1) * per_page
     select_sql = f"""
         SELECT t.id, t.title, t.url, t.forum_id, t.forum_name,
-               t.last_poster_id, t.last_poster_name, t.last_poster_avatar,
+               t.last_poster_id, t.last_poster_name,
+               COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS last_poster_avatar,
                ct.category AS char_category, ct.is_user_last_poster,
                c.id AS char_id, c.name AS char_name
-        {base}{where_clause}
+        {base}
+        LEFT JOIN characters c_poster ON c_poster.id = t.last_poster_id
+        {where_clause}
         ORDER BY {order}
         LIMIT ? OFFSET ?
     """
@@ -460,11 +463,13 @@ async def get_player_detail(
     char_ids = [c["id"] for c in characters]
     placeholders = ",".join("?" for _ in char_ids)
     awaiting_cursor = await db.execute(
-        f"""SELECT t.id, t.title, t.url, t.last_poster_name, t.last_poster_avatar,
+        f"""SELECT t.id, t.title, t.url, t.last_poster_name,
+                   COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS last_poster_avatar,
                    ct.category, c.id AS char_id, c.name AS char_name
             FROM character_threads ct
             JOIN threads t ON t.id = ct.thread_id
             JOIN characters c ON c.id = ct.character_id
+            LEFT JOIN characters c_poster ON c_poster.id = t.last_poster_id
             WHERE ct.character_id IN ({placeholders})
               AND ct.category = 'ongoing'
               AND ct.is_user_last_poster = 0

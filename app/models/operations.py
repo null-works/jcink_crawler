@@ -175,9 +175,11 @@ async def get_character_threads(
     char_name = row["name"] if row else "Unknown"
 
     cursor = await db.execute("""
-        SELECT t.*, ct.category as char_category, ct.is_user_last_poster
+        SELECT t.*, ct.category as char_category, ct.is_user_last_poster,
+               COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS resolved_avatar
         FROM threads t
         JOIN character_threads ct ON t.id = ct.thread_id
+        LEFT JOIN characters c_poster ON c_poster.id = t.last_poster_id
         WHERE ct.character_id = ?
         ORDER BY t.updated_at DESC
     """, (character_id,))
@@ -199,7 +201,7 @@ async def get_character_threads(
             category=r["char_category"],
             last_poster_id=r.get("last_poster_id"),
             last_poster_name=r.get("last_poster_name"),
-            last_poster_avatar=r.get("last_poster_avatar"),
+            last_poster_avatar=r.get("resolved_avatar"),
             is_user_last_poster=bool(r.get("is_user_last_poster", 0)),
         )
         cat = r["char_category"]
