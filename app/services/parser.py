@@ -677,44 +677,6 @@ def parse_member_list_pagination(html: str) -> int:
     return max_st
 
 
-def extract_last_post_excerpt(html: str) -> str | None:
-    """Extract a plain-text excerpt from the absolute last post on a thread page.
-
-    Reads the final .pr-a post container's .postcolor body and returns a
-    truncated plain-text snippet.  Used for the thread-list excerpt column
-    so it always reflects the actual last poster's content.
-
-    JCink "reply with quote" inserts .quotetop/.quotemain blocks at the top
-    of a post containing the *previous* poster's text.  We strip those (and
-    <blockquote> elements) before extracting so the excerpt reflects what the
-    last poster actually wrote, not what they quoted.
-    """
-    soup = BeautifulSoup(html, "html.parser")
-    posts = soup.select(".pr-a")
-    if not posts:
-        return None
-
-    last_post = posts[-1]
-    post_body = last_post.select_one(".postcolor")
-    if not post_body:
-        return None
-
-    # Remove JCink quote blocks so the excerpt reflects the poster's own
-    # writing, not text they quoted from the previous poster.
-    for quoted in post_body.select(".quotetop, .quotemain, blockquote"):
-        quoted.decompose()
-
-    text = post_body.get_text(" ", strip=True)
-    if not text:
-        return None
-
-    # Truncate to 200 chars at a word boundary
-    if len(text) > 200:
-        text = text[:200].rsplit(" ", 1)[0] + "\u2026"
-
-    return text
-
-
 def parse_search_redirect(html: str) -> str | None:
     """Check if a search results page has a meta refresh redirect.
 
