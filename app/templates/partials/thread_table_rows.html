@@ -1,4 +1,25 @@
 {% from "components/pagination.html" import paginate %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th class="sortable {{ 'sort-asc' if sort == 'title' and dir == 'asc' }}{{ 'sort-desc' if sort == 'title' and dir == 'desc' }}"
+                hx-get="/htmx/threads?sort=title&dir={{ 'desc' if sort == 'title' and dir == 'asc' else 'asc' }}"
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id'], [name='player']">Title</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'category' and dir == 'asc' }}{{ 'sort-desc' if sort == 'category' and dir == 'desc' }}"
+                hx-get="/htmx/threads?sort=category&dir={{ 'desc' if sort == 'category' and dir == 'asc' else 'asc' }}"
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id'], [name='player']">Category</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'char_name' and dir == 'asc' }}{{ 'sort-desc' if sort == 'char_name' and dir == 'desc' }}"
+                hx-get="/htmx/threads?sort=char_name&dir={{ 'desc' if sort == 'char_name' and dir == 'asc' else 'asc' }}"
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id'], [name='player']">Character</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'last_poster_name' and dir == 'asc' }}{{ 'sort-desc' if sort == 'last_poster_name' and dir == 'desc' }}"
+                hx-get="/htmx/threads?sort=last_poster_name&dir={{ 'desc' if sort == 'last_poster_name' and dir == 'asc' else 'asc' }}"
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id'], [name='player']">Last Poster</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'is_user_last_poster' and dir == 'asc' }}{{ 'sort-desc' if sort == 'is_user_last_poster' and dir == 'desc' }}"
+                hx-get="/htmx/threads?sort=is_user_last_poster&dir={{ 'desc' if sort == 'is_user_last_poster' and dir == 'asc' else 'asc' }}"
+                hx-target="#thread-tbody" hx-include="[name='q'], [name='status'], [name='character_id'], [name='player']">Status</th>
+        </tr>
+    </thead>
+    <tbody>
 {% for t in threads %}
 <tr>
     <td class="truncate" style="max-width: 350px;">
@@ -33,6 +54,7 @@
 {% if not threads %}
 <tr><td colspan="5" class="empty-state">No threads found</td></tr>
 {% endif %}
+    </tbody>
 </table>
 {% set extra = "" %}
 {% if q %} {% set extra = extra ~ "&q=" ~ q %} {% endif %}

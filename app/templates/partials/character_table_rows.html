@@ -1,4 +1,30 @@
 {% from "components/pagination.html" import paginate %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th style="width: 48px;"></th>
+            <th class="sortable {{ 'sort-asc' if sort == 'name' and dir == 'asc' }}{{ 'sort-desc' if sort == 'name' and dir == 'desc' }}"
+                hx-get="/htmx/characters?sort=name&dir={{ 'desc' if sort == 'name' and dir == 'asc' else 'asc' }}"
+                hx-target="#character-tbody" hx-include="[name='q'], [name='affiliation'], [name='group'], [name='player']">Name</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'affiliation' and dir == 'asc' }}{{ 'sort-desc' if sort == 'affiliation' and dir == 'desc' }}"
+                hx-get="/htmx/characters?sort=affiliation&dir={{ 'desc' if sort == 'affiliation' and dir == 'asc' else 'asc' }}"
+                hx-target="#character-tbody" hx-include="[name='q'], [name='affiliation'], [name='group'], [name='player']">Affiliation</th>
+            <th class="sortable hide-mobile {{ 'sort-asc' if sort == 'player' and dir == 'asc' }}{{ 'sort-desc' if sort == 'player' and dir == 'desc' }}"
+                hx-get="/htmx/characters?sort=player&dir={{ 'desc' if sort == 'player' and dir == 'asc' else 'asc' }}"
+                hx-target="#character-tbody" hx-include="[name='q'], [name='affiliation'], [name='group'], [name='player']">Player</th>
+            <th>Ongoing</th>
+            <th>Comms</th>
+            <th class="hide-mobile">Complete</th>
+            <th class="hide-mobile">Incomplete</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'total_threads' and dir == 'asc' }}{{ 'sort-desc' if sort == 'total_threads' and dir == 'desc' }}"
+                hx-get="/htmx/characters?sort=total_threads&dir={{ 'desc' if sort == 'total_threads' and dir == 'asc' else 'asc' }}"
+                hx-target="#character-tbody" hx-include="[name='q'], [name='affiliation'], [name='group'], [name='player']">Total</th>
+            <th class="sortable hide-mobile {{ 'sort-asc' if sort == 'last_thread_crawl' and dir == 'asc' }}{{ 'sort-desc' if sort == 'last_thread_crawl' and dir == 'desc' }}"
+                hx-get="/htmx/characters?sort=last_thread_crawl&dir={{ 'desc' if sort == 'last_thread_crawl' and dir == 'asc' else 'asc' }}"
+                hx-target="#character-tbody" hx-include="[name='q'], [name='affiliation'], [name='group'], [name='player']">Last Crawled</th>
+        </tr>
+    </thead>
+    <tbody>
 {% for char in characters %}
 <tr class="clickable-row" onclick="window.location='/character/{{ char.id }}'">
     <td>
@@ -28,6 +54,7 @@
 {% if not characters %}
 <tr><td colspan="10" class="empty-state">No characters found</td></tr>
 {% endif %}
+    </tbody>
 </table>
 {% set extra = "" %}
 {% if q %} {% set extra = extra ~ "&q=" ~ q %} {% endif %}
