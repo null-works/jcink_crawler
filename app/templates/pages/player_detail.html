@@ -33,7 +33,7 @@
                 </div>
                 <div class="count-item">
                     <div class="num text-yellow">{{ player.total_awaiting }}</div>
-                    <div class="label">Awaiting</div>
+                    <div class="label">Owed</div>
                 </div>
                 <div class="count-item">
                     <div class="num text-pink">{{ player.total_quotes }}</div>
@@ -79,7 +79,7 @@
                 <th>Ongoing</th>
                 <th class="hide-mobile">Comms</th>
                 <th class="hide-mobile">Complete</th>
-                <th>Awaiting</th>
+                <th>Owed</th>
                 <th class="hide-mobile">Quotes</th>
             </tr>
         </thead>
@@ -135,7 +135,7 @@
 {% if player.awaiting_threads %}
 <div class="card">
     <h3 class="card-title" style="margin-bottom: 1rem;">
-        Awaiting Reply <span class="count-badge yellow">{{ player.awaiting_threads|length }}</span>
+        Owed <span class="count-badge yellow">{{ player.awaiting_threads|length }}</span>
     </h3>
     <div class="table-wrap">
     <table class="data-table">

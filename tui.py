@@ -130,7 +130,7 @@ class CharacterDetailScreen(Screen):
 
         for cat in ["ongoing", "comms", "complete", "incomplete"]:
             for t in threads_data.get(cat, []):
-                status = "Replied" if t.get("is_user_last_poster") else "Awaiting"
+                status = "Replied" if t.get("is_user_last_poster") else "Owed"
                 table.add_row(
                     t.get("title", "")[:50],
                     cat,

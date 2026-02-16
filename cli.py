@@ -283,7 +283,7 @@ def threads(ctx, character_id, category):
         table.add_column("Status", justify="center")
 
         for t in thread_list:
-            status_icon = "[green]✓[/] Replied" if t.get("is_user_last_poster") else "[yellow]⏳[/] Awaiting"
+            status_icon = "[green]✓[/] Replied" if t.get("is_user_last_poster") else "[yellow]⏳[/] Owed"
             table.add_row(
                 t["title"][:50],
                 t.get("forum_name") or "—",

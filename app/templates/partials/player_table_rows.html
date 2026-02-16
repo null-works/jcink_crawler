@@ -17,7 +17,7 @@
                 hx-target="#player-tbody" hx-include="[name='q']">Activity</th>
             <th class="sortable {{ 'sort-asc' if sort == 'awaiting_threads' and dir == 'asc' }}{{ 'sort-desc' if sort == 'awaiting_threads' and dir == 'desc' }}"
                 hx-get="/htmx/players?sort=awaiting_threads&dir={{ 'desc' if sort == 'awaiting_threads' and dir == 'asc' else 'asc' }}"
-                hx-target="#player-tbody" hx-include="[name='q']">Awaiting</th>
+                hx-target="#player-tbody" hx-include="[name='q']">Owed</th>
             <th class="sortable hide-mobile {{ 'sort-asc' if sort == 'last_active' and dir == 'asc' }}{{ 'sort-desc' if sort == 'last_active' and dir == 'desc' }}"
                 hx-get="/htmx/players?sort=last_active&dir={{ 'desc' if sort == 'last_active' and dir == 'asc' else 'asc' }}"
                 hx-target="#player-tbody" hx-include="[name='q']">Last Active</th>

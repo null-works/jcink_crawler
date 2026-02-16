@@ -53,7 +53,7 @@
             hx-target="#thread-tbody"
             hx-include="[name='q'], [name='character_id'], [name='player'], [name='sort'], [name='dir']">
         <option value="" {{ 'selected' if not status }}>All Status</option>
-        <option value="awaiting" {{ 'selected' if status == 'awaiting' }}>Awaiting Reply</option>
+        <option value="awaiting" {{ 'selected' if status == 'awaiting' }}>Owed</option>
         <option value="replied" {{ 'selected' if status == 'replied' }}>Replied</option>
     </select>
 
