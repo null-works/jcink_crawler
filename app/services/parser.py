@@ -677,6 +677,34 @@ def parse_member_list_pagination(html: str) -> int:
     return max_st
 
 
+def extract_last_post_excerpt(html: str) -> str | None:
+    """Extract a plain-text excerpt from the absolute last post on a thread page.
+
+    Reads the final .pr-a post container's .postcolor body and returns a
+    truncated plain-text snippet.  Used for the thread-list excerpt column
+    so it always reflects the actual last poster's content.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    posts = soup.select(".pr-a")
+    if not posts:
+        return None
+
+    last_post = posts[-1]
+    post_body = last_post.select_one(".postcolor")
+    if not post_body:
+        return None
+
+    text = post_body.get_text(" ", strip=True)
+    if not text:
+        return None
+
+    # Truncate to 200 chars at a word boundary
+    if len(text) > 200:
+        text = text[:200].rsplit(" ", 1)[0] + "\u2026"
+
+    return text
+
+
 def parse_search_redirect(html: str) -> str | None:
     """Check if a search results page has a meta refresh redirect.
 

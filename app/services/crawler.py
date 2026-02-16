@@ -15,6 +15,7 @@ from app.services.parser import (
     extract_quotes_from_html,
     extract_thread_authors,
     extract_post_records,
+    extract_last_post_excerpt,
     parse_member_list,
     parse_member_list_pagination,
     is_board_message,
@@ -163,7 +164,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
 
         thread_html_for_poster = last_page_html or thread_html
 
-        # Extract last poster
+        # Extract last poster and their post excerpt from the last page
         last_poster = parse_last_poster(thread_html_for_poster)
         last_poster_name = last_poster.name if last_poster else None
         last_poster_id = last_poster.user_id if last_poster else None
@@ -172,6 +173,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             if last_poster_id
             else False
         )
+        last_post_excerpt = extract_last_post_excerpt(thread_html_for_poster)
 
         # Fetch last poster avatar (with cache to avoid duplicates)
         last_poster_avatar = None
@@ -244,6 +246,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             "last_poster_id": last_poster_id,
             "last_poster_name": last_poster_name,
             "last_poster_avatar": last_poster_avatar,
+            "last_post_excerpt": last_post_excerpt,
             "is_user_last": is_user_last,
             "quotes_by_character": quotes_by_character,
             "characters_to_mark_scraped": characters_to_mark_scraped,
@@ -282,6 +285,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                 last_poster_id=result["last_poster_id"],
                 last_poster_name=result["last_poster_name"],
                 last_poster_avatar=result["last_poster_avatar"],
+                last_post_excerpt=result.get("last_post_excerpt"),
             )
             post_counts = result.get("post_counts_by_char", {})
             await link_character_thread(
@@ -391,10 +395,11 @@ async def crawl_single_thread(
 
     poster_html = last_page_html or thread_html
 
-    # Extract last poster
+    # Extract last poster and their post excerpt
     last_poster = parse_last_poster(poster_html)
     last_poster_name = last_poster.name if last_poster else None
     last_poster_id = last_poster.user_id if last_poster else None
+    last_post_excerpt = extract_last_post_excerpt(poster_html)
 
     # Fetch last poster avatar
     last_poster_avatar = None
@@ -509,6 +514,7 @@ async def crawl_single_thread(
             last_poster_id=last_poster_id,
             last_poster_name=last_poster_name,
             last_poster_avatar=last_poster_avatar,
+            last_post_excerpt=last_post_excerpt,
         )
 
         # Link to requesting user

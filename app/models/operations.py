@@ -123,12 +123,14 @@ async def upsert_thread(
     last_poster_id: str | None = None,
     last_poster_name: str | None = None,
     last_poster_avatar: str | None = None,
+    last_post_excerpt: str | None = None,
 ) -> None:
     """Create or update a thread."""
     await db.execute("""
         INSERT INTO threads (id, title, url, forum_id, forum_name, category,
-                           last_poster_id, last_poster_name, last_poster_avatar, last_crawled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                           last_poster_id, last_poster_name, last_poster_avatar,
+                           last_post_excerpt, last_crawled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             url = excluded.url,
@@ -138,10 +140,11 @@ async def upsert_thread(
             last_poster_id = excluded.last_poster_id,
             last_poster_name = excluded.last_poster_name,
             last_poster_avatar = COALESCE(excluded.last_poster_avatar, threads.last_poster_avatar),
+            last_post_excerpt = COALESCE(excluded.last_post_excerpt, threads.last_post_excerpt),
             last_crawled = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
     """, (thread_id, title, url, forum_id, forum_name, category,
-          last_poster_id, last_poster_name, last_poster_avatar))
+          last_poster_id, last_poster_name, last_poster_avatar, last_post_excerpt))
 
 
 async def link_character_thread(
@@ -180,7 +183,7 @@ async def get_character_threads(
                ct.category as char_category, ct.is_user_last_poster,
                COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS resolved_avatar,
                p_last.last_post_date,
-               q_excerpt.quote_text AS last_post_excerpt
+               t.last_post_excerpt
         FROM threads t
         JOIN character_threads ct ON t.id = ct.thread_id
         LEFT JOIN characters c_poster ON c_poster.id = t.last_poster_id
@@ -190,12 +193,6 @@ async def get_character_threads(
             WHERE post_date IS NOT NULL
             GROUP BY thread_id
         ) p_last ON p_last.thread_id = t.id
-        LEFT JOIN (
-            SELECT source_thread_id, quote_text,
-                   ROW_NUMBER() OVER (PARTITION BY source_thread_id ORDER BY id DESC) AS rn
-            FROM quotes
-            WHERE source_thread_id IS NOT NULL
-        ) q_excerpt ON q_excerpt.source_thread_id = t.id AND q_excerpt.rn = 1
         WHERE ct.character_id = ?
         ORDER BY t.updated_at DESC
     """, (character_id,))

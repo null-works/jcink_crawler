@@ -160,6 +160,12 @@ async def init_db():
         except Exception:
             pass  # Column already exists
 
+        # Add last_post_excerpt to threads if it doesn't exist
+        try:
+            await db.execute("ALTER TABLE threads ADD COLUMN last_post_excerpt TEXT")
+        except Exception:
+            pass  # Column already exists
+
         # Clean up posts with NULL dates — these are stale records from before
         # the date parser fix. Deleting them forces the next crawl to re-populate
         # with proper dates, which is needed for activity check queries.
