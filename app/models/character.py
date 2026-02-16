@@ -43,6 +43,7 @@ class ThreadInfo(BaseModel):
     last_poster_avatar: str | None = None
     is_user_last_poster: bool = False
     last_post_date: str | None = None
+    last_post_dialog: str | None = None
 
 
 class CharacterThreads(BaseModel):
