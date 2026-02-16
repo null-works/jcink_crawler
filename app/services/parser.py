@@ -683,6 +683,11 @@ def extract_last_post_excerpt(html: str) -> str | None:
     Reads the final .pr-a post container's .postcolor body and returns a
     truncated plain-text snippet.  Used for the thread-list excerpt column
     so it always reflects the actual last poster's content.
+
+    JCink "reply with quote" inserts .quotetop/.quotemain blocks at the top
+    of a post containing the *previous* poster's text.  We strip those (and
+    <blockquote> elements) before extracting so the excerpt reflects what the
+    last poster actually wrote, not what they quoted.
     """
     soup = BeautifulSoup(html, "html.parser")
     posts = soup.select(".pr-a")
@@ -693,6 +698,11 @@ def extract_last_post_excerpt(html: str) -> str | None:
     post_body = last_post.select_one(".postcolor")
     if not post_body:
         return None
+
+    # Remove JCink quote blocks so the excerpt reflects the poster's own
+    # writing, not text they quoted from the previous poster.
+    for quoted in post_body.select(".quotetop, .quotemain, blockquote"):
+        quoted.decompose()
 
     text = post_body.get_text(" ", strip=True)
     if not text:
