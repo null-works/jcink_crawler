@@ -589,3 +589,33 @@ async def replace_thread_posts(
             "INSERT INTO posts (character_id, thread_id, post_date) VALUES (?, ?, ?)",
             (rec["character_id"], thread_id, rec.get("post_date")),
         )
+
+
+async def delete_character(db: aiosqlite.Connection, character_id: str) -> dict:
+    """Delete a character and all associated data.
+
+    Cascade-deletes from all child tables: profile_fields, character_threads,
+    quotes, quote_crawl_log, and posts. Used when a profile crawl detects
+    that a character no longer exists on JCink (banned/deleted).
+
+    Returns a summary of what was removed.
+    """
+    counts = {}
+    for table, col in [
+        ("profile_fields", "character_id"),
+        ("character_threads", "character_id"),
+        ("quotes", "character_id"),
+        ("quote_crawl_log", "character_id"),
+        ("posts", "character_id"),
+    ]:
+        cursor = await db.execute(
+            f"DELETE FROM {table} WHERE {col} = ?", (character_id,)
+        )
+        counts[table] = cursor.rowcount
+
+    cursor = await db.execute(
+        "DELETE FROM characters WHERE id = ?", (character_id,)
+    )
+    counts["characters"] = cursor.rowcount
+    await db.commit()
+    return counts

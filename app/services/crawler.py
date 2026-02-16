@@ -29,6 +29,7 @@ from app.models.operations import (
     replace_thread_posts,
     upsert_profile_field,
     get_character,
+    delete_character,
 )
 
 
@@ -579,6 +580,19 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     html = await fetch_page_rendered(profile_url)
     if not html:
         return {"error": "Failed to fetch profile page"}
+
+    # Detect removed/banned profiles — JCink returns a "Board Message" page
+    # for deleted users. Without this check the parser would overwrite good
+    # data with name="Unknown" and empty fields.
+    if is_board_message(html):
+        print(f"[Crawler] Profile {character_id} returned board message — removing character")
+        set_activity(f"Removing deleted profile #{character_id}", character_id=character_id)
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            removed = await delete_character(db, character_id)
+        clear_activity()
+        print(f"[Crawler] Character {character_id} removed: {removed}")
+        return {"removed": True, "character_id": character_id, "reason": "Profile no longer exists"}
 
     profile = parse_profile_page(html, character_id)
 
