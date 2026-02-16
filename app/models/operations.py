@@ -175,7 +175,9 @@ async def get_character_threads(
     char_name = row["name"] if row else "Unknown"
 
     cursor = await db.execute("""
-        SELECT t.*, ct.category as char_category, ct.is_user_last_poster,
+        SELECT t.id, t.title, t.url, t.forum_id, t.forum_name,
+               t.last_poster_id, t.last_poster_name,
+               ct.category as char_category, ct.is_user_last_poster,
                COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS resolved_avatar
         FROM threads t
         JOIN character_threads ct ON t.id = ct.thread_id
