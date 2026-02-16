@@ -4,7 +4,7 @@ Requires: textual
 
 Usage:
     python tui.py                         # default URL
-    python tui.py --url http://host:8943  # custom URL
+    python tui.py --url https://host:8943  # custom URL
     python tui.py --interval 10           # slower refresh
 """
 
@@ -354,7 +354,7 @@ class WatcherApp(App):
         self.push_screen(CharacterDetailScreen(self.base_url, char_id))
 
 
-DEFAULT_BASE = "http://imagehut.ch:8943"
+DEFAULT_BASE = "https://imagehut.ch:8943"
 
 
 @click.command()

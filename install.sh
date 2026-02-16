@@ -38,6 +38,20 @@ if ! command -v curl &>/dev/null; then
     error "curl is not installed. Install it with your package manager."
 fi
 
+if ! command -v nginx &>/dev/null; then
+    error "Nginx is not installed. Install it with: sudo apt install nginx"
+fi
+
+if ! systemctl is-active --quiet nginx; then
+    error "Nginx is not running. Start it with: sudo systemctl start nginx"
+fi
+
+CERT_PATH="/etc/letsencrypt/live/imagehut.ch/fullchain.pem"
+KEY_PATH="/etc/letsencrypt/live/imagehut.ch/privkey.pem"
+if [ ! -f "$CERT_PATH" ] || [ ! -f "$KEY_PATH" ]; then
+    error "SSL certificates not found at /etc/letsencrypt/live/imagehut.ch/. Set up Let's Encrypt first."
+fi
+
 info "All prerequisites found."
 
 # --- Clone repository if needed ---
@@ -67,13 +81,22 @@ else
     info "Data directory already exists at $DATA_DIR"
 fi
 
+# --- Deploy Nginx config ---
+
+info "Deploying Nginx config..."
+NGINX_CONF="/etc/nginx/sites-enabled/jcink-crawler.conf"
+sudo cp nginx-crawler.conf "$NGINX_CONF"
+sudo nginx -t || error "Nginx config test failed! Fix the config and re-run."
+sudo systemctl reload nginx
+info "Nginx configured and reloaded."
+
 # --- Build and start ---
 
 info "Building Docker image..."
 docker compose build
 
 info "Starting container..."
-docker compose up -d
+docker compose up -d --remove-orphans
 
 # --- Health check ---
 
@@ -81,11 +104,11 @@ info "Waiting for service to start..."
 MAX_RETRIES=15
 RETRY_DELAY=2
 for i in $(seq 1 "$MAX_RETRIES"); do
-    if curl -sf http://imagehut.ch:8943/health &>/dev/null; then
+    if curl -sf https://imagehut.ch:8943/health &>/dev/null; then
         echo ""
         info "Service is running!"
         echo ""
-        echo "  Crawler API:    http://imagehut.ch:8943/health"
+        echo "  Crawler API:    https://imagehut.ch:8943/health"
         echo ""
         echo "  Service status: docker exec -it jcink-crawler python cli.py status"
         echo "  Register user:  docker exec -it jcink-crawler python cli.py register <user_id>"

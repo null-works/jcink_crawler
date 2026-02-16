@@ -78,7 +78,7 @@ def main():
     print("  Or manually:")
     print("    docker compose up --build -d")
     print()
-    print("  Dashboard: http://localhost:8943/dashboard")
+    print("  Dashboard: https://imagehut.ch:8943/dashboard")
     print()
 
 

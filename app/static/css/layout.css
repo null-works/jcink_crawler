@@ -220,3 +220,11 @@
         grid-template-columns: 1fr;
     }
 }
+
+/* === Version tag === */
+.version-tag {
+    margin-left: auto;
+    font-size: 0.7rem;
+    color: var(--comment);
+    white-space: nowrap;
+}

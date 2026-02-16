@@ -63,6 +63,23 @@ class Quote(BaseModel):
     created_at: datetime | None = None
 
 
+class ClaimsSummary(BaseModel):
+    """Character data for the claims page — enriched with face_claim, species, etc."""
+    id: str
+    name: str
+    profile_url: str
+    group_id: str | None = None
+    group_name: str | None = None
+    avatar_url: str | None = None
+    face_claim: str | None = None
+    species: str | None = None
+    codename: str | None = None
+    alias: str | None = None
+    affiliation: str | None = None
+    connections: str | None = None
+    thread_counts: dict[str, int] = {}
+
+
 class CharacterProfile(BaseModel):
     character: CharacterSummary
     fields: dict[str, str] = {}
@@ -89,3 +106,11 @@ class CrawlTrigger(BaseModel):
     """Manually trigger a crawl for a specific character."""
     character_id: str | None = None
     crawl_type: str = "threads"  # "threads", "profile", "discover"
+
+
+class WebhookActivity(BaseModel):
+    """Webhook payload from the theme for real-time updates."""
+    event: str  # "new_post", "new_topic", "profile_edit"
+    thread_id: str | None = None
+    forum_id: str | None = None
+    user_id: str | None = None

@@ -660,6 +660,115 @@ class TestParseProfilePowerGrid:
         assert "power grid - int" not in profile.fields
 
 
+class TestParseProfileHeroImages:
+    """Test hero image extraction from background-image styles."""
+
+    def test_extracts_all_hero_images(self):
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="hero-portrait" style="background-image: url('https://img.com/portrait.jpg');"></div>
+        <div class="hero-sq-top" style="background-image: url('https://img.com/square.jpg');"></div>
+        <div class="hero-sq-bot" style="background-image: url('https://img.com/secondary.jpg');"></div>
+        <div class="hero-rect" style="background-image: url('https://img.com/rect.gif');"></div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert profile.fields["portrait_image"] == "https://img.com/portrait.jpg"
+        assert profile.fields["square_image"] == "https://img.com/square.jpg"
+        assert profile.fields["secondary_square_image"] == "https://img.com/secondary.jpg"
+        assert profile.fields["rectangle_gif"] == "https://img.com/rect.gif"
+
+    def test_handles_missing_hero_images(self):
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="hero-sq-top" style="background-image: url('https://img.com/sq.jpg');"></div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert profile.fields["square_image"] == "https://img.com/sq.jpg"
+        assert "portrait_image" not in profile.fields
+        assert "secondary_square_image" not in profile.fields
+        assert "rectangle_gif" not in profile.fields
+
+    def test_handles_unquoted_urls(self):
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="hero-portrait" style="background-image: url(https://img.com/portrait.jpg);"></div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert profile.fields["portrait_image"] == "https://img.com/portrait.jpg"
+
+
+class TestParseProfileOOCFields:
+    """Test extraction of OOC alias, short quote, and connections."""
+
+    def test_extracts_alias_from_ooc_footer(self):
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="profile-ooc-footer">Kim</div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert profile.fields["alias"] == "Kim"
+
+    def test_alias_from_pf_ab_takes_priority(self):
+        """alias from div.pf-ab should not be overwritten by .profile-ooc-footer."""
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="pf-ab" title="alias"><span class="pf-ac">icon</span>Kim</div>
+        <div class="profile-ooc-footer">AlternateAlias</div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert profile.fields["alias"] == "Kim"
+
+    def test_extracts_short_quote(self):
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="profile-short-quote">No more running.</div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert profile.fields["short_quote"] == "No more running."
+
+    def test_skips_no_information_short_quote(self):
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="profile-short-quote">No Information</div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert "short_quote" not in profile.fields
+
+    def test_extracts_connections(self):
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="profile-connections">Pietro (twin), Vision (partner)</div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert profile.fields["connections"] == "Pietro (twin), Vision (partner)"
+
+    def test_skips_no_information_connections(self):
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="profile-connections">No Information</div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert "connections" not in profile.fields
+
+
 class TestParseApplicationUrl:
     def test_extracts_application_link(self):
         html = """
@@ -691,57 +800,63 @@ class TestParseApplicationUrl:
 
 
 class TestParsePowerGrid:
-    def test_extracts_stats_from_application(self):
+    def test_extracts_stats_and_converts_to_scale(self):
+        """Percentages should be converted to 1-7 integer scale."""
         html = """
         <div class="sa-n">
           <div class="sa-o">intelligence</div>
-          <div class="sa-p"><div class="sa-q" style="width: 40%;"></div></div>
+          <div class="sa-p"><div class="sa-q" style="width: 42.86%;"></div></div>
         </div>
         <div class="sa-n">
           <div class="sa-o">strength</div>
-          <div class="sa-p"><div class="sa-q" style="width: 60%;"></div></div>
+          <div class="sa-p"><div class="sa-q" style="width: 85.71%;"></div></div>
         </div>
         <div class="sa-n">
           <div class="sa-o">speed</div>
-          <div class="sa-p"><div class="sa-q" style="width: 20%;"></div></div>
+          <div class="sa-p"><div class="sa-q" style="width: 28.57%;"></div></div>
         </div>
         <div class="sa-n">
           <div class="sa-o">durability</div>
-          <div class="sa-p"><div class="sa-q" style="width: 80%;"></div></div>
+          <div class="sa-p"><div class="sa-q" style="width: 100%;"></div></div>
         </div>
         <div class="sa-n">
           <div class="sa-o">energy projection</div>
-          <div class="sa-p"><div class="sa-q" style="width: 0%;"></div></div>
+          <div class="sa-p"><div class="sa-q" style="width: 14.28%;"></div></div>
         </div>
         <div class="sa-n">
           <div class="sa-o">fighting skills</div>
-          <div class="sa-p"><div class="sa-q" style="width: 100%;"></div></div>
+          <div class="sa-p"><div class="sa-q" style="width: 71.43%;"></div></div>
         </div>
         """
         fields = parse_power_grid(html)
-        assert fields["power grid - int"] == "40"
-        assert fields["power grid - str"] == "60"
-        assert fields["power grid - spd"] == "20"
-        assert fields["power grid - dur"] == "80"
-        assert fields["power grid - pwr"] == "0"
-        assert fields["power grid - cmb"] == "100"
+        assert fields["power grid - int"] == "3"
+        assert fields["power grid - str"] == "6"
+        assert fields["power grid - spd"] == "2"
+        assert fields["power grid - dur"] == "7"
+        assert fields["power grid - pwr"] == "1"
+        assert fields["power grid - cmb"] == "5"
 
-    def test_extracts_metadata(self):
+    def test_skips_zero_percent(self):
         html = """
-        <div class="sa-s" title="archetype">
-          <div class="sa-t"><i class="las la-book"></i></div>
-          <div class="sa-u">RELUCTANT ANTIHERO</div>
-        </div>
-        <div class="sa-s" title="weapons">
-          <div class="sa-t"><i class="las la-skull-crossbones"></i></div>
-          <div class="sa-u">FISTS</div>
+        <div class="sa-n">
+          <div class="sa-o">intelligence</div>
+          <div class="sa-p"><div class="sa-q" style="width: 0%;"></div></div>
         </div>
         """
         fields = parse_power_grid(html)
-        assert fields["power grid - archetype"] == "RELUCTANT ANTIHERO"
-        assert fields["power grid - weapons"] == "FISTS"
+        assert "power grid - int" not in fields
 
     def test_empty_page(self):
         html = "<html><body>No power grid</body></html>"
+        fields = parse_power_grid(html)
+        assert fields == {}
+
+    def test_ignores_unknown_stat_names(self):
+        html = """
+        <div class="sa-n">
+          <div class="sa-o">charisma</div>
+          <div class="sa-p"><div class="sa-q" style="width: 50%;"></div></div>
+        </div>
+        """
         fields = parse_power_grid(html)
         assert fields == {}

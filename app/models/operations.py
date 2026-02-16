@@ -2,6 +2,7 @@ import aiosqlite
 from app.config import settings
 from app.models.character import (
     CharacterSummary,
+    ClaimsSummary,
     ThreadInfo,
     ThreadCategory,
     CharacterThreads,
@@ -149,15 +150,17 @@ async def link_character_thread(
     thread_id: str,
     category: str,
     is_user_last_poster: bool = False,
+    post_count: int = 0,
 ) -> None:
     """Link a character to a thread."""
     await db.execute("""
-        INSERT INTO character_threads (character_id, thread_id, category, is_user_last_poster)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO character_threads (character_id, thread_id, category, is_user_last_poster, post_count)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(character_id, thread_id) DO UPDATE SET
             category = excluded.category,
-            is_user_last_poster = excluded.is_user_last_poster
-    """, (character_id, thread_id, category, int(is_user_last_poster)))
+            is_user_last_poster = excluded.is_user_last_poster,
+            post_count = excluded.post_count
+    """, (character_id, thread_id, category, int(is_user_last_poster), post_count))
 
 
 async def get_character_threads(
@@ -348,6 +351,175 @@ async def get_profile_fields(
     return {r["field_key"]: r["field_value"] for r in rows}
 
 
+# --- Claims Operations ---
+
+# Reverse lookup: group name -> group id from parser's _GROUP_MAP
+_GROUP_NAME_TO_ID: dict[str, str] = {
+    "Admin": "4",
+    "Reserved": "5",
+    "Red": "6",
+    "Orange": "7",
+    "Yellow": "8",
+    "Green": "9",
+    "Blue": "10",
+    "Purple": "11",
+    "Corrupted": "12",
+    "Pastel": "13",
+    "Pink": "14",
+    "Neutral": "15",
+}
+
+# Profile field keys needed for claims
+_CLAIMS_FIELD_KEYS = (
+    "face claim",
+    "species",
+    "codename",
+    "alias",
+    "player",
+    "affiliation",
+    "connections",
+)
+
+
+async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
+    """Get all characters with claims-specific profile fields and thread counts.
+
+    Single bulk query approach: fetch all characters, then batch-load their
+    profile fields and thread counts to avoid N+1 queries.
+    """
+    excluded = settings.excluded_name_set
+
+    # 1. All characters
+    cursor = await db.execute(
+        "SELECT id, name, profile_url, group_name, avatar_url FROM characters ORDER BY name"
+    )
+    char_rows = await cursor.fetchall()
+
+    if not char_rows:
+        return []
+
+    char_ids = [row["id"] for row in char_rows if row["name"].lower() not in excluded]
+    if not char_ids:
+        return []
+
+    # 2. Batch-load claims-relevant profile fields
+    placeholders_ids = ",".join("?" * len(char_ids))
+    placeholders_keys = ",".join("?" * len(_CLAIMS_FIELD_KEYS))
+    cursor = await db.execute(
+        f"""SELECT character_id, field_key, field_value
+            FROM profile_fields
+            WHERE character_id IN ({placeholders_ids})
+              AND field_key IN ({placeholders_keys})""",
+        [*char_ids, *_CLAIMS_FIELD_KEYS],
+    )
+    field_rows = await cursor.fetchall()
+
+    # Build {character_id: {field_key: field_value}}
+    fields_map: dict[str, dict[str, str]] = {}
+    for row in field_rows:
+        fields_map.setdefault(row["character_id"], {})[row["field_key"]] = row["field_value"]
+
+    # 3. Batch-load thread counts
+    cursor = await db.execute(
+        f"""SELECT character_id, category, COUNT(*) as count
+            FROM character_threads
+            WHERE character_id IN ({placeholders_ids})
+            GROUP BY character_id, category""",
+        char_ids,
+    )
+    count_rows = await cursor.fetchall()
+
+    # Build {character_id: {category: count}}
+    counts_map: dict[str, dict[str, int]] = {}
+    for row in count_rows:
+        counts_map.setdefault(row["character_id"], {})[row["category"]] = row["count"]
+
+    # 4. Assemble results
+    results = []
+    for row in char_rows:
+        char = dict(row)
+        if char["name"].lower() in excluded:
+            continue
+
+        cid = char["id"]
+        fields = fields_map.get(cid, {})
+        raw_counts = counts_map.get(cid, {})
+        thread_counts = {
+            "ongoing": raw_counts.get("ongoing", 0),
+            "comms": raw_counts.get("comms", 0),
+            "complete": raw_counts.get("complete", 0),
+            "incomplete": raw_counts.get("incomplete", 0),
+        }
+        thread_counts["total"] = sum(thread_counts.values())
+
+        group_name = char.get("group_name")
+        group_id = _GROUP_NAME_TO_ID.get(group_name) if group_name else None
+
+        results.append(ClaimsSummary(
+            id=cid,
+            name=char["name"],
+            profile_url=char["profile_url"],
+            group_id=group_id,
+            group_name=group_name,
+            avatar_url=char.get("avatar_url"),
+            face_claim=fields.get("face claim"),
+            species=fields.get("species"),
+            codename=fields.get("codename"),
+            alias=fields.get("alias") or fields.get("player"),
+            affiliation=fields.get("affiliation"),
+            connections=fields.get("connections"),
+            thread_counts=thread_counts,
+        ))
+
+    return results
+
+
+# --- Batch Field Operations ---
+
+async def get_characters_fields_batch(
+    db: aiosqlite.Connection,
+    character_ids: list[str],
+    field_keys: list[str] | None = None,
+) -> dict[str, dict[str, str]]:
+    """Get profile fields for multiple characters in one query.
+
+    Args:
+        character_ids: List of character IDs to fetch.
+        field_keys: Optional list of specific field keys to return.
+                    If None, returns all fields for each character.
+
+    Returns:
+        {character_id: {field_key: field_value, ...}, ...}
+    """
+    if not character_ids:
+        return {}
+
+    placeholders_ids = ",".join("?" * len(character_ids))
+
+    if field_keys:
+        placeholders_keys = ",".join("?" * len(field_keys))
+        cursor = await db.execute(
+            f"""SELECT character_id, field_key, field_value
+                FROM profile_fields
+                WHERE character_id IN ({placeholders_ids})
+                  AND field_key IN ({placeholders_keys})""",
+            [*character_ids, *field_keys],
+        )
+    else:
+        cursor = await db.execute(
+            f"""SELECT character_id, field_key, field_value
+                FROM profile_fields
+                WHERE character_id IN ({placeholders_ids})""",
+            character_ids,
+        )
+
+    rows = await cursor.fetchall()
+    result: dict[str, dict[str, str]] = {cid: {} for cid in character_ids}
+    for row in rows:
+        result.setdefault(row["character_id"], {})[row["field_key"]] = row["field_value"]
+    return result
+
+
 # --- Crawl Status Operations ---
 
 async def set_crawl_status(
@@ -373,3 +545,23 @@ async def get_crawl_status(
     )
     row = await cursor.fetchone()
     return row["value"] if row else None
+
+
+# --- Post Operations ---
+
+async def replace_thread_posts(
+    db: aiosqlite.Connection,
+    thread_id: str,
+    records: list[dict],
+) -> None:
+    """Replace all post records for a thread with fresh data.
+
+    Deletes existing records and inserts new ones in one pass.
+    Each record: {'character_id': str, 'post_date': str | None}
+    """
+    await db.execute("DELETE FROM posts WHERE thread_id = ?", (thread_id,))
+    for rec in records:
+        await db.execute(
+            "INSERT INTO posts (character_id, thread_id, post_date) VALUES (?, ?, ?)",
+            (rec["character_id"], thread_id, rec.get("post_date")),
+        )

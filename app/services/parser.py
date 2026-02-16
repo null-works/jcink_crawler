@@ -329,18 +329,59 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         if value and value != "No Information":
             fields[title] = value
 
+    # Extract hero images from background-image styles (fields 7, 8, 21, 9)
+    for selector, key in [
+        (".hero-portrait", "portrait_image"),
+        (".hero-sq-top", "square_image"),
+        (".hero-sq-bot", "secondary_square_image"),
+        (".hero-rect", "rectangle_gif"),
+    ]:
+        el = soup.select_one(selector)
+        if el:
+            style = el.get("style", "")
+            img_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
+            if img_match:
+                fields[key] = img_match.group(1)
+
+    # Extract OOC alias from .profile-ooc-footer (field_1)
+    ooc_footer = soup.select_one(".profile-ooc-footer")
+    if ooc_footer:
+        alias_text = ooc_footer.get_text(strip=True)
+        if alias_text and alias_text != "No Information":
+            fields.setdefault("alias", alias_text)
+
+    # Extract short quote from .profile-short-quote or mini profile area (field_26)
+    short_quote_el = soup.select_one(".profile-short-quote")
+    if short_quote_el:
+        sq_text = short_quote_el.get_text(strip=True)
+        if sq_text and sq_text != "No Information":
+            fields["short_quote"] = sq_text
+
+    # Extract connections from .profile-connections (field_41)
+    connections_el = soup.select_one(".profile-connections")
+    if connections_el:
+        conn_text = connections_el.get_text(strip=True)
+        if conn_text and conn_text != "No Information":
+            fields["connections"] = conn_text
+
     # Extract power grid from .profile-stat elements (fields 27-32)
     # Each stat has a .profile-stat-label (INT/STR/etc) and a
     # .profile-stat-fill with data-value="N" holding the numeric value.
-    for stat in soup.select("div.profile-stat"):
+    profile_stats = soup.select("div.profile-stat")
+    print(f"[Parser] Power grid: found {len(profile_stats)} div.profile-stat elements")
+    for stat in profile_stats:
         label_el = stat.select_one(".profile-stat-label")
         fill_el = stat.select_one(".profile-stat-fill")
         if not label_el or not fill_el:
+            print(f"[Parser] Power grid: stat element missing label or fill: {stat}")
             continue
         label = label_el.get_text(strip=True).lower()
         value = (fill_el.get("data-value") or "").strip()
+        print(f"[Parser] Power grid: {label} = '{value}' (data-value attr)")
         if value and value != "No Information":
             fields[f"power grid - {label}"] = value
+
+    print(f"[Parser] All extracted field keys for {user_id}: {list(fields.keys())}")
 
     return ParsedProfile(
         user_id=user_id,
@@ -349,6 +390,8 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         avatar_url=avatar_url,
         fields=fields,
     )
+
+
 
 
 def parse_application_url(html: str) -> str | None:
@@ -379,6 +422,9 @@ _POWER_GRID_STAT_MAP = {
     "fighting skills": "power grid - cmb",
 }
 
+# Power grid uses a 7-point scale
+_POWER_GRID_MAX = 7
+
 
 def parse_power_grid(html: str) -> dict[str, str]:
     """Extract power grid stats from a character application thread page.
@@ -388,14 +434,13 @@ def parse_power_grid(html: str) -> dict[str, str]:
       - div.sa-o has the stat label (e.g. "intelligence")
       - div.sa-q has a style="width: XX%" representing the bar fill
 
-    Also extracts metadata from div.sa-s (archetype, weapons, etc.).
+    Converts percentages back to the 1-7 integer scale the dashboard expects.
 
     Returns a dict of field_key -> value suitable for storing as profile fields.
     """
     soup = BeautifulSoup(html, "html.parser")
     fields: dict[str, str] = {}
 
-    # Extract stat bars
     for stat_row in soup.select("div.sa-n"):
         label_el = stat_row.select_one("div.sa-o")
         bar_el = stat_row.select_one("div.sa-q")
@@ -407,20 +452,13 @@ def parse_power_grid(html: str) -> dict[str, str]:
         if not field_key:
             continue
 
-        # Extract percentage from inline style
         style = bar_el.get("style", "")
         width_match = re.search(r"width:\s*([\d.]+)%", style)
         if width_match:
-            fields[field_key] = width_match.group(1).split(".")[0]  # Store as integer string
-
-    # Extract metadata (archetype, weapons, etc.)
-    for meta in soup.select("div.sa-s"):
-        title = meta.get("title", "").strip().lower()
-        value_el = meta.select_one("div.sa-u")
-        if title and value_el:
-            value = value_el.get_text(strip=True)
-            if value and value.lower() != "no information":
-                fields[f"power grid - {title}"] = value
+            pct = float(width_match.group(1))
+            value = round(pct / 100 * _POWER_GRID_MAX)
+            if value > 0:
+                fields[field_key] = str(value)
 
     return fields
 
@@ -506,6 +544,92 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
             quotes.append({"text": cleaned})
 
     return quotes
+
+
+_MONTH_MAP = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+# Matches "Jan 15 2026, 08:30 PM" or "Jan 15 2026, 20:30"
+_DATE_RE = re.compile(
+    r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{4})',
+    re.IGNORECASE,
+)
+
+# JCink uses relative dates for recent posts
+_TODAY_RE = re.compile(r'\bToday\b', re.IGNORECASE)
+_YESTERDAY_RE = re.compile(r'\bYesterday\b', re.IGNORECASE)
+
+
+def _parse_jcink_date(text: str) -> str | None:
+    """Try to parse a JCink date string into ISO format (YYYY-MM-DD).
+
+    Handles:
+    - Absolute: "Jan 15 2026, 08:30 PM"
+    - Relative: "Today, 08:30 PM" / "Yesterday, 05:12 AM"
+
+    Returns date string or None if unparseable.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    # Check for "Today" / "Yesterday" first (JCink replaces dates for recent posts)
+    if _TODAY_RE.search(text):
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if _YESTERDAY_RE.search(text):
+        return (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    match = _DATE_RE.search(text)
+    if not match:
+        return None
+    month_str, day_str, year_str = match.group(1), match.group(2), match.group(3)
+    month = _MONTH_MAP.get(month_str.lower())
+    if not month:
+        return None
+    return f"{year_str}-{month:02d}-{int(day_str):02d}"
+
+
+def extract_post_records(html: str) -> list[dict]:
+    """Extract individual post records from a thread page.
+
+    Parses each .pr-a post container for:
+    - author user ID (from .pr-j author link)
+    - post date (from .pr-d date container, or fallback to header text)
+
+    Returns list of dicts: {'character_id': str, 'post_date': str | None}
+    """
+    from copy import copy
+
+    soup = BeautifulSoup(html, "html.parser")
+    records = []
+
+    for post in soup.select(".pr-a"):
+        # Extract author user ID
+        user_link = post.select_one('.pr-j a[href*="showuser="]')
+        if not user_link:
+            continue
+        match = re.search(r"showuser=(\d+)", user_link.get("href", ""))
+        if not match:
+            continue
+        character_id = match.group(1)
+
+        # Extract post date — try .pr-d first (TWAI theme date container),
+        # then fall back to searching all header text
+        post_date = None
+        date_el = post.select_one(".pr-d")
+        if date_el:
+            post_date = _parse_jcink_date(date_el.get_text(" ", strip=True))
+
+        if not post_date:
+            post_copy = copy(post)
+            for body in post_copy.select(".postcolor"):
+                body.decompose()
+            header_text = post_copy.get_text(" ", strip=True)
+            post_date = _parse_jcink_date(header_text)
+
+        records.append({"character_id": character_id, "post_date": post_date})
+
+    return records
 
 
 def parse_member_list(html: str) -> list[dict]:

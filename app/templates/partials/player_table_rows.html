@@ -19,6 +19,13 @@
     </td>
     <td class="bold">{{ p.total_threads }}</td>
     <td>
+        {% set al = p.ongoing_threads|activity_level %}
+        <span class="activity-badge {{ al.css }}">{{ al.label }}</span>
+        <div class="activity-bar-track" title="{{ p.ongoing_threads }} ongoing">
+            <div class="activity-bar-fill {{ al.color }}" style="width: {{ [p.ongoing_threads * 10, 100]|min }}%"></div>
+        </div>
+    </td>
+    <td>
         {% if p.awaiting_threads > 0 %}
         <span class="count-badge yellow">{{ p.awaiting_threads }}</span>
         {% else %}
@@ -29,7 +36,7 @@
 </tr>
 {% endfor %}
 {% if not players %}
-<tr><td colspan="6" class="empty-state">No players found</td></tr>
+<tr><td colspan="7" class="empty-state">No players found</td></tr>
 {% endif %}
 </table>
 {% set extra = "" %}

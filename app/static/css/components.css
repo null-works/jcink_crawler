@@ -432,11 +432,27 @@ select.form-input {
 .bar-seg.yellow { background: var(--yellow); }
 
 /* === Power Grid === */
+.powergrid-inline {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 300px;
+}
+
+.char-actions {
+    margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
 .powergrid {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    max-width: 400px;
+    width: 100%;
 }
 
 .powergrid-stat {
@@ -494,6 +510,14 @@ select.form-input {
     align-items: center;
     gap: 0.5rem;
     height: 40px;
+}
+
+.activity-bar-inner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
 }
 
 .activity-dot {
@@ -592,11 +616,11 @@ select.form-input {
     display: flex;
     align-items: flex-start;
     gap: 1.5rem;
+    position: relative;
 }
 
 .char-info {
-    flex: 1;
-    min-width: 0;
+    flex-shrink: 0;
 }
 
 .char-info h1 {
@@ -748,11 +772,239 @@ select.form-input {
     gap: 0.75rem;
 }
 
+/* === Dashboard Charts === */
+.chart-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.chart-card {
+    background: var(--bg-darker);
+    border: 1px solid var(--current);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+}
+
+.chart-card-wide {
+    min-width: 0;
+}
+
+.chart-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--comment);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 1rem;
+}
+
+.chart-container {
+    position: relative;
+    height: 280px;
+}
+
+.chart-container-sm {
+    height: 240px;
+}
+
+/* Recent activity feed */
+.recent-activity {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    max-height: 280px;
+    overflow-y: auto;
+}
+
+.activity-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.5rem;
+    border-bottom: 1px solid rgba(68, 71, 90, 0.4);
+    text-decoration: none;
+    transition: background 0.1s;
+    color: var(--fg);
+}
+
+.activity-item:hover {
+    background: var(--current);
+    color: var(--fg);
+    text-decoration: none;
+}
+
+.activity-detail {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.activity-name {
+    font-weight: 500;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.activity-aff {
+    font-size: 0.75rem;
+    color: var(--comment);
+}
+
+.activity-time {
+    font-size: 0.8rem;
+    color: var(--comment);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--comment);
+    font-style: italic;
+}
+
+/* === Activity Badges === */
+.activity-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.badge-very-active {
+    background: rgba(189, 147, 249, 0.15);
+    color: var(--purple);
+    border: 1px solid rgba(189, 147, 249, 0.4);
+}
+
+.badge-active {
+    background: rgba(80, 250, 123, 0.15);
+    color: var(--green);
+    border: 1px solid rgba(80, 250, 123, 0.4);
+}
+
+.badge-low-activity {
+    background: rgba(241, 250, 140, 0.15);
+    color: var(--yellow);
+    border: 1px solid rgba(241, 250, 140, 0.4);
+}
+
+.badge-inactive {
+    background: rgba(255, 85, 85, 0.15);
+    color: var(--red);
+    border: 1px solid rgba(255, 85, 85, 0.4);
+}
+
+/* Activity bar visualization */
+.activity-bar-track {
+    width: 100%;
+    height: 6px;
+    background: var(--current);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 0.35rem;
+}
+
+.activity-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.4s ease;
+}
+
+.activity-bar-fill.purple { background: var(--purple); }
+.activity-bar-fill.green  { background: var(--green); }
+.activity-bar-fill.yellow { background: var(--yellow); }
+.activity-bar-fill.red    { background: var(--red); }
+
+/* Activity summary in player/character detail */
+.activity-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.activity-metric {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 60px;
+}
+
+.activity-metric .metric-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    line-height: 1.2;
+}
+
+.activity-metric .metric-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--comment);
+}
+
+/* === Activity Check Badges === */
+.ac-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+}
+
+.ac-safe {
+    background: rgba(80, 250, 123, 0.2);
+    color: var(--green);
+    border: 1px solid rgba(80, 250, 123, 0.5);
+}
+
+.ac-pending {
+    background: rgba(98, 114, 164, 0.2);
+    color: var(--comment);
+    border: 1px solid rgba(98, 114, 164, 0.5);
+}
+
+.ac-warning {
+    background: rgba(255, 183, 77, 0.2);
+    color: var(--orange);
+    border: 1px solid rgba(255, 183, 77, 0.5);
+}
+
+.ac-unsafe {
+    background: rgba(255, 85, 85, 0.2);
+    color: var(--red);
+    border: 1px solid rgba(255, 85, 85, 0.5);
+}
+
 /* === Responsive helpers === */
 @media (max-width: 768px) {
     .hide-mobile { display: none !important; }
     .char-header { flex-direction: column; align-items: center; text-align: center; }
     .char-counts { justify-content: center; }
+    .chart-row { grid-template-columns: 1fr; }
+    .powergrid-inline { position: static; transform: none; width: 100%; max-width: 280px; }
+    .char-actions { flex-direction: row; flex-wrap: wrap; justify-content: center; }
 }
 
 @media (min-width: 769px) {

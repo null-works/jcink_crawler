@@ -1,20 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Response
 import aiosqlite
 
 from app.database import get_db
 from app.config import settings
 from app.models import (
     CharacterSummary,
+    ClaimsSummary,
     CharacterThreads,
     CharacterProfile,
     Quote,
     CrawlStatusResponse,
     CharacterRegister,
     CrawlTrigger,
+    WebhookActivity,
     get_character,
     get_all_characters,
+    get_all_claims,
     get_character_threads,
     get_profile_fields,
+    get_characters_fields_batch,
     get_random_quote,
     get_all_quotes,
     get_quote_count,
@@ -25,7 +29,7 @@ from app.services import (
     crawl_character_profile,
     register_character,
 )
-from app.services.crawler import discover_characters
+from app.services.crawler import discover_characters, crawl_single_thread, sync_posts_from_acp, crawl_quotes_only
 from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
 from app.services.activity import get_activity
 
@@ -38,6 +42,39 @@ router = APIRouter()
 async def list_characters(db: aiosqlite.Connection = Depends(get_db)):
     """List all tracked characters with thread counts."""
     return await get_all_characters(db)
+
+
+@router.get("/claims", response_model=list[ClaimsSummary])
+async def list_claims(db: aiosqlite.Connection = Depends(get_db)):
+    """Bulk endpoint for the claims page.
+
+    Returns ALL characters with claims-specific profile fields
+    (face_claim, species, codename, alias, affiliation, connections)
+    and thread counts in a single response.
+    """
+    return await get_all_claims(db)
+
+
+@router.get("/characters/fields", response_model=dict[str, dict[str, str]])
+async def get_batch_fields(
+    ids: str = Query(..., description="Comma-separated character IDs"),
+    fields: str | None = Query(None, description="Comma-separated field keys to return"),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Batch-fetch profile fields for multiple characters.
+
+    Returns {character_id: {field_key: field_value}} for each requested ID.
+    If `fields` is omitted, returns all fields for each character.
+    """
+    character_ids = [cid.strip() for cid in ids.split(",") if cid.strip()]
+    if not character_ids:
+        return {}
+    field_keys = (
+        [f.strip() for f in fields.split(",") if f.strip()]
+        if fields
+        else None
+    )
+    return await get_characters_fields_batch(db, character_ids, field_keys)
 
 
 @router.get("/character/{character_id}", response_model=CharacterProfile)
@@ -146,6 +183,45 @@ async def get_character_quote_count(
     return {"character_id": character_id, "count": count}
 
 
+# --- Webhook Endpoint ---
+
+@router.post("/webhook/activity", status_code=202)
+async def webhook_activity(
+    data: WebhookActivity,
+    background_tasks: BackgroundTasks,
+):
+    """Receive activity webhooks from the theme for targeted re-crawls.
+
+    Accepts new_post, new_topic, and profile_edit events.
+    Acknowledges immediately (202) and processes asynchronously.
+    """
+    if data.event == "profile_edit" and data.user_id:
+        background_tasks.add_task(
+            crawl_character_profile, data.user_id, settings.database_path
+        )
+        return {"status": "accepted", "action": "profile_recrawl", "user_id": data.user_id}
+
+    if data.event in ("new_post", "new_topic"):
+        if data.thread_id:
+            # Targeted: crawl just this one thread
+            background_tasks.add_task(
+                crawl_single_thread,
+                data.thread_id,
+                settings.database_path,
+                user_id=data.user_id,
+                forum_id=data.forum_id,
+            )
+            return {"status": "accepted", "action": "thread_recrawl", "thread_id": data.thread_id}
+        elif data.user_id:
+            # Fallback: full thread crawl if no thread_id provided
+            background_tasks.add_task(
+                crawl_character_threads, data.user_id, settings.database_path
+            )
+            return {"status": "accepted", "action": "thread_recrawl", "user_id": data.user_id}
+
+    return {"status": "accepted", "action": "none"}
+
+
 # --- Admin/Crawl Endpoints ---
 
 @router.post("/crawl/trigger", response_model=dict)
@@ -168,6 +244,14 @@ async def trigger_crawl(
         background_tasks.add_task(_crawl_all_profiles)
         return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-profiles"}
 
+    if data.crawl_type == "sync-posts":
+        background_tasks.add_task(sync_posts_from_acp, settings.database_path)
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "sync-posts"}
+
+    if data.crawl_type == "crawl-quotes":
+        background_tasks.add_task(crawl_quotes_only, settings.database_path)
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "crawl-quotes"}
+
     if not data.character_id:
         raise HTTPException(status_code=422, detail="character_id is required for threads/profile crawls")
 
@@ -180,7 +264,7 @@ async def trigger_crawl(
             crawl_character_profile, data.character_id, settings.database_path
         )
     else:
-        raise HTTPException(status_code=400, detail="Invalid crawl_type. Use 'threads', 'profile', or 'discover'")
+        raise HTTPException(status_code=400, detail="Invalid crawl_type. Use 'threads', 'profile', 'discover', 'sync-posts', or 'crawl-quotes'")
 
     return {
         "status": "crawl_queued",

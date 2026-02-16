@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.config import APP_VERSION
 from app.database import init_db
 from app.routes import character_router, dashboard_router
 from app.services.fetcher import close_client
@@ -22,7 +23,7 @@ async def lifespan(app: FastAPI):
     await close_client()
 
 
-app = FastAPI(title="The Watcher", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="The Watcher", version=APP_VERSION, lifespan=lifespan)
 
 # CORS for JCink embeds
 app.add_middleware(

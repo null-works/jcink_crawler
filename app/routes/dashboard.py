@@ -8,7 +8,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import aiosqlite
 
 from app.database import get_db
-from app.config import settings
+from app.config import settings, APP_VERSION, APP_BUILD_TIME
 from app.models import (
     get_character,
     get_all_characters,
@@ -24,9 +24,11 @@ from app.models import (
     search_players,
     get_player_detail,
     get_dashboard_stats,
+    get_dashboard_chart_data,
 )
+from app.models.operations import set_crawl_status, get_crawl_status
 from app.services import crawl_character_threads, crawl_character_profile, register_character
-from app.services.crawler import discover_characters
+from app.services.crawler import discover_characters, sync_posts_from_acp, crawl_quotes_only
 from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
 from app.services.activity import get_activity
 
@@ -34,6 +36,8 @@ router = APIRouter()
 
 TEMPLATES_DIR = pathlib.Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+templates.env.globals["app_version"] = APP_VERSION
+templates.env.globals["app_build"] = APP_BUILD_TIME
 
 COOKIE_NAME = "watcher_session"
 COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
@@ -69,6 +73,25 @@ def format_time(ts) -> str:
 
 
 templates.env.filters["format_time"] = format_time
+
+
+def activity_level(ongoing_count) -> dict:
+    """Derive activity level from ongoing thread count."""
+    try:
+        n = int(ongoing_count)
+    except (TypeError, ValueError):
+        n = 0
+    if n >= 5:
+        return {"label": "Very Active", "css": "badge-very-active", "color": "purple"}
+    elif n >= 3:
+        return {"label": "Active", "css": "badge-active", "color": "green"}
+    elif n >= 1:
+        return {"label": "Low Activity", "css": "badge-low-activity", "color": "yellow"}
+    else:
+        return {"label": "Inactive", "css": "badge-inactive", "color": "red"}
+
+
+templates.env.filters["activity_level"] = activity_level
 
 
 # --- Auth helpers ---
@@ -143,7 +166,27 @@ async def root():
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(
+async def dashboard_overview(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    stats = await get_dashboard_stats(db)
+    chart_data = await get_dashboard_chart_data(db)
+    activity = get_activity()
+
+    return templates.TemplateResponse(request, "pages/overview.html", {
+        "stats": stats,
+        "chart_data": chart_data,
+        "activity": activity,
+    })
+
+
+@router.get("/characters", response_class=HTMLResponse)
+async def characters_page(
     request: Request,
     q: str | None = None,
     affiliation: str | None = None,
@@ -166,7 +209,7 @@ async def dashboard_page(
     all_players = await get_unique_players(db)
     activity = get_activity()
 
-    return templates.TemplateResponse(request, "pages/dashboard.html", {
+    return templates.TemplateResponse(request, "pages/characters.html", {
         "stats": stats,
         "characters": characters,
         "total": total,
@@ -334,10 +377,18 @@ async def admin_page(
     activity = get_activity()
     characters, _ = await search_characters(db, per_page=500)
 
+    # ACP state
+    acp_username = await get_crawl_status(db, "acp_username") or settings.admin_username
+    acp_configured = bool(acp_username)
+    acp_last_sync = await get_crawl_status(db, "acp_last_sync")
+
     return templates.TemplateResponse(request, "pages/admin.html", {
         "stats": stats,
         "activity": activity,
         "characters": characters,
+        "acp_configured": acp_configured,
+        "acp_username": acp_username or "",
+        "acp_last_sync": acp_last_sync,
     })
 
 
@@ -386,13 +437,29 @@ async def players_page(
 async def player_detail_page(
     request: Request,
     player_name: str,
+    month: str | None = None,
     db: aiosqlite.Connection = Depends(get_db),
 ):
     redirect = _require_auth(request)
     if redirect:
         return redirect
 
-    player = await get_player_detail(db, player_name)
+    # Parse month filter (format: "YYYY-MM")
+    month_start = None
+    month_end = None
+    if month:
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(month, "%Y-%m")
+            month_start = dt.strftime("%Y-%m-01")
+            if dt.month == 12:
+                month_end = f"{dt.year + 1}-01-01"
+            else:
+                month_end = f"{dt.year}-{dt.month + 1:02d}-01"
+        except ValueError:
+            pass
+
+    player = await get_player_detail(db, player_name, month_start, month_end)
     if not player:
         return HTMLResponse(status_code=404, content="Player not found")
 
@@ -401,6 +468,7 @@ async def player_detail_page(
     return templates.TemplateResponse(request, "pages/player_detail.html", {
         "player": player,
         "activity": activity,
+        "month": month,
     })
 
 
@@ -479,6 +547,21 @@ async def htmx_stats(
     stats = await get_dashboard_stats(db)
     return templates.TemplateResponse(request, "partials/stats_values.html", {
         "stats": stats,
+    })
+
+
+@router.get("/htmx/overview-charts", response_class=HTMLResponse)
+async def htmx_overview_charts(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    chart_data = await get_dashboard_chart_data(db)
+    return templates.TemplateResponse(request, "partials/overview_charts.html", {
+        "chart_data": chart_data,
     })
 
 
@@ -631,6 +714,10 @@ async def htmx_crawl(
         background_tasks.add_task(_crawl_all_threads)
     elif crawl_type == "all-profiles":
         background_tasks.add_task(_crawl_all_profiles)
+    elif crawl_type == "sync-posts":
+        background_tasks.add_task(sync_posts_from_acp, settings.database_path)
+    elif crawl_type == "crawl-quotes":
+        background_tasks.add_task(crawl_quotes_only, settings.database_path)
     elif character_id:
         if crawl_type == "threads":
             background_tasks.add_task(crawl_character_threads, character_id, settings.database_path)
@@ -642,3 +729,45 @@ async def htmx_crawl(
         return HTMLResponse('<span class="text-red">Character ID required for this crawl type</span>')
 
     return HTMLResponse(f'<span class="text-green">Crawl queued: {crawl_type}</span>')
+
+
+@router.post("/htmx/acp-credentials", response_class=HTMLResponse)
+async def htmx_save_acp_credentials(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    username = form.get("acp_username", "").strip()
+    password = form.get("acp_password", "").strip()
+
+    if not username or not password:
+        return HTMLResponse('<span class="text-red">Both username and password are required</span>')
+
+    await set_crawl_status(db, "acp_username", username)
+    await set_crawl_status(db, "acp_password", password)
+
+    return HTMLResponse(f'<span class="text-green">ACP credentials saved for {username}</span>')
+
+
+@router.post("/htmx/acp-sync", response_class=HTMLResponse)
+async def htmx_acp_sync(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    # Check if credentials are configured
+    acp_user = await get_crawl_status(db, "acp_username") or settings.admin_username
+    acp_pass = await get_crawl_status(db, "acp_password") or settings.admin_password
+    if not acp_user or not acp_pass:
+        return HTMLResponse('<span class="text-red">No ACP credentials configured — save them first</span>')
+
+    background_tasks.add_task(sync_posts_from_acp, settings.database_path)
+    return HTMLResponse('<span class="text-green">ACP post sync started — check activity indicator for progress</span>')

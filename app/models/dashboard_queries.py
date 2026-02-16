@@ -4,7 +4,7 @@ from app.config import settings
 ALLOWED_CHAR_SORTS = {"name", "id", "affiliation", "player", "total_threads", "last_thread_crawl"}
 ALLOWED_THREAD_SORTS = {"title", "category", "last_poster_name", "forum_name", "char_name", "is_user_last_poster"}
 ALLOWED_QUOTE_SORTS = {"created_at", "quote_text"}
-ALLOWED_PLAYER_SORTS = {"player", "character_count", "total_threads", "awaiting_threads", "last_active"}
+ALLOWED_PLAYER_SORTS = {"player", "character_count", "total_threads", "awaiting_threads", "ongoing_threads", "last_active"}
 
 
 async def search_characters(
@@ -294,6 +294,7 @@ async def search_players(
         "character_count": f"character_count {direction}",
         "total_threads": f"total_threads {direction}",
         "awaiting_threads": f"awaiting_threads {direction}",
+        "ongoing_threads": f"ongoing_threads {direction}",
         "last_active": f"last_active {direction}",
     }
     order = sort_map.get(sort_by, f"player_name {direction}")
@@ -310,13 +311,17 @@ async def search_players(
              JOIN profile_fields pf3 ON pf3.character_id = ct3.character_id AND pf3.field_key = ?
              WHERE pf3.field_value = pf_player.field_value
                AND ct3.category = 'ongoing' AND ct3.is_user_last_poster = 0) AS awaiting_threads,
+            (SELECT COUNT(*) FROM character_threads ct4
+             JOIN profile_fields pf4 ON pf4.character_id = ct4.character_id AND pf4.field_key = ?
+             WHERE pf4.field_value = pf_player.field_value
+               AND ct4.category = 'ongoing') AS ongoing_threads,
             MAX(c.last_thread_crawl) AS last_active
         {base}
         GROUP BY pf_player.field_value
         ORDER BY {order}
         LIMIT ? OFFSET ?
     """
-    all_params = [settings.player_field_key, settings.player_field_key] + params + [per_page, offset]
+    all_params = [settings.player_field_key, settings.player_field_key, settings.player_field_key] + params + [per_page, offset]
     cursor = await db.execute(select_sql, all_params)
     rows = await cursor.fetchall()
 
@@ -344,9 +349,29 @@ async def search_players(
 async def get_player_detail(
     db: aiosqlite.Connection,
     player_name: str,
+    month_start: str | None = None,
+    month_end: str | None = None,
 ) -> dict | None:
-    """Get full player detail: characters, thread breakdown, quotes count."""
+    """Get full player detail: characters, thread breakdown, quotes count, post counts.
+
+    Args:
+        player_name: Player name to look up.
+        month_start: ISO date string for activity period start (e.g. "2026-02-01").
+        month_end: ISO date string for activity period end (e.g. "2026-03-01").
+    """
+    from datetime import datetime, timezone
+
     excluded = settings.excluded_name_set
+
+    # Default to current calendar month if no range provided
+    if not month_start or not month_end:
+        now = datetime.now(timezone.utc)
+        month_start = now.strftime("%Y-%m-01")
+        # First day of next month
+        if now.month == 12:
+            month_end = f"{now.year + 1}-01-01"
+        else:
+            month_end = f"{now.year}-{now.month + 1:02d}-01"
 
     # Get all characters for this player
     cursor = await db.execute(
@@ -363,14 +388,18 @@ async def get_player_detail(
     if not characters:
         return None
 
-    # Gather thread counts and awaiting threads per character
+    # Gather thread counts, awaiting, quotes, and post data per character
     total_threads = 0
     total_awaiting = 0
     total_quotes = 0
+    total_posts = 0
+    total_monthly_posts = 0
     for char in characters:
+        cid = char["id"]
+
         tc = await db.execute(
             "SELECT category, COUNT(*) as count FROM character_threads WHERE character_id = ? GROUP BY category",
-            (char["id"],),
+            (cid,),
         )
         tc_rows = await tc.fetchall()
         counts = {tr["category"]: tr["count"] for tr in tc_rows}
@@ -380,7 +409,7 @@ async def get_player_detail(
 
         aw = await db.execute(
             "SELECT COUNT(*) as cnt FROM character_threads WHERE character_id = ? AND category = 'ongoing' AND is_user_last_poster = 0",
-            (char["id"],),
+            (cid,),
         )
         aw_row = await aw.fetchone()
         char["awaiting"] = aw_row["cnt"] if aw_row else 0
@@ -388,11 +417,44 @@ async def get_player_detail(
 
         qc = await db.execute(
             "SELECT COUNT(*) as cnt FROM quotes WHERE character_id = ?",
-            (char["id"],),
+            (cid,),
         )
         qc_row = await qc.fetchone()
         char["quote_count"] = qc_row["cnt"] if qc_row else 0
         total_quotes += char["quote_count"]
+
+        # Total post count (all time) from character_threads.post_count
+        pc = await db.execute(
+            "SELECT COALESCE(SUM(post_count), 0) as cnt FROM character_threads WHERE character_id = ?",
+            (cid,),
+        )
+        pc_row = await pc.fetchone()
+        char["post_count"] = pc_row["cnt"] if pc_row else 0
+        total_posts += char["post_count"]
+
+        # Monthly post count from posts table (date-filtered)
+        mc = await db.execute(
+            "SELECT COUNT(*) as cnt FROM posts WHERE character_id = ? AND post_date >= ? AND post_date < ?",
+            (cid, month_start, month_end),
+        )
+        mc_row = await mc.fetchone()
+        char["monthly_posts"] = mc_row["cnt"] if mc_row else 0
+        total_monthly_posts += char["monthly_posts"]
+
+        # Check if we have ANY post data for this character (even outside this month)
+        any_posts = await db.execute(
+            "SELECT 1 FROM posts WHERE character_id = ? LIMIT 1", (cid,),
+        )
+        char["has_post_data"] = await any_posts.fetchone() is not None
+
+        # Activity check: 0 = danger, 1 = warning, 2+ = safe
+        char["activity_safe"] = char["monthly_posts"] >= 2
+        if char["monthly_posts"] >= 2:
+            char["activity_status"] = "safe"
+        elif char["monthly_posts"] == 1:
+            char["activity_status"] = "warning"
+        else:
+            char["activity_status"] = "danger"
 
     # Get awaiting threads across all characters for this player
     char_ids = [c["id"] for c in characters]
@@ -417,6 +479,10 @@ async def get_player_detail(
         "total_threads": total_threads,
         "total_awaiting": total_awaiting,
         "total_quotes": total_quotes,
+        "total_posts": total_posts,
+        "total_monthly_posts": total_monthly_posts,
+        "month_start": month_start,
+        "month_end": month_end,
         "awaiting_threads": awaiting_threads,
     }
 
@@ -467,4 +533,139 @@ async def get_dashboard_stats(db: aiosqlite.Connection) -> dict:
         "threads_awaiting": threads_awaiting,
         "total_players": total_players,
         "last_crawl": last_crawl,
+    }
+
+
+async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
+    """Get data for dashboard overview charts."""
+    from datetime import datetime, timedelta, timezone
+
+    excluded = settings.excluded_name_set
+
+    # Thread counts by category
+    cursor = await db.execute(
+        "SELECT category, COUNT(*) as cnt FROM character_threads GROUP BY category"
+    )
+    rows = await cursor.fetchall()
+    threads_by_category = {r["category"]: r["cnt"] for r in rows}
+
+    # Posts over last 3 months — grouped by month
+    now = datetime.now(timezone.utc)
+    three_months_ago = (now.replace(day=1) - timedelta(days=90)).replace(day=1)
+    cursor = await db.execute(
+        """SELECT strftime('%Y-%m', post_date) AS month, COUNT(*) AS cnt
+           FROM posts
+           WHERE post_date >= ?
+           GROUP BY month
+           ORDER BY month""",
+        (three_months_ago.strftime("%Y-%m-%d"),),
+    )
+    rows = await cursor.fetchall()
+    posts_by_month = [{"label": r["month"], "count": r["cnt"]} for r in rows if r["month"]]
+
+    # Posts over last 30 days — grouped by day
+    thirty_days_ago = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+    cursor = await db.execute(
+        """SELECT post_date AS day, COUNT(*) AS cnt
+           FROM posts
+           WHERE post_date >= ?
+           GROUP BY day
+           ORDER BY day""",
+        (thirty_days_ago,),
+    )
+    rows = await cursor.fetchall()
+    posts_by_day = [{"label": r["day"], "count": r["cnt"]} for r in rows if r["day"]]
+
+    # Characters per affiliation
+    cursor = await db.execute(
+        """SELECT pf.field_value AS affiliation, COUNT(DISTINCT c.id) AS cnt
+           FROM characters c
+           JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
+           WHERE pf.field_value IS NOT NULL AND pf.field_value != ''
+           GROUP BY pf.field_value
+           ORDER BY cnt DESC""",
+        (settings.affiliation_field_key,),
+    )
+    rows = await cursor.fetchall()
+    chars_by_affiliation = [
+        {"label": r["affiliation"], "count": r["cnt"]}
+        for r in rows
+        if r["affiliation"]
+    ]
+
+    # Top 10 characters by thread count
+    cursor = await db.execute(
+        """SELECT c.name, COUNT(ct.thread_id) AS cnt
+           FROM characters c
+           JOIN character_threads ct ON ct.character_id = c.id
+           GROUP BY c.id
+           ORDER BY cnt DESC
+           LIMIT 10"""
+    )
+    rows = await cursor.fetchall()
+    top_characters = [
+        {"label": r["name"], "count": r["cnt"]}
+        for r in rows
+        if r["name"].lower() not in excluded
+    ]
+
+    # Top 10 characters by quote count
+    cursor = await db.execute(
+        """SELECT c.name, COUNT(q.id) AS cnt
+           FROM characters c
+           JOIN quotes q ON q.character_id = c.id
+           GROUP BY c.id
+           ORDER BY cnt DESC
+           LIMIT 10"""
+    )
+    rows = await cursor.fetchall()
+    top_quoters = [
+        {"label": r["name"], "count": r["cnt"]}
+        for r in rows
+        if r["name"].lower() not in excluded
+    ]
+
+    # Threads per player
+    cursor = await db.execute(
+        """SELECT pf.field_value AS player, COUNT(DISTINCT ct.thread_id) AS cnt
+           FROM profile_fields pf
+           JOIN character_threads ct ON ct.character_id = pf.character_id
+           WHERE pf.field_key = ? AND pf.field_value IS NOT NULL AND pf.field_value != ''
+           GROUP BY pf.field_value
+           ORDER BY cnt DESC
+           LIMIT 10""",
+        (settings.player_field_key,),
+    )
+    rows = await cursor.fetchall()
+    threads_by_player = [
+        {"label": r["player"], "count": r["cnt"]}
+        for r in rows
+    ]
+
+    # Recent activity — most recently crawled characters
+    cursor = await db.execute(
+        """SELECT c.id, c.name, c.avatar_url, c.last_thread_crawl, c.last_profile_crawl,
+                  pf.field_value AS affiliation
+           FROM characters c
+           LEFT JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
+           WHERE c.last_thread_crawl IS NOT NULL
+           ORDER BY c.last_thread_crawl DESC
+           LIMIT 10""",
+        (settings.affiliation_field_key,),
+    )
+    rows = await cursor.fetchall()
+    recent_crawls = [
+        dict(r) for r in rows
+        if r["name"].lower() not in excluded
+    ]
+
+    return {
+        "threads_by_category": threads_by_category,
+        "posts_by_month": posts_by_month,
+        "posts_by_day": posts_by_day,
+        "chars_by_affiliation": chars_by_affiliation,
+        "top_characters": top_characters,
+        "top_quoters": top_quoters,
+        "threads_by_player": threads_by_player,
+        "recent_crawls": recent_crawls,
     }

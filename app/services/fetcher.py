@@ -136,6 +136,84 @@ async def fetch_page_with_delay(url: str) -> str | None:
         return await fetch_page(url)
 
 
+async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", timeout_ms: int = 15000) -> str | None:
+    """Fetch a page using Playwright to execute JS and return rendered HTML.
+
+    Used for profile pages where the power grid card is built client-side.
+    Authenticates as the bot account so the browser uses the correct skin
+    (Development) which contains the power grid template.
+    Falls back to regular httpx fetch if Playwright fails.
+
+    Args:
+        url: Full URL to fetch
+        wait_selector: CSS selector to wait for before capturing HTML
+        timeout_ms: Max time to wait for the selector to appear
+    """
+    try:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            try:
+                # Authenticate so the browser gets the bot's skin preference
+                if settings.bot_username and settings.bot_password:
+                    login_url = f"{settings.forum_base_url}/index.php?act=Login&CODE=01"
+                    await page.goto(login_url, wait_until="domcontentloaded", timeout=timeout_ms)
+                    try:
+                        await page.fill('input[name="UserName"]', settings.bot_username)
+                        await page.fill('input[name="PassWord"]', settings.bot_password)
+                        await page.click('input[type="submit"][value*="Log"]')
+                        await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
+                        print(f"[Fetcher] Playwright authenticated as {settings.bot_username}")
+                    except Exception as e:
+                        print(f"[Fetcher] Playwright login failed: {e}, continuing as guest")
+
+                await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                # Wait for JS to render the power grid card
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=timeout_ms)
+                    print(f"[Fetcher] Playwright found '{wait_selector}' on {url}")
+                except Exception:
+                    print(f"[Fetcher] Playwright: '{wait_selector}' not found on {url} after {timeout_ms}ms")
+
+                # Wait a moment for any remaining JS to finish
+                await page.wait_for_timeout(1000)
+                html = await page.content()
+
+                # Diagnostic: log what elements exist for debugging power grid
+                from bs4 import BeautifulSoup
+                diag_soup = BeautifulSoup(html, "html.parser")
+                stat_count = len(diag_soup.select("div.profile-stat"))
+                pf_k_count = len(diag_soup.select("div.pf-k"))
+                pf_ab_count = len(diag_soup.select("div.pf-ab"))
+                dossier = diag_soup.select_one("dl.profile-dossier")
+                dossier_keys = []
+                if dossier:
+                    dossier_keys = [dt.get_text(strip=True) for dt in dossier.select("dt")]
+                pf_ab_titles = [el.get("title", "") for el in diag_soup.select("div.pf-ab")]
+                print(f"[Fetcher] Rendered HTML diagnostics for {url}:")
+                print(f"  div.profile-stat count: {stat_count}")
+                print(f"  div.pf-k count: {pf_k_count}")
+                print(f"  div.pf-ab count: {pf_ab_count}")
+                if dossier_keys:
+                    print(f"  Dossier keys: {dossier_keys}")
+                if pf_ab_titles:
+                    print(f"  pf-ab titles: {pf_ab_titles}")
+                # Check for any elements containing power grid stat names
+                page_text = diag_soup.get_text()
+                for stat_name in ["INT", "STR", "SPD", "DUR", "PWR", "CMB"]:
+                    if stat_name in page_text:
+                        print(f"  Found '{stat_name}' in page text")
+
+                return html
+            finally:
+                await browser.close()
+    except Exception as e:
+        print(f"[Fetcher] Playwright render failed for {url}: {e}, falling back to httpx")
+        return await fetch_page(url)
+
+
 async def fetch_pages_concurrent(urls: list[str]) -> list[str | None]:
     """Fetch multiple pages concurrently, respecting rate limits.
 

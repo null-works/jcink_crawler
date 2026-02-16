@@ -1,7 +1,11 @@
 import base64
+from datetime import datetime, timezone
 
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
+
+APP_VERSION = "2.7.0"
+APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
 class Settings(BaseSettings):
@@ -22,6 +26,9 @@ class Settings(BaseSettings):
     database_path: str = "/app/data/crawler.db"
     bot_username: str = ""
     bot_password: str = ""
+    admin_username: str = ""
+    admin_password: str = ""
+    acp_sync_interval_minutes: int = 0  # 0 = disabled
     affiliation_field_key: str = "affiliation"
     player_field_key: str = "player"
     excluded_names: str = "Watcher,Null,Spider,Kat,Randompercision"
