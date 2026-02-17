@@ -181,7 +181,7 @@ async def get_character_threads(
                ct.category as char_category, ct.is_user_last_poster,
                COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS resolved_avatar,
                p_last.last_post_date,
-               q_dialog.quote_text AS last_post_dialog
+               q_dialog.quote_text AS last_post_excerpt
         FROM threads t
         JOIN character_threads ct ON t.id = ct.thread_id
         LEFT JOIN characters c_poster ON c_poster.id = t.last_poster_id
@@ -212,9 +212,9 @@ async def get_character_threads(
     for row in rows:
         r = dict(row)
         # Truncate dialog quote to 150 chars at word boundary
-        dialog = r.get("last_post_dialog")
-        if dialog and len(dialog) > 150:
-            dialog = dialog[:150].rsplit(" ", 1)[0] + "\u2026"
+        excerpt = r.get("last_post_excerpt")
+        if excerpt and len(excerpt) > 150:
+            excerpt = excerpt[:150].rsplit(" ", 1)[0] + "\u2026"
         info = ThreadInfo(
             id=r["id"],
             title=r["title"],
@@ -227,7 +227,7 @@ async def get_character_threads(
             last_poster_avatar=r.get("resolved_avatar"),
             is_user_last_poster=bool(r.get("is_user_last_poster", 0)),
             last_post_date=r.get("last_post_date"),
-            last_post_dialog=dialog,
+            last_post_excerpt=excerpt,
         )
         cat = r["char_category"]
         if cat == "ongoing":
