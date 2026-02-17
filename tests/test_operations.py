@@ -311,6 +311,26 @@ class TestLinkCharacterThread:
         finally:
             await db.close()
 
+    async def test_is_user_last_poster_returned_via_get_character_threads(self):
+        """get_character_threads must return ct.is_user_last_poster, not the dead threads column."""
+        db = await _get_db()
+        try:
+            await upsert_character(db, "42", "Tony", "https://example.com/42")
+            await upsert_thread(db, "100", "Thread A", "https://example.com/t/100",
+                                None, None, "ongoing", last_poster_id="42")
+            await link_character_thread(db, "42", "100", "ongoing", is_user_last_poster=True)
+            await upsert_thread(db, "200", "Thread B", "https://example.com/t/200",
+                                None, None, "ongoing", last_poster_id="99")
+            await link_character_thread(db, "42", "200", "ongoing", is_user_last_poster=False)
+            await db.commit()
+
+            threads = await get_character_threads(db, "42")
+            by_id = {t.id: t for t in threads.ongoing}
+            assert by_id["100"].is_user_last_poster is True
+            assert by_id["200"].is_user_last_poster is False
+        finally:
+            await db.close()
+
 
 # --- Quote Operations ---
 

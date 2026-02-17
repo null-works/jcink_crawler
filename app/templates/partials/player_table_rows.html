@@ -1,4 +1,29 @@
 {% from "components/pagination.html" import paginate %}
+<table class="data-table">
+    <thead>
+        <tr>
+            <th class="sortable {{ 'sort-asc' if sort == 'player' and dir == 'asc' }}{{ 'sort-desc' if sort == 'player' and dir == 'desc' }}"
+                hx-get="/htmx/players?sort=player&dir={{ 'desc' if sort == 'player' and dir == 'asc' else 'asc' }}"
+                hx-target="#player-tbody" hx-include="[name='q']">Player</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'character_count' and dir == 'asc' }}{{ 'sort-desc' if sort == 'character_count' and dir == 'desc' }}"
+                hx-get="/htmx/players?sort=character_count&dir={{ 'desc' if sort == 'character_count' and dir == 'asc' else 'asc' }}"
+                hx-target="#player-tbody" hx-include="[name='q']">Characters</th>
+            <th>Roster</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'total_threads' and dir == 'asc' }}{{ 'sort-desc' if sort == 'total_threads' and dir == 'desc' }}"
+                hx-get="/htmx/players?sort=total_threads&dir={{ 'desc' if sort == 'total_threads' and dir == 'asc' else 'asc' }}"
+                hx-target="#player-tbody" hx-include="[name='q']">Threads</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'ongoing_threads' and dir == 'asc' }}{{ 'sort-desc' if sort == 'ongoing_threads' and dir == 'desc' }}"
+                hx-get="/htmx/players?sort=ongoing_threads&dir={{ 'desc' if sort == 'ongoing_threads' and dir == 'asc' else 'asc' }}"
+                hx-target="#player-tbody" hx-include="[name='q']">Activity</th>
+            <th class="sortable {{ 'sort-asc' if sort == 'awaiting_threads' and dir == 'asc' }}{{ 'sort-desc' if sort == 'awaiting_threads' and dir == 'desc' }}"
+                hx-get="/htmx/players?sort=awaiting_threads&dir={{ 'desc' if sort == 'awaiting_threads' and dir == 'asc' else 'asc' }}"
+                hx-target="#player-tbody" hx-include="[name='q']">Owed</th>
+            <th class="sortable hide-mobile {{ 'sort-asc' if sort == 'last_active' and dir == 'asc' }}{{ 'sort-desc' if sort == 'last_active' and dir == 'desc' }}"
+                hx-get="/htmx/players?sort=last_active&dir={{ 'desc' if sort == 'last_active' and dir == 'asc' else 'asc' }}"
+                hx-target="#player-tbody" hx-include="[name='q']">Last Active</th>
+        </tr>
+    </thead>
+    <tbody>
 {% for p in players %}
 <tr class="clickable-row" onclick="window.location='/player/{{ p.player_name|urlencode }}'">
     <td class="bold">{{ p.player_name }}</td>
@@ -38,6 +63,7 @@
 {% if not players %}
 <tr><td colspan="7" class="empty-state">No players found</td></tr>
 {% endif %}
+    </tbody>
 </table>
 {% set extra = "" %}
 {% if q %} {% set extra = extra ~ "&q=" ~ q %} {% endif %}

@@ -127,7 +127,8 @@ async def upsert_thread(
     """Create or update a thread."""
     await db.execute("""
         INSERT INTO threads (id, title, url, forum_id, forum_name, category,
-                           last_poster_id, last_poster_name, last_poster_avatar, last_crawled)
+                           last_poster_id, last_poster_name, last_poster_avatar,
+                           last_crawled)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
@@ -137,7 +138,7 @@ async def upsert_thread(
             category = excluded.category,
             last_poster_id = excluded.last_poster_id,
             last_poster_name = excluded.last_poster_name,
-            last_poster_avatar = excluded.last_poster_avatar,
+            last_poster_avatar = COALESCE(excluded.last_poster_avatar, threads.last_poster_avatar),
             last_crawled = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
     """, (thread_id, title, url, forum_id, forum_name, category,
@@ -175,9 +176,29 @@ async def get_character_threads(
     char_name = row["name"] if row else "Unknown"
 
     cursor = await db.execute("""
-        SELECT t.*, ct.category as char_category, ct.is_user_last_poster
+        SELECT t.id, t.title, t.url, t.forum_id, t.forum_name,
+               t.last_poster_id, t.last_poster_name,
+               ct.category as char_category, ct.is_user_last_poster,
+               COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS resolved_avatar,
+               p_last.last_post_date,
+               q_dialog.quote_text AS last_post_excerpt
         FROM threads t
         JOIN character_threads ct ON t.id = ct.thread_id
+        LEFT JOIN characters c_poster ON c_poster.id = t.last_poster_id
+        LEFT JOIN (
+            SELECT thread_id, MAX(post_date) AS last_post_date
+            FROM posts
+            WHERE post_date IS NOT NULL
+            GROUP BY thread_id
+        ) p_last ON p_last.thread_id = t.id
+        LEFT JOIN (
+            SELECT source_thread_id, character_id, quote_text,
+                   ROW_NUMBER() OVER (PARTITION BY source_thread_id, character_id ORDER BY id DESC) AS rn
+            FROM quotes
+            WHERE source_thread_id IS NOT NULL
+        ) q_dialog ON q_dialog.source_thread_id = t.id
+                  AND q_dialog.character_id = t.last_poster_id
+                  AND q_dialog.rn = 1
         WHERE ct.character_id = ?
         ORDER BY t.updated_at DESC
     """, (character_id,))
@@ -190,6 +211,10 @@ async def get_character_threads(
 
     for row in rows:
         r = dict(row)
+        # Truncate dialog quote to 150 chars at word boundary
+        excerpt = r.get("last_post_excerpt")
+        if excerpt and len(excerpt) > 150:
+            excerpt = excerpt[:150].rsplit(" ", 1)[0] + "\u2026"
         info = ThreadInfo(
             id=r["id"],
             title=r["title"],
@@ -199,8 +224,10 @@ async def get_character_threads(
             category=r["char_category"],
             last_poster_id=r.get("last_poster_id"),
             last_poster_name=r.get("last_poster_name"),
-            last_poster_avatar=r.get("last_poster_avatar"),
+            last_poster_avatar=r.get("resolved_avatar"),
             is_user_last_poster=bool(r.get("is_user_last_poster", 0)),
+            last_post_date=r.get("last_post_date"),
+            last_post_excerpt=excerpt,
         )
         cat = r["char_category"]
         if cat == "ongoing":
@@ -565,3 +592,33 @@ async def replace_thread_posts(
             "INSERT INTO posts (character_id, thread_id, post_date) VALUES (?, ?, ?)",
             (rec["character_id"], thread_id, rec.get("post_date")),
         )
+
+
+async def delete_character(db: aiosqlite.Connection, character_id: str) -> dict:
+    """Delete a character and all associated data.
+
+    Cascade-deletes from all child tables: profile_fields, character_threads,
+    quotes, quote_crawl_log, and posts. Used when a profile crawl detects
+    that a character no longer exists on JCink (banned/deleted).
+
+    Returns a summary of what was removed.
+    """
+    counts = {}
+    for table, col in [
+        ("profile_fields", "character_id"),
+        ("character_threads", "character_id"),
+        ("quotes", "character_id"),
+        ("quote_crawl_log", "character_id"),
+        ("posts", "character_id"),
+    ]:
+        cursor = await db.execute(
+            f"DELETE FROM {table} WHERE {col} = ?", (character_id,)
+        )
+        counts[table] = cursor.rowcount
+
+    cursor = await db.execute(
+        "DELETE FROM characters WHERE id = ?", (character_id,)
+    )
+    counts["characters"] = cursor.rowcount
+    await db.commit()
+    return counts

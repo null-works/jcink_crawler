@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Games - The Watcher{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Quote Games</h1>
+    <p class="subtitle">Test your knowledge — each game is also embeddable via DOHTML</p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+    <a href="/games/who-said-it" class="card" style="text-decoration: none; color: inherit; transition: border-color 0.2s; border: 1px solid var(--current);">
+        <h3 style="color: var(--purple); margin-bottom: 0.5rem;">Who Said It?</h3>
+        <p style="color: var(--comment); font-size: 0.85rem;">Read a quote and guess which character said it. Four choices, one correct answer.</p>
+    </a>
+    <a href="/games/quote-match" class="card" style="text-decoration: none; color: inherit; transition: border-color 0.2s; border: 1px solid var(--current);">
+        <h3 style="color: var(--cyan); margin-bottom: 0.5rem;">Quote Match</h3>
+        <p style="color: var(--comment); font-size: 0.85rem;">Two quotes side by side — were they said by the same character or different ones?</p>
+    </a>
+    <a href="/games/quote-chain" class="card" style="text-decoration: none; color: inherit; transition: border-color 0.2s; border: 1px solid var(--current);">
+        <h3 style="color: var(--green); margin-bottom: 0.5rem;">Quote Chain</h3>
+        <p style="color: var(--comment); font-size: 0.85rem;">Given a quote, find another one by the same character from four options.</p>
+    </a>
+</div>
+{% endblock %}

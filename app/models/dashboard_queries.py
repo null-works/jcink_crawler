@@ -165,10 +165,13 @@ async def search_threads_global(
     offset = (max(page, 1) - 1) * per_page
     select_sql = f"""
         SELECT t.id, t.title, t.url, t.forum_id, t.forum_name,
-               t.last_poster_id, t.last_poster_name, t.last_poster_avatar,
+               t.last_poster_id, t.last_poster_name,
+               COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS last_poster_avatar,
                ct.category AS char_category, ct.is_user_last_poster,
                c.id AS char_id, c.name AS char_name
-        {base}{where_clause}
+        {base}
+        LEFT JOIN characters c_poster ON c_poster.id = t.last_poster_id
+        {where_clause}
         ORDER BY {order}
         LIMIT ? OFFSET ?
     """
@@ -460,11 +463,13 @@ async def get_player_detail(
     char_ids = [c["id"] for c in characters]
     placeholders = ",".join("?" for _ in char_ids)
     awaiting_cursor = await db.execute(
-        f"""SELECT t.id, t.title, t.url, t.last_poster_name, t.last_poster_avatar,
+        f"""SELECT t.id, t.title, t.url, t.last_poster_name,
+                   COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS last_poster_avatar,
                    ct.category, c.id AS char_id, c.name AS char_name
             FROM character_threads ct
             JOIN threads t ON t.id = ct.thread_id
             JOIN characters c ON c.id = ct.character_id
+            LEFT JOIN characters c_poster ON c_poster.id = t.last_poster_id
             WHERE ct.character_id IN ({placeholders})
               AND ct.category = 'ongoing'
               AND ct.is_user_last_poster = 0
@@ -539,8 +544,12 @@ async def get_dashboard_stats(db: aiosqlite.Connection) -> dict:
 async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     """Get data for dashboard overview charts."""
     from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
 
     excluded = settings.excluded_name_set
+    # Use US/Eastern as "today" so the chart never shows a future date for users
+    eastern_now = datetime.now(ZoneInfo("America/New_York"))
+    today_eastern = eastern_now.strftime("%Y-%m-%d")
 
     # Thread counts by category
     cursor = await db.execute(
@@ -563,15 +572,15 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     rows = await cursor.fetchall()
     posts_by_month = [{"label": r["month"], "count": r["cnt"]} for r in rows if r["month"]]
 
-    # Posts over last 30 days — grouped by day
-    thirty_days_ago = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+    # Posts over last 30 days — grouped by day, capped at Eastern "today"
+    thirty_days_ago = (eastern_now - timedelta(days=30)).strftime("%Y-%m-%d")
     cursor = await db.execute(
         """SELECT post_date AS day, COUNT(*) AS cnt
            FROM posts
-           WHERE post_date >= ?
+           WHERE post_date >= ? AND post_date <= ?
            GROUP BY day
            ORDER BY day""",
-        (thirty_days_ago,),
+        (thirty_days_ago, today_eastern),
     )
     rows = await cursor.fetchall()
     posts_by_day = [{"label": r["day"], "count": r["cnt"]} for r in rows if r["day"]]

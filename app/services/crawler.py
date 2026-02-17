@@ -29,6 +29,7 @@ from app.models.operations import (
     replace_thread_posts,
     upsert_profile_field,
     get_character,
+    delete_character,
 )
 
 
@@ -162,13 +163,13 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
 
         thread_html_for_poster = last_page_html or thread_html
 
-        # Extract last poster
+        # Extract last poster and their post excerpt from the last page
         last_poster = parse_last_poster(thread_html_for_poster)
         last_poster_name = last_poster.name if last_poster else None
         last_poster_id = last_poster.user_id if last_poster else None
         is_user_last = (
-            last_poster_name.lower() == character_name.lower()
-            if last_poster_name and character_name
+            last_poster_id == character_id
+            if last_poster_id
             else False
         )
 
@@ -390,7 +391,7 @@ async def crawl_single_thread(
 
     poster_html = last_page_html or thread_html
 
-    # Extract last poster
+    # Extract last poster and their post excerpt
     last_poster = parse_last_poster(poster_html)
     last_poster_name = last_poster.name if last_poster else None
     last_poster_id = last_poster.user_id if last_poster else None
@@ -486,10 +487,10 @@ async def crawl_single_thread(
             chars_to_mark.append(cid)
 
     # Determine if user is last poster
-    character_name = all_characters.get(user_id) if user_id else None
     is_user_last = (
-        last_poster_name and character_name
-        and last_poster_name.lower() == character_name.lower()
+        last_poster_id == user_id
+        if last_poster_id and user_id
+        else False
     )
 
     # Write everything to DB
@@ -579,6 +580,19 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     html = await fetch_page_rendered(profile_url)
     if not html:
         return {"error": "Failed to fetch profile page"}
+
+    # Detect removed/banned profiles — JCink returns a "Board Message" page
+    # for deleted users. Without this check the parser would overwrite good
+    # data with name="Unknown" and empty fields.
+    if is_board_message(html):
+        print(f"[Crawler] Profile {character_id} returned board message — removing character")
+        set_activity(f"Removing deleted profile #{character_id}", character_id=character_id)
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            removed = await delete_character(db, character_id)
+        clear_activity()
+        print(f"[Crawler] Character {character_id} removed: {removed}")
+        return {"removed": True, "character_id": character_id, "reason": "Profile no longer exists"}
 
     profile = parse_profile_page(html, character_id)
 

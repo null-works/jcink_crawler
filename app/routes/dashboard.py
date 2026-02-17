@@ -771,3 +771,49 @@ async def htmx_acp_sync(
 
     background_tasks.add_task(sync_posts_from_acp, settings.database_path)
     return HTMLResponse('<span class="text-green">ACP post sync started — check activity indicator for progress</span>')
+
+
+@router.post("/htmx/purge-recrawl", response_class=HTMLResponse)
+async def htmx_purge_recrawl(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    await db.execute("DELETE FROM character_threads")
+    await db.execute("DELETE FROM threads")
+    await db.execute("DELETE FROM quotes")
+    await db.execute("DELETE FROM quote_crawl_log")
+    await db.execute("DELETE FROM posts")
+    await db.commit()
+
+    background_tasks.add_task(_crawl_all_threads)
+    background_tasks.add_task(_crawl_all_profiles)
+    background_tasks.add_task(crawl_quotes_only, settings.database_path)
+    return HTMLResponse('<span class="text-green">Database purged. Re-crawling all threads, profiles, and quotes.</span>')
+
+
+@router.post("/htmx/nuke-rebuild", response_class=HTMLResponse)
+async def htmx_nuke_rebuild(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    await db.execute("DELETE FROM character_threads")
+    await db.execute("DELETE FROM threads")
+    await db.execute("DELETE FROM quotes")
+    await db.execute("DELETE FROM quote_crawl_log")
+    await db.execute("DELETE FROM posts")
+    await db.execute("DELETE FROM profile_fields")
+    await db.execute("DELETE FROM characters")
+    await db.commit()
+
+    background_tasks.add_task(discover_characters, settings.database_path)
+    return HTMLResponse('<span class="text-green">Everything nuked. Re-discovering all characters from scratch.</span>')

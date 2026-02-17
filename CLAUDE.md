@@ -235,6 +235,38 @@ auth ever matters more.
 `python setup_dashboard.py` on the host (not inside Docker) to generate a real one.
 Not urgent unless dashboard auth is being relied on for something sensitive.
 
+## Deployment
+
+The server working directory is `~/jcink_crawler`. Docker Compose bind-mounts `./app`
+into the container, and uvicorn runs with `--reload`, so file changes take effect
+immediately — no rebuild needed.
+
+**Test a feature branch live:**
+```bash
+cd ~/jcink_crawler
+git fetch origin <branch-name>
+git checkout <branch-name>
+```
+Uvicorn auto-reloads. Verify the version number in the dashboard activity bar.
+
+**Roll back to main:**
+```bash
+cd ~/jcink_crawler
+git checkout main
+```
+Uvicorn auto-reloads back to the main branch code instantly.
+
+**Version bumping:** Every push to a feature branch MUST increment the patch version
+in `app/config.py` (`APP_VERSION`). This is how we confirm the deploy took on the
+server — check the version tag in the dashboard activity bar. Example: `2.7.0` → `2.7.1`
+→ `2.7.2`. Never skip this step.
+
+**Full rebuild (only if dependencies changed):**
+```bash
+cd ~/jcink_crawler
+docker compose up --build -d
+```
+
 ## Learned Patterns & Gotchas
 
 **Power grid centering:** Flexbox `flex: 1` with `justify-content: center` does NOT

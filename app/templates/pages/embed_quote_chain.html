@@ -1,0 +1,50 @@
+{% extends "pages/game_base.html" %}
+{% block title %}Quote Chain{% endblock %}
+{% block heading %}Quote Chain{% endblock %}
+{% block subheading %}Find another quote by the same character{% endblock %}
+{% block game_script %}
+<script>
+(function() {
+    function loadRound() {
+        _locked = false;
+        $area.innerHTML = '<div class="loading">Loading</div>';
+        apiFetch('/api/game/quote-chain?choices=4').then(function(data) {
+            var html = '<div class="quote-card"><div class="quote-label">Find another quote by ' + esc(data.anchor_character) + '</div>';
+            html += '<div class="quote-text">' + esc(data.anchor_quote) + '</div></div>';
+            html += '<div class="options">';
+            data.options.forEach(function(opt, i) {
+                html += '<button class="option-btn" data-idx="' + i + '">';
+                html += '<span>' + esc(opt.quote_text) + '</span></button>';
+            });
+            html += '</div>';
+            html += '<div class="result-msg" id="result-msg"></div>';
+            html += '<button class="next-btn" id="next-btn">Next Round</button>';
+            $area.innerHTML = html;
+
+            $area.querySelectorAll('.option-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    if (_locked) return;
+                    var idx = parseInt(btn.dataset.idx);
+                    var picked = data.options[idx];
+                    var correct = picked.correct;
+                    $area.querySelectorAll('.option-btn').forEach(function(b) {
+                        b.classList.add('locked');
+                        var bIdx = parseInt(b.dataset.idx);
+                        if (data.options[bIdx].correct) b.classList.add('correct');
+                        else if (b === btn && !correct) b.classList.add('wrong');
+                    });
+                    var msg = document.getElementById('result-msg');
+                    msg.textContent = correct ? 'Correct!' : 'Wrong! That was ' + picked.character_name;
+                    msg.className = 'result-msg ' + (correct ? 'correct' : 'wrong');
+                    showResult(correct);
+                });
+            });
+            document.getElementById('next-btn').addEventListener('click', loadRound);
+        }).catch(function() {
+            $area.innerHTML = '<div class="loading" style="color:var(--red)">Could not load round. Need characters with 2+ quotes.</div>';
+        });
+    }
+    loadRound();
+})();
+</script>
+{% endblock %}

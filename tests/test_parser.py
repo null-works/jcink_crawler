@@ -860,3 +860,5 @@ class TestParsePowerGrid:
         """
         fields = parse_power_grid(html)
         assert fields == {}
+
+

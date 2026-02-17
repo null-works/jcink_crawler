@@ -1,0 +1,49 @@
+{% extends "pages/game_base.html" %}
+{% block title %}Who Said It?{% endblock %}
+{% block heading %}Who Said It?{% endblock %}
+{% block subheading %}Guess which character said the quote{% endblock %}
+{% block game_script %}
+<script>
+(function() {
+    function loadRound() {
+        _locked = false;
+        $area.innerHTML = '<div class="loading">Loading</div>';
+        apiFetch('/api/game/who-said-it?choices=4').then(function(data) {
+            var html = '<div class="quote-card"><div class="quote-label">Who said this?</div>';
+            html += '<div class="quote-text">' + esc(data.quote) + '</div></div>';
+            html += '<div class="options">';
+            data.options.forEach(function(opt) {
+                html += '<button class="option-btn" data-id="' + esc(opt.id) + '">';
+                html += avatarTag(opt.avatar_url);
+                html += '<span>' + esc(opt.name) + '</span></button>';
+            });
+            html += '</div>';
+            html += '<div class="result-msg" id="result-msg"></div>';
+            html += '<button class="next-btn" id="next-btn">Next Round</button>';
+            $area.innerHTML = html;
+
+            var answerId = data.answer_id;
+            $area.querySelectorAll('.option-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    if (_locked) return;
+                    var correct = btn.dataset.id === answerId;
+                    $area.querySelectorAll('.option-btn').forEach(function(b) {
+                        b.classList.add('locked');
+                        if (b.dataset.id === answerId) b.classList.add('correct');
+                        else if (b === btn && !correct) b.classList.add('wrong');
+                    });
+                    var msg = document.getElementById('result-msg');
+                    msg.textContent = correct ? 'Correct!' : 'Wrong!';
+                    msg.className = 'result-msg ' + (correct ? 'correct' : 'wrong');
+                    showResult(correct);
+                });
+            });
+            document.getElementById('next-btn').addEventListener('click', loadRound);
+        }).catch(function() {
+            $area.innerHTML = '<div class="loading" style="color:var(--red)">Could not load round. Need at least 4 characters with quotes.</div>';
+        });
+    }
+    loadRound();
+})();
+</script>
+{% endblock %}
