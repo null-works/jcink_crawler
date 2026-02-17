@@ -148,6 +148,21 @@
         Purge &amp; Re-crawl
     </button>
     <div id="purge-result" class="result"></div>
+    <hr style="border-color: var(--current); margin: 1rem 0;">
+    <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--red);">Full Nuke</h4>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Wipes <strong>everything</strong> — characters, profiles, threads, quotes, posts.
+        Re-discovers all characters from scratch. <span class="text-red">You will lose all data.</span>
+    </p>
+    <button class="btn btn-pink"
+            style="background: var(--red);"
+            hx-post="/htmx/nuke-rebuild"
+            hx-target="#nuke-result"
+            hx-swap="innerHTML"
+            hx-confirm="FULL NUKE: This will delete ALL data including characters and profiles, then re-discover from scratch. Are you absolutely sure?">
+        Nuke &amp; Rebuild
+    </button>
+    <div id="nuke-result" class="result"></div>
 </div>
 
 {# Service info #}
