@@ -544,8 +544,12 @@ async def get_dashboard_stats(db: aiosqlite.Connection) -> dict:
 async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     """Get data for dashboard overview charts."""
     from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
 
     excluded = settings.excluded_name_set
+    # Use US/Eastern as "today" so the chart never shows a future date for users
+    eastern_now = datetime.now(ZoneInfo("America/New_York"))
+    today_eastern = eastern_now.strftime("%Y-%m-%d")
 
     # Thread counts by category
     cursor = await db.execute(
@@ -568,15 +572,15 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     rows = await cursor.fetchall()
     posts_by_month = [{"label": r["month"], "count": r["cnt"]} for r in rows if r["month"]]
 
-    # Posts over last 30 days — grouped by day
-    thirty_days_ago = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+    # Posts over last 30 days — grouped by day, capped at Eastern "today"
+    thirty_days_ago = (eastern_now - timedelta(days=30)).strftime("%Y-%m-%d")
     cursor = await db.execute(
         """SELECT post_date AS day, COUNT(*) AS cnt
            FROM posts
-           WHERE post_date >= ?
+           WHERE post_date >= ? AND post_date <= ?
            GROUP BY day
            ORDER BY day""",
-        (thirty_days_ago,),
+        (thirty_days_ago, today_eastern),
     )
     rows = await cursor.fetchall()
     posts_by_day = [{"label": r["day"], "count": r["cnt"]} for r in rows if r["day"]]
