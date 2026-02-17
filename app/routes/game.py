@@ -1,4 +1,4 @@
-"""Quote game API endpoints and embeddable page."""
+"""Quote game API endpoints and embeddable pages."""
 
 import pathlib
 import random
@@ -77,12 +77,10 @@ async def game_who_said_it(
     if not quote:
         return JSONResponse({"error": "No quotes found"}, status_code=400)
 
-    # Find the correct character
     correct = next((c for c in characters if c["id"] == quote["character_id"]), None)
     if not correct:
         return JSONResponse({"error": "Character not found"}, status_code=400)
 
-    # Pick wrong answers
     wrong_pool = [c for c in characters if c["id"] != correct["id"]]
     wrong = random.sample(wrong_pool, min(choices - 1, len(wrong_pool)))
 
@@ -107,11 +105,9 @@ async def game_quote_match(db: aiosqlite.Connection = Depends(get_db)):
     if len(characters) < 2:
         return JSONResponse({"error": "Need at least 2 characters with quotes"}, status_code=400)
 
-    # 50/50 chance of same vs different
     same = random.choice([True, False])
 
     if same:
-        # Pick a character that has 2+ quotes
         random.shuffle(characters)
         for c in characters:
             cursor = await db.execute(
@@ -132,10 +128,8 @@ async def game_quote_match(db: aiosqlite.Connection = Depends(get_db)):
                     "character_a": c["name"],
                     "character_b": c["name"],
                 }
-        # Fallback to different if no character has 2+ quotes
         same = False
 
-    # Different characters
     pair = random.sample(characters, 2)
     q1 = await _random_quote_for(db, pair[0]["id"])
     q2 = await _random_quote_for(db, pair[1]["id"])
@@ -161,7 +155,6 @@ async def game_quote_chain(
     if len(characters) < choices:
         return JSONResponse({"error": "Not enough characters with quotes"}, status_code=400)
 
-    # Find a character with 2+ quotes
     random.shuffle(characters)
     anchor_char = None
     for c in characters:
@@ -176,7 +169,6 @@ async def game_quote_chain(
     if not anchor_char:
         return JSONResponse({"error": "No character has enough quotes"}, status_code=400)
 
-    # Get 2 quotes from the anchor character
     cursor = await db.execute(
         "SELECT id, character_id, quote_text FROM quotes WHERE character_id = ? ORDER BY RANDOM() LIMIT 2",
         (anchor_char["id"],),
@@ -185,7 +177,6 @@ async def game_quote_chain(
     anchor_quote = dict(rows[0])
     correct_quote = dict(rows[1])
 
-    # Get wrong quotes from other characters
     wrong_chars = [c for c in characters if c["id"] != anchor_char["id"]]
     wrong_chars = random.sample(wrong_chars, min(choices - 1, len(wrong_chars)))
     wrong_quotes = []
@@ -208,20 +199,44 @@ async def game_quote_chain(
 
 
 # ---------------------------------------------------------------------------
-# Embeddable game page (DOHTML-ready, fully self-contained)
+# Embeddable pages (DOHTML-ready, fully self-contained)
 # ---------------------------------------------------------------------------
 
-@router.get("/embed/quote-game", response_class=HTMLResponse)
-async def embed_quote_game(request: Request):
-    """Self-contained quote game page for DOHTML embedding."""
-    return templates.TemplateResponse("pages/game_embed.html", {"request": request})
+@router.get("/embed/who-said-it", response_class=HTMLResponse)
+async def embed_who_said_it(request: Request):
+    return templates.TemplateResponse("pages/embed_who_said_it.html", {"request": request})
+
+
+@router.get("/embed/quote-match", response_class=HTMLResponse)
+async def embed_quote_match(request: Request):
+    return templates.TemplateResponse("pages/embed_quote_match.html", {"request": request})
+
+
+@router.get("/embed/quote-chain", response_class=HTMLResponse)
+async def embed_quote_chain(request: Request):
+    return templates.TemplateResponse("pages/embed_quote_chain.html", {"request": request})
 
 
 # ---------------------------------------------------------------------------
-# Dashboard game page (extends base.html with nav)
+# Dashboard pages
 # ---------------------------------------------------------------------------
 
 @router.get("/games", response_class=HTMLResponse)
 async def games_page(request: Request):
-    """Dashboard games page."""
+    """Games landing page with links to each game."""
     return templates.TemplateResponse("pages/games.html", {"request": request})
+
+
+@router.get("/games/who-said-it", response_class=HTMLResponse)
+async def games_who_said_it(request: Request):
+    return templates.TemplateResponse("pages/game_who_said_it.html", {"request": request})
+
+
+@router.get("/games/quote-match", response_class=HTMLResponse)
+async def games_quote_match(request: Request):
+    return templates.TemplateResponse("pages/game_quote_match.html", {"request": request})
+
+
+@router.get("/games/quote-chain", response_class=HTMLResponse)
+async def games_quote_chain(request: Request):
+    return templates.TemplateResponse("pages/game_quote_chain.html", {"request": request})

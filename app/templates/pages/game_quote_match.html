@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Quote Match - The Watcher{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.25rem;">
+        <a href="/games" style="color: var(--comment); text-decoration: none; font-size: 0.85rem;">&larr; All Games</a>
+    </div>
+    <h1>Quote Match</h1>
+    <p class="subtitle">Same character or different?</p>
+</div>
+
+<div class="card" style="padding: 0; overflow: hidden;">
+    <iframe src="/embed/quote-match" style="width: 100%; height: 600px; border: none; background: var(--bg);"></iframe>
+</div>
+
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Embed Code</h3>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Paste this into a JCink DOHTML block to embed the game on your forum.
+    </p>
+    <pre style="background: var(--bg-darker); padding: 0.75rem 1rem; border-radius: var(--radius); font-size: 0.8rem; overflow-x: auto; color: var(--cyan); border: 1px solid var(--current);">&lt;iframe src="https://imagehut.ch:8943/embed/quote-match" style="width:100%;height:600px;border:none;" allowtransparency="true"&gt;&lt;/iframe&gt;</pre>
+</div>
+{% endblock %}

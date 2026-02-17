@@ -13,7 +13,7 @@
         <li><a href="/players" class="{{ 'active' if request.url.path.startswith('/player') }}">Players</a></li>
         <li><a href="/threads" class="{{ 'active' if request.url.path == '/threads' }}">Threads</a></li>
         <li><a href="/quotes" class="{{ 'active' if request.url.path == '/quotes' }}">Quotes</a></li>
-        <li><a href="/games" class="{{ 'active' if request.url.path == '/games' }}">Games</a></li>
+        <li><a href="/games" class="{{ 'active' if request.url.path.startswith('/games') }}">Games</a></li>
         <li><a href="/admin" class="{{ 'active' if request.url.path == '/admin' }}">Admin</a></li>
     </ul>
     <div class="nav-right">
