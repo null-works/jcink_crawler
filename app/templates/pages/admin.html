@@ -133,6 +133,23 @@
     </div>
 </div>
 
+{# Purge & re-crawl #}
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Purge &amp; Re-crawl</h3>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Wipes all threads, quotes, and post data, then triggers a full re-crawl.
+        Characters and profile fields are kept. <span class="text-yellow">This cannot be undone.</span>
+    </p>
+    <button class="btn btn-pink"
+            hx-post="/htmx/purge-recrawl"
+            hx-target="#purge-result"
+            hx-swap="innerHTML"
+            hx-confirm="This will delete ALL threads, quotes, and posts from the database and start a full re-crawl. Are you sure?">
+        Purge &amp; Re-crawl
+    </button>
+    <div id="purge-result" class="result"></div>
+</div>
+
 {# Service info #}
 <div class="card" style="margin-top: 1.5rem;">
     <h3 class="card-title" style="margin-bottom: 0.75rem;">Service Info</h3>
