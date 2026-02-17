@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import APP_VERSION
 from app.database import init_db
-from app.routes import character_router, dashboard_router
+from app.routes import character_router, dashboard_router, game_router
 from app.services.fetcher import close_client
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -48,3 +48,6 @@ app.include_router(character_router, prefix="/api")
 
 # Register dashboard routes (HTML)
 app.include_router(dashboard_router)
+
+# Register game routes (embed + dashboard page + game API)
+app.include_router(game_router)

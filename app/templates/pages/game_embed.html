@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quote Games — The Watcher</title>
+<style>
+:root {
+    --bg: #282a36; --bg-darker: #1e1f29; --bg-light: #2d2f3d;
+    --current: #44475a; --fg: #f8f8f2; --comment: #6272a4;
+    --cyan: #8be9fd; --green: #50fa7b; --orange: #ffb86c;
+    --pink: #ff79c6; --purple: #bd93f9; --red: #ff5555; --yellow: #f1fa8c;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+    --radius: 6px; --radius-lg: 10px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: var(--font-sans); background: var(--bg); color: var(--fg);
+    line-height: 1.6; padding: 1rem; min-height: 100vh;
+}
+
+/* Layout */
+.game-container { max-width: 600px; margin: 0 auto; }
+.game-header { text-align: center; margin-bottom: 1.5rem; }
+.game-header h1 { font-size: 1.3rem; color: var(--purple); margin-bottom: 0.25rem; }
+.game-header p { font-size: 0.85rem; color: var(--comment); }
+
+/* Mode tabs */
+.mode-tabs {
+    display: flex; gap: 0.5rem; margin-bottom: 1.5rem; justify-content: center; flex-wrap: wrap;
+}
+.mode-tab {
+    padding: 0.45rem 1rem; border-radius: var(--radius); border: 1px solid var(--current);
+    background: transparent; color: var(--comment); cursor: pointer;
+    font-size: 0.85rem; font-weight: 600; transition: all 0.2s;
+}
+.mode-tab:hover { border-color: var(--purple); color: var(--fg); }
+.mode-tab.active { background: var(--purple); color: var(--bg); border-color: var(--purple); }
+
+/* Score bar */
+.score-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.5rem 0.75rem; background: var(--bg-darker); border-radius: var(--radius);
+    margin-bottom: 1rem; font-size: 0.85rem;
+}
+.score-bar .streak { color: var(--orange); font-weight: 600; }
+.score-bar .score { color: var(--green); font-weight: 600; }
+.score-bar .best { color: var(--pink); }
+
+/* Quote display */
+.quote-card {
+    background: var(--bg-darker); border: 1px solid var(--current); border-radius: var(--radius-lg);
+    padding: 1.25rem 1.5rem; margin-bottom: 1rem; position: relative;
+}
+.quote-card::before {
+    content: '\201C'; position: absolute; top: -0.15rem; left: 0.5rem;
+    font-size: 3rem; color: var(--purple); opacity: 0.3; line-height: 1;
+}
+.quote-text {
+    font-size: 1.05rem; font-style: italic; color: var(--fg); padding-left: 1.25rem;
+}
+.quote-label {
+    font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--comment); margin-bottom: 0.4rem; font-weight: 600;
+}
+
+/* Options grid */
+.options { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+.option-btn {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.65rem 1rem; border-radius: var(--radius); border: 1px solid var(--current);
+    background: var(--bg-light); color: var(--fg); cursor: pointer;
+    font-size: 0.9rem; font-weight: 500; transition: all 0.15s; text-align: left; width: 100%;
+}
+.option-btn:hover:not(.locked) { border-color: var(--purple); background: var(--current); }
+.option-btn.correct { border-color: var(--green); background: rgba(80, 250, 123, 0.12); color: var(--green); }
+.option-btn.wrong { border-color: var(--red); background: rgba(255, 85, 85, 0.12); color: var(--red); opacity: 0.7; }
+.option-btn.locked { cursor: default; }
+.option-btn .avatar {
+    width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--current); flex-shrink: 0;
+}
+.option-btn.correct .avatar { border-color: var(--green); }
+.option-btn.wrong .avatar { border-color: var(--red); }
+
+/* Same/Different buttons */
+.binary-options { display: flex; gap: 0.75rem; margin-bottom: 1rem; }
+.binary-btn {
+    flex: 1; padding: 0.75rem; border-radius: var(--radius); border: 1px solid var(--current);
+    background: var(--bg-light); color: var(--fg); cursor: pointer;
+    font-size: 1rem; font-weight: 600; text-align: center; transition: all 0.15s;
+}
+.binary-btn:hover:not(.locked) { border-color: var(--purple); }
+.binary-btn.correct { border-color: var(--green); background: rgba(80, 250, 123, 0.12); color: var(--green); }
+.binary-btn.wrong { border-color: var(--red); background: rgba(255, 85, 85, 0.12); color: var(--red); }
+
+/* Result flash */
+.result-msg {
+    text-align: center; font-size: 0.9rem; font-weight: 600; min-height: 1.5rem;
+    margin-bottom: 0.5rem; transition: opacity 0.3s;
+}
+.result-msg.correct { color: var(--green); }
+.result-msg.wrong { color: var(--red); }
+
+/* Next button */
+.next-btn {
+    display: block; width: 100%; padding: 0.65rem; border-radius: var(--radius);
+    border: none; background: var(--purple); color: var(--bg); cursor: pointer;
+    font-size: 0.9rem; font-weight: 600; transition: opacity 0.2s;
+}
+.next-btn:hover { opacity: 0.85; }
+.next-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* Loading */
+.loading { text-align: center; color: var(--comment); padding: 2rem; font-size: 0.9rem; }
+.loading::after { content: '...'; animation: dots 1.2s steps(4,end) infinite; }
+@keyframes dots { 0%,20%{content:''} 40%{content:'.'} 60%{content:'..'} 80%,100%{content:'...'} }
+
+/* Hidden */
+.hidden { display: none !important; }
+
+/* Vs divider for quote-match */
+.vs-divider {
+    text-align: center; font-size: 0.8rem; color: var(--comment);
+    text-transform: uppercase; letter-spacing: 0.1em; margin: 0.5rem 0; font-weight: 600;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+    body { padding: 0.5rem; }
+    .quote-text { font-size: 0.95rem; }
+    .mode-tab { padding: 0.4rem 0.75rem; font-size: 0.8rem; }
+}
+</style>
+</head>
+<body>
+<div class="game-container">
+    <div class="game-header">
+        <h1>Quote Games</h1>
+        <p>How well do you know your characters?</p>
+    </div>
+
+    <div class="mode-tabs">
+        <button class="mode-tab active" data-mode="who-said-it">Who Said It?</button>
+        <button class="mode-tab" data-mode="quote-match">Quote Match</button>
+        <button class="mode-tab" data-mode="quote-chain">Quote Chain</button>
+    </div>
+
+    <div class="score-bar">
+        <span class="score">Score: <span id="score">0</span></span>
+        <span class="streak">Streak: <span id="streak">0</span></span>
+        <span class="best">Best: <span id="best">0</span></span>
+    </div>
+
+    <div id="game-area">
+        <div class="loading">Loading</div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var API_BASE = window.QUOTE_GAME_API || '';
+    var state = { mode: 'who-said-it', score: 0, streak: 0, best: 0, locked: false };
+
+    var $score = document.getElementById('score');
+    var $streak = document.getElementById('streak');
+    var $best = document.getElementById('best');
+    var $area = document.getElementById('game-area');
+
+    // --- Mode tabs ---
+    document.querySelectorAll('.mode-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            document.querySelectorAll('.mode-tab').forEach(function(t) { t.classList.remove('active'); });
+            tab.classList.add('active');
+            state.mode = tab.dataset.mode;
+            state.score = 0; state.streak = 0;
+            updateScores();
+            loadRound();
+        });
+    });
+
+    function updateScores() {
+        $score.textContent = state.score;
+        $streak.textContent = state.streak;
+        if (state.streak > state.best) state.best = state.streak;
+        $best.textContent = state.best;
+    }
+
+    function showResult(correct) {
+        state.locked = true;
+        if (correct) {
+            state.score++; state.streak++;
+        } else {
+            state.streak = 0;
+        }
+        updateScores();
+    }
+
+    // --- Fetch helper ---
+    function apiFetch(path) {
+        return fetch(API_BASE + path).then(function(r) {
+            if (!r.ok) throw new Error('API error');
+            return r.json();
+        });
+    }
+
+    // --- Render helpers ---
+    function esc(s) {
+        var d = document.createElement('div');
+        d.textContent = s || '';
+        return d.innerHTML;
+    }
+
+    function avatarTag(url) {
+        if (url) return '<img class="avatar" src="' + esc(url) + '" alt="" onerror="this.style.display=\'none\'">';
+        return '<span class="avatar" style="display:inline-block;background:var(--current);"></span>';
+    }
+
+    function nextButton() {
+        return '<button class="next-btn" id="next-btn">Next Round</button>';
+    }
+
+    function resultDiv() {
+        return '<div class="result-msg" id="result-msg"></div>';
+    }
+
+    // --- WHO SAID IT ---
+    function loadWhoSaidIt() {
+        $area.innerHTML = '<div class="loading">Loading</div>';
+        apiFetch('/api/game/who-said-it?choices=4').then(function(data) {
+            var html = '';
+            html += '<div class="quote-card"><div class="quote-label">Who said this?</div>';
+            html += '<div class="quote-text">' + esc(data.quote) + '</div></div>';
+            html += '<div class="options">';
+            data.options.forEach(function(opt) {
+                html += '<button class="option-btn" data-id="' + esc(opt.id) + '">';
+                html += avatarTag(opt.avatar_url);
+                html += '<span>' + esc(opt.name) + '</span></button>';
+            });
+            html += '</div>';
+            html += resultDiv();
+            html += nextButton();
+            $area.innerHTML = html;
+
+            var answerId = data.answer_id;
+            $area.querySelectorAll('.option-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    if (state.locked) return;
+                    var picked = btn.dataset.id;
+                    var correct = picked === answerId;
+
+                    // Mark all buttons
+                    $area.querySelectorAll('.option-btn').forEach(function(b) {
+                        b.classList.add('locked');
+                        if (b.dataset.id === answerId) b.classList.add('correct');
+                        else if (b === btn && !correct) b.classList.add('wrong');
+                    });
+
+                    var msg = document.getElementById('result-msg');
+                    msg.textContent = correct ? 'Correct!' : 'Wrong!';
+                    msg.className = 'result-msg ' + (correct ? 'correct' : 'wrong');
+                    showResult(correct);
+                });
+            });
+
+            document.getElementById('next-btn').addEventListener('click', function() {
+                state.locked = false;
+                loadRound();
+            });
+        }).catch(function() {
+            $area.innerHTML = '<div class="loading" style="color:var(--red)">Could not load round. Need at least 4 characters with quotes.</div>';
+        });
+    }
+
+    // --- QUOTE MATCH ---
+    function loadQuoteMatch() {
+        $area.innerHTML = '<div class="loading">Loading</div>';
+        apiFetch('/api/game/quote-match').then(function(data) {
+            var html = '';
+            html += '<div class="quote-card"><div class="quote-label">Quote A</div>';
+            html += '<div class="quote-text">' + esc(data.quote_a) + '</div></div>';
+            html += '<div class="vs-divider">vs</div>';
+            html += '<div class="quote-card"><div class="quote-label">Quote B</div>';
+            html += '<div class="quote-text">' + esc(data.quote_b) + '</div></div>';
+            html += '<div class="binary-options">';
+            html += '<button class="binary-btn" data-guess="same">Same Character</button>';
+            html += '<button class="binary-btn" data-guess="different">Different</button>';
+            html += '</div>';
+            html += resultDiv();
+            html += nextButton();
+            $area.innerHTML = html;
+
+            $area.querySelectorAll('.binary-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    if (state.locked) return;
+                    var guessedSame = btn.dataset.guess === 'same';
+                    var correct = guessedSame === data.same_character;
+                    var reveal = data.same_character
+                        ? 'Both by ' + data.character_a
+                        : data.character_a + ' & ' + data.character_b;
+
+                    $area.querySelectorAll('.binary-btn').forEach(function(b) {
+                        b.classList.add('locked');
+                        var isSameBtn = b.dataset.guess === 'same';
+                        if (isSameBtn === data.same_character) b.classList.add('correct');
+                        else if (b === btn && !correct) b.classList.add('wrong');
+                    });
+
+                    var msg = document.getElementById('result-msg');
+                    msg.innerHTML = (correct ? 'Correct! ' : 'Wrong! ') + esc(reveal);
+                    msg.className = 'result-msg ' + (correct ? 'correct' : 'wrong');
+                    showResult(correct);
+                });
+            });
+
+            document.getElementById('next-btn').addEventListener('click', function() {
+                state.locked = false;
+                loadRound();
+            });
+        }).catch(function() {
+            $area.innerHTML = '<div class="loading" style="color:var(--red)">Could not load round.</div>';
+        });
+    }
+
+    // --- QUOTE CHAIN ---
+    function loadQuoteChain() {
+        $area.innerHTML = '<div class="loading">Loading</div>';
+        apiFetch('/api/game/quote-chain?choices=4').then(function(data) {
+            var html = '';
+            html += '<div class="quote-card"><div class="quote-label">Find another quote by ' + esc(data.anchor_character) + '</div>';
+            html += '<div class="quote-text">' + esc(data.anchor_quote) + '</div></div>';
+            html += '<div class="options">';
+            data.options.forEach(function(opt, i) {
+                html += '<button class="option-btn" data-idx="' + i + '">';
+                html += '<span>' + esc(opt.quote_text) + '</span></button>';
+            });
+            html += '</div>';
+            html += resultDiv();
+            html += nextButton();
+            $area.innerHTML = html;
+
+            $area.querySelectorAll('.option-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    if (state.locked) return;
+                    var idx = parseInt(btn.dataset.idx);
+                    var picked = data.options[idx];
+                    var correct = picked.correct;
+
+                    $area.querySelectorAll('.option-btn').forEach(function(b) {
+                        b.classList.add('locked');
+                        var bIdx = parseInt(b.dataset.idx);
+                        if (data.options[bIdx].correct) b.classList.add('correct');
+                        else if (b === btn && !correct) b.classList.add('wrong');
+                    });
+
+                    var msg = document.getElementById('result-msg');
+                    if (correct) {
+                        msg.textContent = 'Correct!';
+                    } else {
+                        msg.textContent = 'Wrong! That was ' + picked.character_name;
+                    }
+                    msg.className = 'result-msg ' + (correct ? 'correct' : 'wrong');
+                    showResult(correct);
+                });
+            });
+
+            document.getElementById('next-btn').addEventListener('click', function() {
+                state.locked = false;
+                loadRound();
+            });
+        }).catch(function() {
+            $area.innerHTML = '<div class="loading" style="color:var(--red)">Could not load round.</div>';
+        });
+    }
+
+    // --- Router ---
+    function loadRound() {
+        if (state.mode === 'who-said-it') loadWhoSaidIt();
+        else if (state.mode === 'quote-match') loadQuoteMatch();
+        else if (state.mode === 'quote-chain') loadQuoteChain();
+    }
+
+    // --- Init ---
+    loadRound();
+})();
+</script>
+</body>
+</html>
