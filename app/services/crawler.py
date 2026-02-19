@@ -694,7 +694,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
         Summary dict with counts
     """
     from app.services.acp_client import ACPClient, extract_topic_records, extract_post_records as acp_extract_posts
-    from app.services.parser import categorize_thread
+    from app.services.parser import categorize_thread, extract_quotes_from_post_body
     from app.models.operations import get_crawl_status, set_crawl_status
     from datetime import datetime, timezone
 
@@ -720,9 +720,9 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             clear_activity()
             return {"error": "No data retrieved from ACP"}
 
-        # Extract structured records from SQL dump
+        # Extract structured records from SQL dump (include post bodies for quote extraction)
         topics = extract_topic_records(raw)
-        posts = acp_extract_posts(raw)
+        posts = acp_extract_posts(raw, include_body=True)
         print(f"[Crawler] ACP dump: {len(topics)} topics, {len(posts)} posts")
 
         if not topics and not posts:
@@ -898,6 +898,48 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
 
             await db.commit()
 
+        # ── Phase 5: Extract quotes from post bodies ──
+        # The SQL dump includes post content, so we can extract dialog quotes
+        # directly without needing to fetch thread pages via HTTP.
+        set_activity("Extracting quotes from post bodies")
+        quotes_added = 0
+
+        # Build thread title lookup
+        thread_titles: dict[str, str] = {}
+        for tid, topic in topic_map.items():
+            thread_titles[tid] = topic["title"]
+
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+
+            for p in posts:
+                cid = p["character_id"]
+                tid = p.get("thread_id")
+                body = p.get("post_body")
+
+                if not tid or not body or cid not in tracked_chars:
+                    continue
+
+                post_quotes = extract_quotes_from_post_body(body)
+                thread_title = thread_titles.get(tid, "Unknown")
+
+                for q in post_quotes:
+                    added = await add_quote(db, cid, q["text"], tid, thread_title)
+                    if added:
+                        quotes_added += 1
+
+            # Mark all relevant (thread, character) pairs as quote-scraped
+            # so crawl_quotes_only doesn't re-fetch these via HTTP
+            for tid in relevant_thread_ids:
+                thread_chars = chars_in_thread.get(tid, set())
+                for cid in thread_chars:
+                    if cid in tracked_chars:
+                        await mark_thread_quote_scraped(db, tid, cid)
+
+            await db.commit()
+
+        print(f"[Crawler] ACP quote extraction: {quotes_added} quotes added")
+
         # Record last sync time
         async with aiosqlite.connect(db_path) as db:
             await set_crawl_status(db, "acp_last_sync", datetime.now(timezone.utc).isoformat())
@@ -909,6 +951,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             "threads_upserted": threads_upserted,
             "character_links": links_created,
             "posts_stored": posts_stored,
+            "quotes_added": quotes_added,
         }
         print(f"[Crawler] ACP sync complete: {summary}")
         return summary

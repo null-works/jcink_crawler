@@ -546,6 +546,41 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
     return quotes
 
 
+def extract_quotes_from_post_body(post_html: str) -> list[dict]:
+    """Extract dialog quotes from a single post's body HTML.
+
+    Unlike extract_quotes_from_html() which needs to locate posts within a full
+    thread page using theme-specific CSS selectors, this operates directly on the
+    raw post content as stored in the SQL dump. The caller already knows the author.
+
+    Returns list of dicts with 'text' key.
+    """
+    soup = BeautifulSoup(post_html, "html.parser")
+    quotes = []
+    min_words = settings.quote_min_words
+
+    for bold_el in soup.select("b, strong"):
+        text = bold_el.get_text(strip=True)
+
+        if not re.match(r'^["\'\u201C\u2018\u00AB]', text):
+            continue
+
+        cleaned = re.sub(r'^["\'\u201C\u2018\u00AB]+', '', text)
+        cleaned = re.sub(r'["\'\u201D\u2019\u00BB]+$', '', cleaned)
+        cleaned = cleaned.strip()
+
+        word_count = len(cleaned.split())
+        if word_count < min_words:
+            continue
+
+        if len(cleaned) > 500:
+            cleaned = cleaned[:500].rsplit(" ", 1)[0] + "..."
+
+        quotes.append({"text": cleaned})
+
+    return quotes
+
+
 _MONTH_MAP = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
