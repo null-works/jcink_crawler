@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "2.7.21"
+APP_VERSION = "2.7.22"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     crawl_threads_interval_minutes: int = 60
     crawl_profiles_interval_minutes: int = 1440
     crawl_discovery_interval_minutes: int = 1440
-    crawl_quotes_batch_size: int = 5
+    crawl_quotes_batch_size: int = 0  # 0 = unlimited, process all unscraped threads
     quote_min_words: int = 3
     request_delay_seconds: float = 2.0
     max_concurrent_requests: int = 5

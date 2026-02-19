@@ -928,13 +928,20 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                     if added:
                         quotes_added += 1
 
-            # Mark all relevant (thread, character) pairs as quote-scraped
-            # so crawl_quotes_only doesn't re-fetch these via HTTP
-            for tid in relevant_thread_ids:
-                thread_chars = chars_in_thread.get(tid, set())
-                for cid in thread_chars:
-                    if cid in tracked_chars:
-                        await mark_thread_quote_scraped(db, tid, cid)
+            # Mark (thread, character) pairs as quote-scraped ONLY for characters
+            # who actually had posts in that thread (i.e. we attempted extraction).
+            # Previously this marked ALL characters linked to the thread, which
+            # prevented crawl_quotes_only from ever HTML-scraping threads where a
+            # character was linked but had no posts in the ACP dump.
+            acp_scraped_pairs: set[tuple[str, str]] = set()
+            for p in posts:
+                cid = p["character_id"]
+                tid = p.get("thread_id")
+                if tid and cid in tracked_chars:
+                    acp_scraped_pairs.add((tid, cid))
+            for tid, cid in acp_scraped_pairs:
+                await mark_thread_quote_scraped(db, tid, cid)
+            log_debug(f"ACP quote-scraped log: {len(acp_scraped_pairs)} (thread, character) pairs marked")
 
             await db.commit()
 
@@ -972,7 +979,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
 
     Args:
         db_path: Path to SQLite database
-        batch_size: Max threads to process per run (default from config)
+        batch_size: Max threads to process per run (0 = unlimited, default from config)
 
     Returns:
         Summary dict with counts
@@ -1001,7 +1008,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
         # Find threads that have at least one character not yet quote-scraped.
         # We look at character_threads to find which threads involve tracked characters,
         # then check quote_crawl_log to see if they've been scraped.
-        cursor = await db.execute("""
+        query = """
             SELECT DISTINCT ct.thread_id, t.url
             FROM character_threads ct
             JOIN threads t ON t.id = ct.thread_id
@@ -1010,8 +1017,12 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
                 WHERE qcl.thread_id = ct.thread_id
                   AND qcl.character_id = ct.character_id
             )
-            LIMIT ?
-        """, (batch_size,))
+        """
+        if batch_size and batch_size > 0:
+            query += " LIMIT ?"
+            cursor = await db.execute(query, (batch_size,))
+        else:
+            cursor = await db.execute(query)
         threads_to_scrape = [dict(r) for r in await cursor.fetchall()]
 
     if not threads_to_scrape:
@@ -1023,18 +1034,20 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
 
     total_quotes = 0
     threads_processed = 0
+    threads_total = len(threads_to_scrape)
 
     for thread_row in threads_to_scrape:
         tid = thread_row["thread_id"]
         thread_url = thread_row["url"] or f"{base_url}/index.php?showtopic={tid}"
 
         set_activity(
-            f"Scraping quotes ({threads_processed + 1}/{len(threads_to_scrape)})",
+            f"Scraping quotes ({threads_processed + 1}/{threads_total})",
         )
 
         # Fetch all pages of this thread
         thread_html = await fetch_page_with_delay(thread_url)
         if not thread_html or is_board_message(thread_html):
+            log_debug(f"Quote scrape: skipped thread {tid} (fetch failed or board message)", level="error")
             continue
 
         max_st = parse_thread_pagination(thread_html)
@@ -1078,10 +1091,15 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
                 for page_html in all_pages:
                     char_quotes.extend(extract_quotes_from_html(page_html, cname))
 
+                added_count = 0
                 for q in char_quotes:
                     added = await add_quote(db, cid, q["text"], tid, thread_title)
                     if added:
                         total_quotes += 1
+                        added_count += 1
+
+                if char_quotes:
+                    log_debug(f"Thread {tid}: {cname} — {len(char_quotes)} quotes found, {added_count} new")
 
                 await mark_thread_quote_scraped(db, tid, cid)
 
