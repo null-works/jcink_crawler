@@ -1,3 +1,18 @@
+<div class="debug-panel" id="debug-panel">
+    <div class="debug-panel-header">
+        <span class="debug-panel-title">Debug Log</span>
+        <div class="debug-panel-actions">
+            <button class="btn btn-sm btn-ghost" onclick="clearDebugLog()">Clear</button>
+            <button class="btn btn-sm btn-ghost" onclick="exportDebugLog()">Export</button>
+            <button class="btn btn-sm btn-ghost" onclick="toggleDebugPanel()">&times;</button>
+        </div>
+    </div>
+    <div class="debug-log" id="debug-log"
+         hx-get="/htmx/debug-log"
+         hx-trigger="every 3s"
+         hx-swap="innerHTML">
+    </div>
+</div>
 <div class="activity-bar" id="activity-bar">
     <div class="activity-bar-inner"
          hx-get="/htmx/activity"

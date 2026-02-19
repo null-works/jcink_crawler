@@ -30,7 +30,7 @@ from app.models.operations import set_crawl_status, get_crawl_status
 from app.services import crawl_character_threads, crawl_character_profile, register_character
 from app.services.crawler import discover_characters, sync_posts_from_acp, crawl_quotes_only
 from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
-from app.services.activity import get_activity
+from app.services.activity import get_activity, get_debug_log, clear_debug_log
 
 router = APIRouter()
 
@@ -537,6 +537,20 @@ async def htmx_activity(request: Request):
     return templates.TemplateResponse(request, "partials/activity_content.html", {
         "activity": activity,
     })
+
+
+@router.get("/htmx/debug-log", response_class=HTMLResponse)
+async def htmx_debug_log(request: Request):
+    entries = get_debug_log()
+    return templates.TemplateResponse(request, "partials/debug_log_content.html", {
+        "entries": entries,
+    })
+
+
+@router.post("/htmx/debug-log/clear", response_class=HTMLResponse)
+async def htmx_debug_log_clear(request: Request):
+    clear_debug_log()
+    return HTMLResponse('<div class="debug-entry"><span class="text-comment">Log cleared</span></div>')
 
 
 @router.get("/htmx/stats", response_class=HTMLResponse)

@@ -1,0 +1,11 @@
+{% for entry in entries %}
+<div class="debug-entry debug-{{ entry.level }}">
+    <span class="debug-time">{{ entry.time }}</span>
+    <span class="debug-msg">{{ entry.message }}</span>
+</div>
+{% endfor %}
+{% if not entries %}
+<div class="debug-entry">
+    <span class="text-comment">No activity logged yet</span>
+</div>
+{% endif %}
