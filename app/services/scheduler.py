@@ -17,7 +17,7 @@ from app.services.activity import set_activity, clear_activity, log_debug
 
 _scheduler: AsyncIOScheduler | None = None
 
-MAX_CONSECUTIVE_MISSES = 20
+MAX_CONSECUTIVE_MISSES = 100
 
 
 async def _acp_available() -> bool:

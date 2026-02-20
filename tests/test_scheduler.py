@@ -58,15 +58,15 @@ class TestCrawlAllCharacters:
              patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
              patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False):
             await _crawl_all_characters()
-            # Should have checked 20 IDs then stopped
-            assert mock_check.await_count == 20
+            # Should have checked 100 IDs then stopped
+            assert mock_check.await_count == 100
             mock_profile.assert_not_awaited()
             mock_threads.assert_not_awaited()
 
     async def test_crawls_valid_profiles(self):
         """Should crawl profile + threads for valid user IDs."""
         # IDs 1-3 exist, then 20 consecutive misses
-        side_effects = ["Alpha", "Beta", "Gamma"] + [None] * 20
+        side_effects = ["Alpha", "Beta", "Gamma"] + [None] * 100
 
         with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects) as mock_check, \
              patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock) as mock_profile, \
@@ -80,7 +80,7 @@ class TestCrawlAllCharacters:
     async def test_resets_miss_counter_on_valid(self):
         """A valid profile resets the consecutive miss counter."""
         # 5 misses, 1 valid, then 20 misses → should stop
-        side_effects = [None] * 5 + ["Alpha"] + [None] * 20
+        side_effects = [None] * 5 + ["Alpha"] + [None] * 100
 
         with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects) as mock_check, \
              patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock), \
@@ -88,13 +88,13 @@ class TestCrawlAllCharacters:
              patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False), \
              patch("asyncio.sleep", new_callable=AsyncMock):
             await _crawl_all_characters()
-            # 5 misses + 1 valid + 20 misses = 26 checks
-            assert mock_check.await_count == 26
+            # 5 misses + 1 valid + 100 misses = 106 checks
+            assert mock_check.await_count == 106
 
     async def test_skips_excluded_names(self):
         """Excluded names should be skipped without crawling."""
         # ID 1 = excluded, ID 2 = valid, then 20 misses
-        side_effects = ["Watcher", "Alpha"] + [None] * 20
+        side_effects = ["Watcher", "Alpha"] + [None] * 100
 
         with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects), \
              patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock) as mock_profile, \
@@ -108,7 +108,7 @@ class TestCrawlAllCharacters:
 
     async def test_continues_on_crawl_error(self):
         """If one character's crawl errors, should still continue to next."""
-        side_effects = ["Alpha", "Beta"] + [None] * 20
+        side_effects = ["Alpha", "Beta"] + [None] * 100
 
         with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects), \
              patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock,
