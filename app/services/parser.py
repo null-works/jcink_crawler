@@ -519,16 +519,18 @@ def _clean_quote(text: str, min_words: int) -> str | None:
 def _extract_from_post_body(post_body, min_words: int) -> list[dict]:
     """Extract dialog quotes from a BeautifulSoup post body element.
 
-    Searches multiple formatting patterns common in RP forum posts:
+    Searches formatting patterns used for dialog in RP forum posts:
     1. Bold/strong tags: <b>"..."</b>, <strong>"..."</strong>
-    2. Italic/em tags: <i>"..."</i>, <em>"..."</em>
-    3. Styled spans with color (colored dialog): <span style="color:...">"..."</span>
+    2. Styled spans with color (colored dialog): <span style="color:...">"..."</span>
+
+    Italic/em tags are intentionally excluded — on RP forums those denote
+    narrative/action text, not spoken dialog.
     """
     quotes = []
     seen: set[str] = set()
 
-    # Direct matches: formatting element whose text starts with a quote char
-    for el in post_body.select("b, strong, i, em"):
+    # Bold/strong: the primary dialog formatting on this forum
+    for el in post_body.select("b, strong"):
         text = el.get_text(strip=True)
         cleaned = _clean_quote(text, min_words)
         if cleaned and cleaned not in seen:
@@ -540,8 +542,8 @@ def _extract_from_post_body(post_body, min_words: int) -> list[dict]:
         style = span.get("style", "")
         if "color" not in style.lower():
             continue
-        # Skip spans that contain child b/strong/i/em (already caught above)
-        if span.find(["b", "strong", "i", "em"]):
+        # Skip spans that contain child b/strong (already caught above)
+        if span.find(["b", "strong"]):
             continue
         text = span.get_text(strip=True)
         cleaned = _clean_quote(text, min_words)
@@ -555,7 +557,7 @@ def _extract_from_post_body(post_body, min_words: int) -> list[dict]:
 def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
     """Extract dialog quotes from a thread page.
 
-    Finds dialog patterns in bold, italic, and color-styled text
+    Finds dialog patterns in bold and color-styled text
     but ONLY from posts authored by the specified character.
 
     The TWAI theme uses .pr-a for post wrappers, .pr-j for the author name div,

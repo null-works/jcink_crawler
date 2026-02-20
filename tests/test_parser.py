@@ -556,19 +556,19 @@ class TestExtractQuotesExtended:
         assert "didn\u2019t ask for this" in quotes[0]["text"]
         assert "hell\u2019s kitchen" in quotes[1]["text"]
 
-    def test_italic_dialog(self):
-        """Italic tags should be extracted as dialog quotes."""
+    def test_italic_not_extracted(self):
+        """Italic/em tags are narrative text, not dialog — must NOT be extracted."""
         html = """
         <div class="pr-a">
             <div class="pr-j">Tony Stark</div>
             <div class="postcolor">
-                <i>"This is italic dialog that should match"</i>
-                <em>"Emphasis dialog also gets matched here"</em>
+                <i>"This is italic narrative not dialog"</i>
+                <em>"Emphasis is also narrative text here"</em>
             </div>
         </div>
         """
         quotes = extract_quotes_from_html(html, "Tony Stark")
-        assert len(quotes) == 2
+        assert len(quotes) == 0
 
     def test_colored_span_dialog(self):
         """Colored spans without bold/italic should be extracted."""
