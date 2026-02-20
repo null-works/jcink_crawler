@@ -27,44 +27,35 @@ async def _acp_available() -> bool:
         return False
 
 
-async def _crawl_all_threads():
-    """Crawl threads for all tracked characters.
+async def _crawl_all_characters():
+    """Crawl all characters sequentially in account ID order.
 
-    When ACP credentials are configured, uses the ACP SQL dump as the primary
-    data source (threads, posts, last poster, counts) and follows up with a
-    quote-only HTML pass. Falls back to full HTML crawling when ACP is not
-    available.
+    For each character: profile first, then threads (which extracts quotes).
+    The natural gap between characters (~15s) handles JCink search cooldown.
+
+    When ACP is available, runs an ACP sync first for bulk data, then does
+    a per-character HTML pass for quotes and any data the ACP missed.
     """
-    # Try ACP-primary path first
+    excluded = settings.excluded_name_set
+
+    # ── Phase 1: ACP bulk sync (if available) ──
+    # Gets threads, posts, dates in one shot. Quote extraction from ACP post
+    # bodies is attempted but the HTML pass below catches what ACP misses.
     if await _acp_available():
-        log_debug("ACP configured — using SQL dump as primary source")
+        log_debug("ACP configured — running bulk sync first")
         try:
             result = await sync_posts_from_acp(settings.database_path)
             if "error" not in result:
                 log_debug(f"ACP sync succeeded: {result}", level="done")
-                # Follow up with quote-only HTML pass
-                log_debug("Starting quote-only HTML pass")
-                quote_result = await crawl_quotes_only(settings.database_path)
-                log_debug(f"Quote pass: {quote_result}", level="done")
-                return
             else:
-                log_debug(f"ACP sync failed: {result.get('error')} — falling back to HTML crawl", level="error")
+                log_debug(f"ACP sync failed: {result.get('error')}", level="error")
         except Exception as e:
-            log_debug(f"ACP sync error: {e} — falling back to HTML crawl", level="error")
+            log_debug(f"ACP sync error: {e}", level="error")
 
-    # Quick pass: crawl today's active topics first (one search, no per-character cooldown)
-    try:
-        recent = await crawl_recent_threads(settings.database_path)
-        log_debug(f"Recent threads pass: {recent}", level="done")
-    except Exception as e:
-        log_debug(f"Recent threads error: {e}", level="error")
-
-    # Full HTML crawl per character (slower, may hit search cooldown)
-    log_debug("Starting scheduled HTML thread crawl for all characters")
-    excluded = settings.excluded_name_set
+    # ── Phase 2: Per-character crawl in ID order ──
     async with aiosqlite.connect(settings.database_path) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT id, name FROM characters ORDER BY last_thread_crawl ASC NULLS FIRST")
+        cursor = await db.execute("SELECT id, name FROM characters ORDER BY CAST(id AS INTEGER) ASC")
         all_chars = await cursor.fetchall()
 
     characters = [c for c in all_chars if c["name"].lower() not in excluded]
@@ -73,54 +64,40 @@ async def _crawl_all_threads():
         return
 
     total = len(characters)
-    log_debug(f"Crawling threads for {total} characters")
+    log_debug(f"Crawling {total} characters in ID order")
+
     for i, char in enumerate(characters, 1):
+        cid = char["id"]
+        cname = char["name"]
+
+        # ── Profile ──
         set_activity(
-            f"Crawling threads ({i}/{total}): {char['name']}",
-            character_id=char["id"],
-            character_name=char["name"],
+            f"({i}/{total}) Profile: {cname}",
+            character_id=cid,
+            character_name=cname,
         )
         try:
-            await crawl_character_threads(char["id"], settings.database_path)
+            await crawl_character_profile(cid, settings.database_path)
         except Exception as e:
-            log_debug(f"Error crawling threads for {char['name']} ({char['id']}): {e}", level="error")
-        # Longer delay between characters to avoid JCink search flood control
-        await asyncio.sleep(15)
+            log_debug(f"Error crawling profile for {cname} ({cid}): {e}", level="error")
 
-    clear_activity()
-    log_debug("Scheduled thread crawl complete", level="done")
-
-
-async def _crawl_all_profiles():
-    """Crawl profiles for all tracked characters."""
-    log_debug("Starting scheduled profile crawl for all characters")
-    excluded = settings.excluded_name_set
-    async with aiosqlite.connect(settings.database_path) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT id, name FROM characters ORDER BY last_profile_crawl ASC NULLS FIRST")
-        all_chars = await cursor.fetchall()
-
-    characters = [c for c in all_chars if c["name"].lower() not in excluded]
-    if not characters:
-        log_debug("No characters to crawl")
-        return
-
-    total = len(characters)
-    log_debug(f"Crawling profiles for {total} characters")
-    for i, char in enumerate(characters, 1):
+        # ── Threads + quotes ──
         set_activity(
-            f"Crawling profiles ({i}/{total}): {char['name']}",
-            character_id=char["id"],
-            character_name=char["name"],
+            f"({i}/{total}) Threads: {cname}",
+            character_id=cid,
+            character_name=cname,
         )
         try:
-            await crawl_character_profile(char["id"], settings.database_path)
+            await crawl_character_threads(cid, settings.database_path)
         except Exception as e:
-            log_debug(f"Error crawling profile for {char['name']} ({char['id']}): {e}", level="error")
-        await asyncio.sleep(settings.request_delay_seconds)
+            log_debug(f"Error crawling threads for {cname} ({cid}): {e}", level="error")
+
+        # Gap between characters — lets search cooldown expire
+        if i < total:
+            await asyncio.sleep(15)
 
     clear_activity()
-    log_debug("Scheduled profile crawl complete", level="done")
+    log_debug(f"Full crawl complete: {total} characters processed", level="done")
 
 
 async def _sync_posts_acp():
@@ -144,13 +121,13 @@ async def _discover_all_characters():
 
 
 async def _startup_sequence():
-    """Run discovery then a full thread crawl on startup.
+    """Run discovery then a full character crawl on startup.
 
     Sequenced to avoid concurrent forum requests that trigger flood control.
     """
     await _discover_all_characters()
-    log_debug("Discovery done — starting initial thread crawl")
-    await _crawl_all_threads()
+    log_debug("Discovery done — starting full character crawl")
+    await _crawl_all_characters()
 
 
 def start_scheduler():
@@ -158,7 +135,6 @@ def start_scheduler():
     global _scheduler
     _scheduler = AsyncIOScheduler()
 
-    # All jobs run on interval only — startup is handled by _startup_sequence
     _scheduler.add_job(
         _discover_all_characters,
         trigger=IntervalTrigger(minutes=settings.crawl_discovery_interval_minutes),
@@ -169,28 +145,20 @@ def start_scheduler():
     )
 
     _scheduler.add_job(
-        _crawl_all_threads,
+        _crawl_all_characters,
         trigger=IntervalTrigger(minutes=settings.crawl_threads_interval_minutes),
-        id="crawl_threads",
-        name="Crawl threads for all characters",
+        id="crawl_all_characters",
+        name="Full crawl: profile + threads + quotes per character",
         replace_existing=True,
         next_run_time=None,  # Startup handled separately
     )
 
-    _scheduler.add_job(
-        _crawl_all_profiles,
-        trigger=IntervalTrigger(minutes=settings.crawl_profiles_interval_minutes),
-        id="crawl_profiles",
-        name="Crawl profiles for all characters",
-        replace_existing=True,
-    )
-
     _scheduler.start()
 
-    # Run discovery → thread crawl sequentially on startup
+    # Run discovery → full crawl sequentially on startup
     asyncio.get_running_loop().create_task(_startup_sequence())
 
-    log_debug(f"Scheduler started - discovery every {settings.crawl_discovery_interval_minutes}min, threads every {settings.crawl_threads_interval_minutes}min, profiles every {settings.crawl_profiles_interval_minutes}min")
+    log_debug(f"Scheduler started - discovery every {settings.crawl_discovery_interval_minutes}min, full crawl every {settings.crawl_threads_interval_minutes}min")
 
 
 def stop_scheduler():

@@ -29,7 +29,7 @@ from app.models import (
 from app.models.operations import set_crawl_status, get_crawl_status
 from app.services import crawl_character_threads, crawl_character_profile, register_character
 from app.services.crawler import discover_characters, sync_posts_from_acp, crawl_quotes_only
-from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
+from app.services.scheduler import _crawl_all_characters
 from app.services.activity import get_activity, get_debug_log, clear_debug_log
 
 router = APIRouter()
@@ -724,10 +724,8 @@ async def htmx_crawl(
 
     if crawl_type == "discover":
         background_tasks.add_task(discover_characters, settings.database_path)
-    elif crawl_type == "all-threads":
-        background_tasks.add_task(_crawl_all_threads)
-    elif crawl_type == "all-profiles":
-        background_tasks.add_task(_crawl_all_profiles)
+    elif crawl_type in ("all-threads", "all-profiles"):
+        background_tasks.add_task(_crawl_all_characters)
     elif crawl_type == "sync-posts":
         background_tasks.add_task(sync_posts_from_acp, settings.database_path)
     elif crawl_type == "crawl-quotes":
@@ -804,10 +802,8 @@ async def htmx_purge_recrawl(
     await db.execute("DELETE FROM posts")
     await db.commit()
 
-    background_tasks.add_task(_crawl_all_threads)
-    background_tasks.add_task(_crawl_all_profiles)
-    background_tasks.add_task(crawl_quotes_only, settings.database_path)
-    return HTMLResponse('<span class="text-green">Database purged. Re-crawling all threads, profiles, and quotes.</span>')
+    background_tasks.add_task(_crawl_all_characters)
+    return HTMLResponse('<span class="text-green">Database purged. Re-crawling all characters (profile + threads + quotes).</span>')
 
 
 @router.post("/htmx/nuke-rebuild", response_class=HTMLResponse)
