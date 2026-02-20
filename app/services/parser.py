@@ -490,10 +490,72 @@ def parse_avatar_from_profile(html: str) -> str | None:
     return None
 
 
+_QUOTE_START_RE = re.compile(r'^["\'\u201C\u2018\u00AB]')
+_QUOTE_STRIP_START = re.compile(r'^["\'\u201C\u2018\u00AB]+')
+_QUOTE_STRIP_END = re.compile(r'["\'\u201D\u2019\u00BB]+$')
+
+
+def _clean_quote(text: str, min_words: int) -> str | None:
+    """Validate and clean a candidate quote string.
+
+    Returns cleaned text or None if it doesn't pass filters.
+    """
+    if not _QUOTE_START_RE.match(text):
+        return None
+
+    cleaned = _QUOTE_STRIP_START.sub('', text)
+    cleaned = _QUOTE_STRIP_END.sub('', cleaned)
+    cleaned = cleaned.strip()
+
+    if len(cleaned.split()) < min_words:
+        return None
+
+    if len(cleaned) > 500:
+        cleaned = cleaned[:500].rsplit(" ", 1)[0] + "..."
+
+    return cleaned
+
+
+def _extract_from_post_body(post_body, min_words: int) -> list[dict]:
+    """Extract dialog quotes from a BeautifulSoup post body element.
+
+    Searches multiple formatting patterns common in RP forum posts:
+    1. Bold/strong tags: <b>"..."</b>, <strong>"..."</strong>
+    2. Italic/em tags: <i>"..."</i>, <em>"..."</em>
+    3. Styled spans with color (colored dialog): <span style="color:...">"..."</span>
+    """
+    quotes = []
+    seen: set[str] = set()
+
+    # Direct matches: formatting element whose text starts with a quote char
+    for el in post_body.select("b, strong, i, em"):
+        text = el.get_text(strip=True)
+        cleaned = _clean_quote(text, min_words)
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            quotes.append({"text": cleaned})
+
+    # Colored spans — only check spans with an inline color style
+    for span in post_body.select("span[style]"):
+        style = span.get("style", "")
+        if "color" not in style.lower():
+            continue
+        # Skip spans that contain child b/strong/i/em (already caught above)
+        if span.find(["b", "strong", "i", "em"]):
+            continue
+        text = span.get_text(strip=True)
+        cleaned = _clean_quote(text, min_words)
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            quotes.append({"text": cleaned})
+
+    return quotes
+
+
 def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
     """Extract dialog quotes from a thread page.
 
-    Finds bold text matching dialog patterns (<b>"..."</b> or <strong>"..."</strong>)
+    Finds dialog patterns in bold, italic, and color-styled text
     but ONLY from posts authored by the specified character.
 
     The TWAI theme uses .pr-a for post wrappers, .pr-j for the author name div,
@@ -520,28 +582,7 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
         if not post_body:
             continue
 
-        for bold_el in post_body.select("b, strong"):
-            text = bold_el.get_text(strip=True)
-
-            # Check if it starts with a quote character
-            if not re.match(r'^["\'\u201C\u2018\u00AB]', text):
-                continue
-
-            # Clean up quote marks
-            cleaned = re.sub(r'^["\'\u201C\u2018\u00AB]+', '', text)
-            cleaned = re.sub(r'["\'\u201D\u2019\u00BB]+$', '', cleaned)
-            cleaned = cleaned.strip()
-
-            # Check minimum word count
-            word_count = len(cleaned.split())
-            if word_count < min_words:
-                continue
-
-            # Reasonable max length
-            if len(cleaned) > 500:
-                cleaned = cleaned[:500].rsplit(" ", 1)[0] + "..."
-
-            quotes.append({"text": cleaned})
+        quotes.extend(_extract_from_post_body(post_body, min_words))
 
     return quotes
 
@@ -556,29 +597,7 @@ def extract_quotes_from_post_body(post_html: str) -> list[dict]:
     Returns list of dicts with 'text' key.
     """
     soup = BeautifulSoup(post_html, "html.parser")
-    quotes = []
-    min_words = settings.quote_min_words
-
-    for bold_el in soup.select("b, strong"):
-        text = bold_el.get_text(strip=True)
-
-        if not re.match(r'^["\'\u201C\u2018\u00AB]', text):
-            continue
-
-        cleaned = re.sub(r'^["\'\u201C\u2018\u00AB]+', '', text)
-        cleaned = re.sub(r'["\'\u201D\u2019\u00BB]+$', '', cleaned)
-        cleaned = cleaned.strip()
-
-        word_count = len(cleaned.split())
-        if word_count < min_words:
-            continue
-
-        if len(cleaned) > 500:
-            cleaned = cleaned[:500].rsplit(" ", 1)[0] + "..."
-
-        quotes.append({"text": cleaned})
-
-    return quotes
+    return _extract_from_post_body(soup, settings.quote_min_words)
 
 
 _MONTH_MAP = {
