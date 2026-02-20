@@ -4,11 +4,20 @@ from apscheduler.triggers.interval import IntervalTrigger
 import aiosqlite
 
 from app.config import settings
-from app.services.crawler import crawl_character_threads, crawl_character_profile, discover_characters, sync_posts_from_acp, crawl_quotes_only, crawl_recent_threads
+from app.services.crawler import (
+    crawl_character_threads,
+    crawl_character_profile,
+    check_profile_exists,
+    sync_posts_from_acp,
+    crawl_quotes_only,
+    crawl_recent_threads,
+)
 from app.services.activity import set_activity, clear_activity, log_debug
 
 
 _scheduler: AsyncIOScheduler | None = None
+
+MAX_CONSECUTIVE_MISSES = 20
 
 
 async def _acp_available() -> bool:
@@ -28,19 +37,18 @@ async def _acp_available() -> bool:
 
 
 async def _crawl_all_characters():
-    """Crawl all characters sequentially in account ID order.
+    """Crawl every account by iterating showuser=1, 2, 3...
 
-    For each character: profile first, then threads (which extracts quotes).
-    The natural gap between characters (~15s) handles JCink search cooldown.
+    No discovery step — just walks user IDs sequentially.  For each ID:
+    lightweight httpx check first, then full Playwright profile crawl +
+    thread/quote crawl for valid accounts.  Stops after 20 consecutive
+    misses (deleted/banned profiles).
 
-    When ACP is available, runs an ACP sync first for bulk data, then does
-    a per-character HTML pass for quotes and any data the ACP missed.
+    When ACP is available, runs a bulk sync first for post dates.
     """
     excluded = settings.excluded_name_set
 
     # ── Phase 1: ACP bulk sync (if available) ──
-    # Gets threads, posts, dates in one shot. Quote extraction from ACP post
-    # bodies is attempted but the HTML pass below catches what ACP misses.
     if await _acp_available():
         log_debug("ACP configured — running bulk sync first")
         try:
@@ -52,52 +60,68 @@ async def _crawl_all_characters():
         except Exception as e:
             log_debug(f"ACP sync error: {e}", level="error")
 
-    # ── Phase 2: Per-character crawl in ID order ──
-    async with aiosqlite.connect(settings.database_path) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT id, name FROM characters ORDER BY CAST(id AS INTEGER) ASC")
-        all_chars = await cursor.fetchall()
+    # ── Phase 2: Walk user IDs sequentially ──
+    consecutive_misses = 0
+    processed = 0
+    user_id = 0
 
-    characters = [c for c in all_chars if c["name"].lower() not in excluded]
-    if not characters:
-        log_debug("No characters to crawl")
-        return
+    log_debug(f"Starting sequential ID crawl (stop after {MAX_CONSECUTIVE_MISSES} consecutive misses)")
 
-    total = len(characters)
-    log_debug(f"Crawling {total} characters in ID order")
+    while consecutive_misses < MAX_CONSECUTIVE_MISSES:
+        user_id += 1
+        sid = str(user_id)
 
-    for i, char in enumerate(characters, 1):
-        cid = char["id"]
-        cname = char["name"]
-
-        # ── Profile ──
         set_activity(
-            f"({i}/{total}) Profile: {cname}",
-            character_id=cid,
-            character_name=cname,
+            f"Checking ID {sid} ({consecutive_misses} misses)",
+            character_id=sid,
+        )
+
+        # Quick httpx check — skips board-message / deleted accounts fast
+        name = await check_profile_exists(sid)
+        if name is None:
+            consecutive_misses += 1
+            log_debug(f"ID {sid}: no profile (miss {consecutive_misses}/{MAX_CONSECUTIVE_MISSES})")
+            continue
+
+        # Valid profile — reset miss counter
+        consecutive_misses = 0
+
+        if name.lower() in excluded:
+            log_debug(f"ID {sid}: {name} (excluded)")
+            continue
+
+        processed += 1
+
+        # ── Full profile crawl (Playwright for power grid) ──
+        set_activity(
+            f"({processed}) Profile: {name}",
+            character_id=sid,
+            character_name=name,
         )
         try:
-            await crawl_character_profile(cid, settings.database_path)
+            await crawl_character_profile(sid, settings.database_path)
         except Exception as e:
-            log_debug(f"Error crawling profile for {cname} ({cid}): {e}", level="error")
+            log_debug(f"Error crawling profile for {name} ({sid}): {e}", level="error")
 
         # ── Threads + quotes ──
         set_activity(
-            f"({i}/{total}) Threads: {cname}",
-            character_id=cid,
-            character_name=cname,
+            f"({processed}) Threads: {name}",
+            character_id=sid,
+            character_name=name,
         )
         try:
-            await crawl_character_threads(cid, settings.database_path)
+            await crawl_character_threads(sid, settings.database_path)
         except Exception as e:
-            log_debug(f"Error crawling threads for {cname} ({cid}): {e}", level="error")
+            log_debug(f"Error crawling threads for {name} ({sid}): {e}", level="error")
 
         # Gap between characters — lets search cooldown expire
-        if i < total:
-            await asyncio.sleep(15)
+        await asyncio.sleep(15)
 
     clear_activity()
-    log_debug(f"Full crawl complete: {total} characters processed", level="done")
+    log_debug(
+        f"Full crawl complete: checked {user_id} IDs, {processed} characters processed",
+        level="done",
+    )
 
 
 async def _sync_posts_acp():
@@ -110,55 +134,26 @@ async def _sync_posts_acp():
         log_debug(f"Error during ACP sync: {e}", level="error")
 
 
-async def _discover_all_characters():
-    """Auto-discover new characters from the forum member list."""
-    log_debug("Starting scheduled character discovery")
-    try:
-        result = await discover_characters(settings.database_path)
-        log_debug(f"Discovery complete: {result}", level="done")
-    except Exception as e:
-        log_debug(f"Error during character discovery: {e}", level="error")
-
-
-async def _startup_sequence():
-    """Run discovery then a full character crawl on startup.
-
-    Sequenced to avoid concurrent forum requests that trigger flood control.
-    """
-    await _discover_all_characters()
-    log_debug("Discovery done — starting full character crawl")
-    await _crawl_all_characters()
-
-
 def start_scheduler():
     """Start the APScheduler with configured intervals."""
     global _scheduler
     _scheduler = AsyncIOScheduler()
 
     _scheduler.add_job(
-        _discover_all_characters,
-        trigger=IntervalTrigger(minutes=settings.crawl_discovery_interval_minutes),
-        id="discover_characters",
-        name="Auto-discover characters from member list",
-        replace_existing=True,
-        next_run_time=None,  # Startup handled separately
-    )
-
-    _scheduler.add_job(
         _crawl_all_characters,
         trigger=IntervalTrigger(minutes=settings.crawl_threads_interval_minutes),
         id="crawl_all_characters",
-        name="Full crawl: profile + threads + quotes per character",
+        name="Full crawl: iterate all user IDs",
         replace_existing=True,
-        next_run_time=None,  # Startup handled separately
+        next_run_time=None,  # Startup task handles the first run
     )
 
     _scheduler.start()
 
-    # Run discovery → full crawl sequentially on startup
-    asyncio.get_running_loop().create_task(_startup_sequence())
+    # Kick off full crawl on startup
+    asyncio.get_running_loop().create_task(_crawl_all_characters())
 
-    log_debug(f"Scheduler started - discovery every {settings.crawl_discovery_interval_minutes}min, full crawl every {settings.crawl_threads_interval_minutes}min")
+    log_debug(f"Scheduler started - full crawl every {settings.crawl_threads_interval_minutes}min")
 
 
 def stop_scheduler():

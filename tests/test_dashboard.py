@@ -136,8 +136,8 @@ class TestHTMXPartials:
         assert response.status_code == 200
         assert "required" in response.text.lower()
 
-    @patch("app.routes.dashboard.discover_characters", new_callable=AsyncMock)
-    async def test_htmx_crawl_discover(self, mock_discover, client):
+    @patch("app.routes.dashboard._crawl_all_characters", new_callable=AsyncMock)
+    async def test_htmx_crawl_discover(self, mock_crawl, client):
         response = await client.post("/htmx/crawl", data={"crawl_type": "discover"})
         assert response.status_code == 200
         assert "queued" in response.text.lower() or "Crawl" in response.text

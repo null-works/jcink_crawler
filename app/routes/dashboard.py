@@ -28,7 +28,7 @@ from app.models import (
 )
 from app.models.operations import set_crawl_status, get_crawl_status
 from app.services import crawl_character_threads, crawl_character_profile, register_character
-from app.services.crawler import discover_characters, sync_posts_from_acp, crawl_quotes_only
+from app.services.crawler import sync_posts_from_acp, crawl_quotes_only
 from app.services.scheduler import _crawl_all_characters
 from app.services.activity import get_activity, get_debug_log, clear_debug_log
 
@@ -722,9 +722,7 @@ async def htmx_crawl(
     character_id = form.get("character_id", "").strip() or None
     crawl_type = form.get("crawl_type", "threads")
 
-    if crawl_type == "discover":
-        background_tasks.add_task(discover_characters, settings.database_path)
-    elif crawl_type in ("all-threads", "all-profiles"):
+    if crawl_type in ("discover", "all-threads", "all-profiles"):
         background_tasks.add_task(_crawl_all_characters)
     elif crawl_type == "sync-posts":
         background_tasks.add_task(sync_posts_from_acp, settings.database_path)
@@ -825,5 +823,5 @@ async def htmx_nuke_rebuild(
     await db.execute("DELETE FROM characters")
     await db.commit()
 
-    background_tasks.add_task(discover_characters, settings.database_path)
-    return HTMLResponse('<span class="text-green">Everything nuked. Re-discovering all characters from scratch.</span>')
+    background_tasks.add_task(_crawl_all_characters)
+    return HTMLResponse('<span class="text-green">Everything nuked. Re-crawling all user IDs from scratch.</span>')

@@ -561,6 +561,24 @@ async def crawl_single_thread(
     }
 
 
+async def check_profile_exists(character_id: str) -> str | None:
+    """Quick httpx check whether a profile exists.
+
+    Returns the character name if the profile is valid, or None if the
+    user ID points to a deleted/banned account (board message) or the
+    fetch fails entirely.  Does NOT use Playwright — this is intentionally
+    lightweight so we can skip non-existent IDs fast.
+    """
+    url = f"{settings.forum_base_url}/index.php?showuser={character_id}"
+    html = await fetch_page_with_delay(url)
+    if not html or is_board_message(html):
+        return None
+    profile = parse_profile_page(html, character_id)
+    if not profile.name or profile.name == "Unknown":
+        return None
+    return profile.name
+
+
 async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     """Crawl a character's profile page for field data.
 
