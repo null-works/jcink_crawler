@@ -152,7 +152,8 @@ def parse_last_poster(html: str) -> ParsedLastPoster | None:
     if not name_el:
         return None
 
-    name = name_el.get_text(strip=True)
+    name_link = name_el.select_one("a")
+    name = (name_link.get_text(strip=True) if name_link else name_el.get_text(strip=True))
     user_id = None
     user_link = last_post.select_one('.pr-j a[href*="showuser="]')
     if user_link:
@@ -570,12 +571,15 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
     min_words = settings.quote_min_words
 
     for post_container in soup.select(".pr-a"):
-        # Check if this post is by the character
+        # Check if this post is by the character — extract name from the <a>
+        # link inside .pr-j specifically, not the whole div (which may contain
+        # badges, status indicators, or group labels that break exact matching).
         name_el = post_container.select_one(".pr-j")
         if not name_el:
             continue
 
-        post_author = name_el.get_text(strip=True)
+        name_link = name_el.select_one("a")
+        post_author = (name_link.get_text(strip=True) if name_link else name_el.get_text(strip=True))
         if post_author.lower() != character_name.lower():
             continue
 
