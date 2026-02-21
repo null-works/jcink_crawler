@@ -152,7 +152,8 @@ def parse_last_poster(html: str) -> ParsedLastPoster | None:
     if not name_el:
         return None
 
-    name = name_el.get_text(strip=True)
+    name_link = name_el.select_one("a")
+    name = (name_link.get_text(strip=True) if name_link else name_el.get_text(strip=True))
     user_id = None
     user_link = last_post.select_one('.pr-j a[href*="showuser="]')
     if user_link:
@@ -490,11 +491,80 @@ def parse_avatar_from_profile(html: str) -> str | None:
     return None
 
 
-def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
+_QUOTE_START_RE = re.compile(r'^["\'\u201C\u2018\u00AB]')
+_QUOTE_STRIP_START = re.compile(r'^["\'\u201C\u2018\u00AB]+')
+_QUOTE_STRIP_END = re.compile(r'["\'\u201D\u2019\u00BB]+$')
+
+
+def _clean_quote(text: str, min_words: int) -> str | None:
+    """Validate and clean a candidate quote string.
+
+    Returns cleaned text or None if it doesn't pass filters.
+    """
+    if not _QUOTE_START_RE.match(text):
+        return None
+
+    cleaned = _QUOTE_STRIP_START.sub('', text)
+    cleaned = _QUOTE_STRIP_END.sub('', cleaned)
+    cleaned = cleaned.strip()
+
+    if len(cleaned.split()) < min_words:
+        return None
+
+    if len(cleaned) > 500:
+        cleaned = cleaned[:500].rsplit(" ", 1)[0] + "..."
+
+    return cleaned
+
+
+def _extract_from_post_body(post_body, min_words: int) -> list[dict]:
+    """Extract dialog quotes from a BeautifulSoup post body element.
+
+    Searches formatting patterns used for dialog in RP forum posts:
+    1. Bold/strong tags: <b>"..."</b>, <strong>"..."</strong>
+    2. Styled spans with color (colored dialog): <span style="color:...">"..."</span>
+
+    Italic/em tags are intentionally excluded — on RP forums those denote
+    narrative/action text, not spoken dialog.
+    """
+    quotes = []
+    seen: set[str] = set()
+
+    # Bold/strong: the primary dialog formatting on this forum
+    for el in post_body.select("b, strong"):
+        text = el.get_text(strip=True)
+        cleaned = _clean_quote(text, min_words)
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            quotes.append({"text": cleaned})
+
+    # Colored spans — only check spans with an inline color style
+    for span in post_body.select("span[style]"):
+        style = span.get("style", "")
+        if "color" not in style.lower():
+            continue
+        # Skip spans that contain child b/strong (already caught above)
+        if span.find(["b", "strong"]):
+            continue
+        text = span.get_text(strip=True)
+        cleaned = _clean_quote(text, min_words)
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            quotes.append({"text": cleaned})
+
+    return quotes
+
+
+def extract_quotes_from_html(html: str, character_name: str, character_id: str | None = None) -> list[dict]:
     """Extract dialog quotes from a thread page.
 
-    Finds bold text matching dialog patterns (<b>"..."</b> or <strong>"..."</strong>)
+    Finds dialog patterns in bold and color-styled text
     but ONLY from posts authored by the specified character.
+
+    Matching uses the user ID from the author link href (showuser=N) when
+    character_id is provided, falling back to name matching.  This is
+    necessary because JCink display names in threads often differ from
+    the full profile name stored in the database.
 
     The TWAI theme uses .pr-a for post wrappers, .pr-j for the author name div,
     and .postcolor for the post body (all nested inside .pr-a).
@@ -505,45 +575,57 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
     quotes = []
     min_words = settings.quote_min_words
 
-    for post_container in soup.select(".pr-a"):
-        # Check if this post is by the character
+    post_containers = soup.select(".pr-a")
+    if not post_containers:
+        return quotes
+
+    matched_posts = 0
+
+    for post_container in post_containers:
         name_el = post_container.select_one(".pr-j")
         if not name_el:
             continue
 
-        post_author = name_el.get_text(strip=True)
-        if post_author.lower() != character_name.lower():
+        # Match by user ID when available (reliable), fall back to name.
+        # ID matching is preferred because JCink display names in threads
+        # often differ from the full profile name stored in the DB.
+        name_link = name_el.select_one("a")
+        is_match = False
+        if character_id and name_link:
+            href = name_link.get("href", "")
+            uid_match = re.search(r"showuser=(\d+)", href)
+            if uid_match:
+                is_match = uid_match.group(1) == character_id
+        if not is_match:
+            post_author = (name_link.get_text(strip=True) if name_link else name_el.get_text(strip=True))
+            is_match = post_author.lower() == character_name.lower()
+
+        if not is_match:
             continue
+
+        matched_posts += 1
 
         # Find the post body
         post_body = post_container.select_one(".postcolor")
         if not post_body:
             continue
 
-        for bold_el in post_body.select("b, strong"):
-            text = bold_el.get_text(strip=True)
-
-            # Check if it starts with a quote character
-            if not re.match(r'^["\'\u201C\u2018\u00AB]', text):
-                continue
-
-            # Clean up quote marks
-            cleaned = re.sub(r'^["\'\u201C\u2018\u00AB]+', '', text)
-            cleaned = re.sub(r'["\'\u201D\u2019\u00BB]+$', '', cleaned)
-            cleaned = cleaned.strip()
-
-            # Check minimum word count
-            word_count = len(cleaned.split())
-            if word_count < min_words:
-                continue
-
-            # Reasonable max length
-            if len(cleaned) > 500:
-                cleaned = cleaned[:500].rsplit(" ", 1)[0] + "..."
-
-            quotes.append({"text": cleaned})
+        quotes.extend(_extract_from_post_body(post_body, min_words))
 
     return quotes
+
+
+def extract_quotes_from_post_body(post_html: str) -> list[dict]:
+    """Extract dialog quotes from a single post's body HTML.
+
+    Unlike extract_quotes_from_html() which needs to locate posts within a full
+    thread page using theme-specific CSS selectors, this operates directly on the
+    raw post content as stored in the SQL dump. The caller already knows the author.
+
+    Returns list of dicts with 'text' key.
+    """
+    soup = BeautifulSoup(post_html, "html.parser")
+    return _extract_from_post_body(soup, settings.quote_min_words)
 
 
 _MONTH_MAP = {

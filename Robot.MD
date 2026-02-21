@@ -1,5 +1,9 @@
 # JCink Crawler
 
+> **Project knowledge file.** Consumed by any AI coding agent (Cursor, Claude Code,
+> Copilot, Windsurf, etc.). Keep tool-agnostic — describe *what* and *why*, not
+> which agent reads it.
+
 Server-side web crawler and caching service for JCink forum data.
 Companion service to `jcink_audio` — follows identical architectural patterns.
 

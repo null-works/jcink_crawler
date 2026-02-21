@@ -556,6 +556,47 @@ class TestExtractQuotesExtended:
         assert "didn\u2019t ask for this" in quotes[0]["text"]
         assert "hell\u2019s kitchen" in quotes[1]["text"]
 
+    def test_italic_not_extracted(self):
+        """Italic/em tags are narrative text, not dialog — must NOT be extracted."""
+        html = """
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor">
+                <i>"This is italic narrative not dialog"</i>
+                <em>"Emphasis is also narrative text here"</em>
+            </div>
+        </div>
+        """
+        quotes = extract_quotes_from_html(html, "Tony Stark")
+        assert len(quotes) == 0
+
+    def test_colored_span_dialog(self):
+        """Colored spans without bold/italic should be extracted."""
+        html = """
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor">
+                <span style="color: #CE7E00;">"This is colored dialog without bold"</span>
+            </div>
+        </div>
+        """
+        quotes = extract_quotes_from_html(html, "Tony Stark")
+        assert len(quotes) == 1
+        assert "colored dialog without bold" in quotes[0]["text"]
+
+    def test_colored_span_with_bold_child_not_double_counted(self):
+        """Colored span wrapping a bold tag should not produce duplicates."""
+        html = """
+        <div class="pr-a">
+            <div class="pr-j">Tony Stark</div>
+            <div class="postcolor">
+                <span style="color: #CE7E00;"><b>"Should only appear once in results"</b></span>
+            </div>
+        </div>
+        """
+        quotes = extract_quotes_from_html(html, "Tony Stark")
+        assert len(quotes) == 1
+
 
 class TestBoardMessageExtended:
     def test_no_title_tag(self):

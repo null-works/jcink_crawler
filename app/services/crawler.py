@@ -1,7 +1,7 @@
 import asyncio
 import aiosqlite
 from app.config import settings
-from app.services.activity import set_activity, clear_activity
+from app.services.activity import set_activity, clear_activity, log_debug
 from app.services.fetcher import fetch_page, fetch_page_rendered, fetch_page_with_delay, fetch_pages_concurrent
 from app.services.parser import (
     parse_search_results,
@@ -57,7 +57,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     base_url = settings.forum_base_url
     search_url = f"{base_url}/index.php?act=Search&CODE=getalluser&mid={character_id}&type=posts"
 
-    print(f"[Crawler] Starting thread crawl for character {character_id}")
+    log_debug(f"Starting thread crawl for character {character_id}")
     set_activity(f"Crawling threads", character_id=character_id)
 
     # Step 1: Hit search, handle redirect (with cooldown retry)
@@ -65,13 +65,13 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     for attempt in range(3):
         html = await fetch_page(search_url)
         if not html:
-            print(f"[Crawler] Failed to fetch search page for {character_id}")
+            log_debug(f"Failed to fetch search page for {character_id}", level="error")
             return {"error": "Failed to fetch search page"}
 
         # Check for redirect
         redirect_url = parse_search_redirect(html)
         if redirect_url:
-            print(f"[Crawler] Following redirect to {redirect_url}")
+            log_debug(f"Following search redirect to {redirect_url}")
             await asyncio.sleep(settings.request_delay_seconds)
             html = await fetch_page(redirect_url)
             if not html:
@@ -80,16 +80,16 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         if is_board_message(html):
             if attempt < 2:
                 wait = 30 * (attempt + 1)
-                print(f"[Crawler] Search cooldown for {character_id}, waiting {wait}s (attempt {attempt + 1}/3)")
+                log_debug(f"Search cooldown for {character_id}, waiting {wait}s (attempt {attempt + 1}/3)", level="error")
                 await asyncio.sleep(wait)
                 continue
-            print(f"[Crawler] Search cooldown persists for {character_id} after 3 attempts")
+            log_debug(f"Search cooldown persists for {character_id} after 3 attempts", level="error")
             return {"error": "Search cooldown, retries exhausted"}
         break  # Success — got search results
 
     # Step 2: Parse first page of results
     all_threads, page_urls = parse_search_results(html)
-    print(f"[Crawler] First page: {len(all_threads)} threads, {len(page_urls)} additional pages")
+    log_debug(f"First page: {len(all_threads)} threads, {len(page_urls)} additional pages")
 
     # Step 3: Fetch additional search pages concurrently
     if page_urls:
@@ -106,7 +106,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                     all_threads.append(t)
                     seen_ids.add(t.thread_id)
 
-    print(f"[Crawler] Total threads found: {len(all_threads)}")
+    log_debug(f"Total threads found: {len(all_threads)}")
 
     # Pre-load character info and quote scrape status in bulk
     async with aiosqlite.connect(db_path) as db:
@@ -234,7 +234,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             for cid, cname in chars_needing_scrape.items():
                 char_quotes = []
                 for page_html in all_pages:
-                    page_quotes = extract_quotes_from_html(page_html, cname)
+                    page_quotes = extract_quotes_from_html(page_html, cname, cid)
                     char_quotes.extend(page_quotes)
                 quotes_by_character[cid] = char_quotes
                 characters_to_mark_scraped.append(cid)
@@ -259,12 +259,35 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     # Step 5: Batch write all results to DB in a single connection
     results = {"ongoing": 0, "comms": 0, "complete": 0, "incomplete": 0, "quotes_added": 0}
 
+    # Summarize quote extraction results for debugging
+    total_quotes_all_chars = 0
+    total_quotes_target = 0
+    threads_with_quotes = 0
+    for r in thread_results:
+        if isinstance(r, Exception) or r is None:
+            continue
+        qbc = r.get("quotes_by_character", {})
+        thread_has_quotes = False
+        for cid, cq in qbc.items():
+            total_quotes_all_chars += len(cq)
+            if cid == character_id:
+                total_quotes_target += len(cq)
+            if cq:
+                thread_has_quotes = True
+        if thread_has_quotes:
+            threads_with_quotes += 1
+    if character_name:
+        log_debug(
+            f"Quote summary for {character_name}: {total_quotes_target} quotes from {threads_with_quotes}/{len(all_threads)} threads "
+            f"({total_quotes_all_chars} total across all chars)"
+        )
+
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
 
         for result in thread_results:
             if isinstance(result, Exception):
-                print(f"[Crawler] Error processing thread: {result}")
+                log_debug(f"Error processing thread: {result}", level="error")
                 continue
             if result is None:
                 continue
@@ -339,7 +362,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         await update_character_crawl_time(db, character_id, "threads")
 
     clear_activity()
-    print(f"[Crawler] Thread crawl complete for {character_id}: {results}")
+    log_debug(f"Thread crawl complete for {character_id}: {results}", level="done")
     return results
 
 
@@ -369,7 +392,7 @@ async def crawl_single_thread(
     base_url = settings.forum_base_url
     thread_url = f"{base_url}/index.php?showtopic={thread_id}"
 
-    print(f"[Crawler] Targeted crawl for thread {thread_id}")
+    log_debug(f"Targeted crawl for thread {thread_id}")
     set_activity(f"Targeted crawl: thread {thread_id}", character_id=user_id)
 
     # Fetch thread first page
@@ -482,7 +505,7 @@ async def crawl_single_thread(
         if cid not in already_scraped:
             char_quotes = []
             for page_html in all_pages:
-                char_quotes.extend(extract_quotes_from_html(page_html, cname))
+                char_quotes.extend(extract_quotes_from_html(page_html, cname, cid))
             quotes_by_character[cid] = char_quotes
             chars_to_mark.append(cid)
 
@@ -551,7 +574,7 @@ async def crawl_single_thread(
         await db.commit()
 
     clear_activity()
-    print(f"[Crawler] Targeted crawl complete: thread {thread_id}, {quotes_added} quotes added")
+    log_debug(f"Targeted crawl complete: thread {thread_id}, {quotes_added} quotes added", level="done")
     return {
         "thread_id": thread_id,
         "title": title,
@@ -559,6 +582,24 @@ async def crawl_single_thread(
         "last_poster": last_poster_name,
         "quotes_added": quotes_added,
     }
+
+
+async def check_profile_exists(character_id: str) -> str | None:
+    """Quick httpx check whether a profile exists.
+
+    Returns the character name if the profile is valid, or None if the
+    user ID points to a deleted/banned account (board message) or the
+    fetch fails entirely.  Does NOT use Playwright — this is intentionally
+    lightweight so we can skip non-existent IDs fast.
+    """
+    url = f"{settings.forum_base_url}/index.php?showuser={character_id}"
+    html = await fetch_page_with_delay(url)
+    if not html or is_board_message(html):
+        return None
+    profile = parse_profile_page(html, character_id)
+    if not profile.name or profile.name == "Unknown":
+        return None
+    return profile.name
 
 
 async def crawl_character_profile(character_id: str, db_path: str) -> dict:
@@ -574,7 +615,7 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     base_url = settings.forum_base_url
     profile_url = f"{base_url}/index.php?showuser={character_id}"
 
-    print(f"[Crawler] Starting profile crawl for {character_id}")
+    log_debug(f"Starting profile crawl for {character_id}")
     set_activity(f"Crawling profile for #{character_id}", character_id=character_id)
 
     html = await fetch_page_rendered(profile_url)
@@ -585,13 +626,13 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     # for deleted users. Without this check the parser would overwrite good
     # data with name="Unknown" and empty fields.
     if is_board_message(html):
-        print(f"[Crawler] Profile {character_id} returned board message — removing character")
+        log_debug(f"Profile {character_id} returned board message — removing character", level="error")
         set_activity(f"Removing deleted profile #{character_id}", character_id=character_id)
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
             removed = await delete_character(db, character_id)
         clear_activity()
-        print(f"[Crawler] Character {character_id} removed: {removed}")
+        log_debug(f"Character {character_id} removed: {removed}", level="done")
         return {"removed": True, "character_id": character_id, "reason": "Profile no longer exists"}
 
     profile = parse_profile_page(html, character_id)
@@ -603,12 +644,12 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     if not (_PG_KEYS & set(profile.fields.keys())):
         app_url = parse_application_url(html)
         if app_url:
-            print(f"[Crawler] No power grid from profile, trying application: {app_url}")
+            log_debug(f"No power grid from profile, trying application: {app_url}")
             app_html = await fetch_page_with_delay(app_url)
             if app_html:
                 pg_fields = parse_power_grid(app_html)
                 if pg_fields:
-                    print(f"[Crawler] Power grid from application: {pg_fields}")
+                    log_debug(f"Power grid from application: {pg_fields}")
                     profile.fields.update(pg_fields)
 
     if profile.name:
@@ -634,7 +675,7 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
         await db.commit()
 
     clear_activity()
-    print(f"[Crawler] Profile crawl complete for {character_id}: {len(profile.fields)} fields")
+    log_debug(f"Profile crawl complete for {character_id}: {len(profile.fields)} fields", level="done")
     return {
         "name": profile.name,
         "fields_count": len(profile.fields),
@@ -710,7 +751,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     if not username or not password:
         return {"error": "No admin credentials configured — set them in Admin > ACP Settings"}
 
-    print("[Crawler] Starting ACP full sync")
+    log_debug("Starting ACP full sync")
     set_activity("Syncing from ACP")
 
     client = ACPClient(username=username, password=password)
@@ -720,10 +761,10 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             clear_activity()
             return {"error": "No data retrieved from ACP"}
 
-        # Extract structured records from SQL dump
+        # Extract structured records from SQL dump (include post bodies for quote extraction)
         topics = extract_topic_records(raw)
-        posts = acp_extract_posts(raw)
-        print(f"[Crawler] ACP dump: {len(topics)} topics, {len(posts)} posts")
+        posts = acp_extract_posts(raw, include_body=False)
+        log_debug(f"ACP dump: {len(topics)} topics, {len(posts)} posts")
 
         if not topics and not posts:
             clear_activity()
@@ -771,7 +812,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             if char_ids & tracked_chars:
                 relevant_thread_ids.add(tid)
 
-        print(f"[Crawler] {len(relevant_thread_ids)} threads involve tracked characters")
+        log_debug(f"{len(relevant_thread_ids)} threads involve tracked characters")
 
         # ── Phase 3: Fetch last poster avatars ──
         # Collect unique last poster IDs that need avatar lookups
@@ -807,7 +848,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
         # Fetch missing avatars via HTTP (batched, polite)
         missing_avatar_ids = poster_ids_needing_avatar - set(avatar_cache.keys())
         if missing_avatar_ids:
-            print(f"[Crawler] Fetching {len(missing_avatar_ids)} last-poster avatars")
+            log_debug(f"Fetching {len(missing_avatar_ids)} last-poster avatars")
             set_activity(f"Fetching {len(missing_avatar_ids)} avatars")
             for poster_id in missing_avatar_ids:
                 try:
@@ -910,7 +951,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             "character_links": links_created,
             "posts_stored": posts_stored,
         }
-        print(f"[Crawler] ACP sync complete: {summary}")
+        log_debug(f"ACP sync complete: {summary}", level="done")
         return summary
 
     finally:
@@ -929,7 +970,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
 
     Args:
         db_path: Path to SQLite database
-        batch_size: Max threads to process per run (default from config)
+        batch_size: Max threads to process per run (0 = unlimited, default from config)
 
     Returns:
         Summary dict with counts
@@ -939,7 +980,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
 
     base_url = settings.forum_base_url
 
-    print("[Crawler] Starting quote-only crawl pass")
+    log_debug("Starting quote-only crawl pass")
     set_activity("Crawling quotes")
 
     # Load all characters and find threads needing quote scraping
@@ -958,7 +999,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
         # Find threads that have at least one character not yet quote-scraped.
         # We look at character_threads to find which threads involve tracked characters,
         # then check quote_crawl_log to see if they've been scraped.
-        cursor = await db.execute("""
+        query = """
             SELECT DISTINCT ct.thread_id, t.url
             FROM character_threads ct
             JOIN threads t ON t.id = ct.thread_id
@@ -967,31 +1008,37 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
                 WHERE qcl.thread_id = ct.thread_id
                   AND qcl.character_id = ct.character_id
             )
-            LIMIT ?
-        """, (batch_size,))
+        """
+        if batch_size and batch_size > 0:
+            query += " LIMIT ?"
+            cursor = await db.execute(query, (batch_size,))
+        else:
+            cursor = await db.execute(query)
         threads_to_scrape = [dict(r) for r in await cursor.fetchall()]
 
     if not threads_to_scrape:
         clear_activity()
-        print("[Crawler] No threads need quote scraping")
+        log_debug("No threads need quote scraping")
         return {"threads_processed": 0, "quotes_added": 0}
 
-    print(f"[Crawler] {len(threads_to_scrape)} threads need quote scraping")
+    log_debug(f"{len(threads_to_scrape)} threads need quote scraping")
 
     total_quotes = 0
     threads_processed = 0
+    threads_total = len(threads_to_scrape)
 
     for thread_row in threads_to_scrape:
         tid = thread_row["thread_id"]
         thread_url = thread_row["url"] or f"{base_url}/index.php?showtopic={tid}"
 
         set_activity(
-            f"Scraping quotes ({threads_processed + 1}/{len(threads_to_scrape)})",
+            f"Scraping quotes ({threads_processed + 1}/{threads_total})",
         )
 
         # Fetch all pages of this thread
         thread_html = await fetch_page_with_delay(thread_url)
         if not thread_html or is_board_message(thread_html):
+            log_debug(f"Quote scrape: skipped thread {tid} (fetch failed or board message)", level="error")
             continue
 
         max_st = parse_thread_pagination(thread_html)
@@ -1033,12 +1080,17 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
             for cid, cname in chars_needing.items():
                 char_quotes = []
                 for page_html in all_pages:
-                    char_quotes.extend(extract_quotes_from_html(page_html, cname))
+                    char_quotes.extend(extract_quotes_from_html(page_html, cname, cid))
 
+                added_count = 0
                 for q in char_quotes:
                     added = await add_quote(db, cid, q["text"], tid, thread_title)
                     if added:
                         total_quotes += 1
+                        added_count += 1
+
+                if char_quotes:
+                    log_debug(f"Thread {tid}: {cname} — {len(char_quotes)} quotes found, {added_count} new")
 
                 await mark_thread_quote_scraped(db, tid, cid)
 
@@ -1047,7 +1099,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
         threads_processed += 1
 
     clear_activity()
-    print(f"[Crawler] Quote-only crawl complete: {threads_processed} threads, {total_quotes} quotes")
+    log_debug(f"Quote-only crawl complete: {threads_processed} threads, {total_quotes} quotes", level="done")
     return {
         "threads_processed": threads_processed,
         "quotes_added": total_quotes,
@@ -1070,7 +1122,7 @@ async def crawl_recent_threads(db_path: str) -> dict:
     base_url = settings.forum_base_url
     excluded_forums = settings.excluded_forum_ids
 
-    print("[Crawler] Browsing forum listings for threads")
+    log_debug("Browsing forum listings for threads")
     set_activity("Scanning forum listings")
 
     # Step 1: Get all forum IDs from the main index page
@@ -1086,7 +1138,7 @@ async def crawl_recent_threads(db_path: str) -> dict:
         if m and m.group(1) not in excluded_forums:
             forum_ids.add(m.group(1))
 
-    print(f"[Crawler] Found {len(forum_ids)} non-excluded forums")
+    log_debug(f"Found {len(forum_ids)} non-excluded forums")
 
     # Step 2: Browse each forum's first page to collect thread IDs
     thread_ids = set()
@@ -1100,7 +1152,7 @@ async def crawl_recent_threads(db_path: str) -> dict:
             if m:
                 thread_ids.add(m.group(1))
 
-    print(f"[Crawler] Found {len(thread_ids)} threads across all forums")
+    log_debug(f"Found {len(thread_ids)} threads across all forums")
 
     if not thread_ids:
         clear_activity()
@@ -1170,7 +1222,7 @@ async def crawl_recent_threads(db_path: str) -> dict:
         await db.commit()
 
     clear_activity()
-    print(f"[Crawler] Recent threads: {threads_processed} threads, {posts_stored} posts stored")
+    log_debug(f"Recent threads: {threads_processed} threads, {posts_stored} posts stored", level="done")
     return {"threads": threads_processed, "posts_stored": posts_stored}
 
 
@@ -1185,7 +1237,7 @@ async def discover_characters(db_path: str) -> dict:
     """
     base_url = settings.forum_base_url
 
-    print("[Crawler] Starting auto-discovery via member list")
+    log_debug("Starting auto-discovery via member list")
     set_activity("Discovering characters")
 
     # Pre-load existing character IDs to avoid per-ID DB queries
@@ -1200,13 +1252,13 @@ async def discover_characters(db_path: str) -> dict:
     first_page_html = await fetch_page_with_delay(member_list_url)
     if not first_page_html:
         clear_activity()
-        print("[Crawler] Failed to fetch member list")
+        log_debug("Failed to fetch member list", level="error")
         return {"new_registered": 0, "already_tracked": 0, "skipped": 0}
 
     max_st = parse_member_list_pagination(first_page_html)
     page_offsets = [0] + list(range(30, max_st + 1, 30))
     total_pages = len(page_offsets)
-    print(f"[Crawler] Member list has {total_pages} pages")
+    log_debug(f"Member list has {total_pages} pages")
 
     new_count = 0
     existing_count = 0
@@ -1253,7 +1305,7 @@ async def discover_characters(db_path: str) -> dict:
                 skipped_count += 1
                 continue
 
-            print(f"[Crawler] Discovered: {profile.name} (ID {uid})")
+            log_debug(f"Discovered: {profile.name} (ID {uid})")
             set_activity(f"Discovered {profile.name}", character_id=uid, character_name=profile.name)
 
             try:
@@ -1264,10 +1316,10 @@ async def discover_characters(db_path: str) -> dict:
                 await crawl_character_threads(uid, db_path)
                 new_count += 1
             except Exception as e:
-                print(f"[Crawler] Error registering {profile.name}: {e}")
+                log_debug(f"Error registering {profile.name}: {e}", level="error")
 
     clear_activity()
-    print(f"[Crawler] Discovery complete: {new_count} new, {existing_count} existing, {skipped_count} skipped")
+    log_debug(f"Discovery complete: {new_count} new, {existing_count} existing, {skipped_count} skipped", level="done")
     return {
         "new_registered": new_count,
         "already_tracked": existing_count,

@@ -5,12 +5,10 @@ from unittest.mock import patch, AsyncMock
 import aiosqlite
 
 from app.database import init_db, DATABASE_PATH
-from app.models.operations import upsert_character
 from app.services.scheduler import (
     start_scheduler,
     stop_scheduler,
-    _crawl_all_threads,
-    _crawl_all_profiles,
+    _crawl_all_characters,
 )
 
 
@@ -29,7 +27,7 @@ class TestStartStopScheduler:
     async def test_start_creates_scheduler(self):
         from app.services import scheduler
         scheduler._scheduler = None
-        with patch("app.services.scheduler._discover_all_characters", new_callable=AsyncMock):
+        with patch("app.services.scheduler._crawl_all_characters", new_callable=AsyncMock):
             start_scheduler()
         assert scheduler._scheduler is not None
         stop_scheduler()
@@ -44,74 +42,80 @@ class TestStartStopScheduler:
     async def test_start_registers_jobs(self):
         from app.services import scheduler
         scheduler._scheduler = None
-        with patch("app.services.scheduler._discover_all_characters", new_callable=AsyncMock):
+        with patch("app.services.scheduler._crawl_all_characters", new_callable=AsyncMock):
             start_scheduler()
         jobs = scheduler._scheduler.get_jobs()
         job_ids = {j.id for j in jobs}
-        assert "crawl_threads" in job_ids
-        assert "crawl_profiles" in job_ids
+        assert "crawl_all_characters" in job_ids
         stop_scheduler()
 
 
-class TestCrawlAllThreads:
-    async def test_no_characters(self):
-        """Should complete without error when no characters registered."""
-        with patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_crawl, \
+class TestCrawlAllCharacters:
+    async def test_stops_after_consecutive_misses(self):
+        """Should stop after MAX_CONSECUTIVE_MISSES board-message responses."""
+        with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, return_value=None) as mock_check, \
+             patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock) as mock_profile, \
+             patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
+             patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False):
+            await _crawl_all_characters()
+            # Should have checked 100 IDs then stopped
+            assert mock_check.await_count == 100
+            mock_profile.assert_not_awaited()
+            mock_threads.assert_not_awaited()
+
+    async def test_crawls_valid_profiles(self):
+        """Should crawl profile + threads for valid user IDs."""
+        # IDs 1-3 exist, then 20 consecutive misses
+        side_effects = ["Alpha", "Beta", "Gamma"] + [None] * 100
+
+        with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects) as mock_check, \
+             patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock) as mock_profile, \
+             patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
+             patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False), \
              patch("asyncio.sleep", new_callable=AsyncMock):
-            await _crawl_all_threads()
-            mock_crawl.assert_not_awaited()
+            await _crawl_all_characters()
+            assert mock_profile.await_count == 3
+            assert mock_threads.await_count == 3
 
-    async def test_crawls_each_character(self):
-        async with aiosqlite.connect(DATABASE_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            await upsert_character(db, "1", "Alpha", "https://example.com/1")
-            await upsert_character(db, "2", "Beta", "https://example.com/2")
+    async def test_resets_miss_counter_on_valid(self):
+        """A valid profile resets the consecutive miss counter."""
+        # 5 misses, 1 valid, then 20 misses → should stop
+        side_effects = [None] * 5 + ["Alpha"] + [None] * 100
 
-        with patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_crawl, \
+        with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects) as mock_check, \
+             patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock), \
+             patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock), \
+             patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False), \
              patch("asyncio.sleep", new_callable=AsyncMock):
-            await _crawl_all_threads()
-            assert mock_crawl.await_count == 2
+            await _crawl_all_characters()
+            # 5 misses + 1 valid + 100 misses = 106 checks
+            assert mock_check.await_count == 106
 
-    async def test_continues_on_error(self):
-        """If one character fails, should still crawl the next."""
-        async with aiosqlite.connect(DATABASE_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            await upsert_character(db, "1", "Alpha", "https://example.com/1")
-            await upsert_character(db, "2", "Beta", "https://example.com/2")
+    async def test_skips_excluded_names(self):
+        """Excluded names should be skipped without crawling."""
+        # ID 1 = excluded, ID 2 = valid, then 20 misses
+        side_effects = ["Watcher", "Alpha"] + [None] * 100
 
-        with patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock,
-                    side_effect=[Exception("fail"), {"ongoing": 1}]) as mock_crawl, \
+        with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects), \
+             patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock) as mock_profile, \
+             patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
+             patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False), \
              patch("asyncio.sleep", new_callable=AsyncMock):
-            await _crawl_all_threads()
-            assert mock_crawl.await_count == 2
+            await _crawl_all_characters()
+            # Only Alpha should be crawled, Watcher is excluded
+            assert mock_profile.await_count == 1
+            assert mock_threads.await_count == 1
 
+    async def test_continues_on_crawl_error(self):
+        """If one character's crawl errors, should still continue to next."""
+        side_effects = ["Alpha", "Beta"] + [None] * 100
 
-class TestCrawlAllProfiles:
-    async def test_no_characters(self):
-        with patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock) as mock_crawl, \
+        with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects), \
+             patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock,
+                   side_effect=[Exception("fail"), {"name": "Beta"}]) as mock_profile, \
+             patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
+             patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False), \
              patch("asyncio.sleep", new_callable=AsyncMock):
-            await _crawl_all_profiles()
-            mock_crawl.assert_not_awaited()
-
-    async def test_crawls_each_character(self):
-        async with aiosqlite.connect(DATABASE_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            await upsert_character(db, "1", "Alpha", "https://example.com/1")
-            await upsert_character(db, "2", "Beta", "https://example.com/2")
-
-        with patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock) as mock_crawl, \
-             patch("asyncio.sleep", new_callable=AsyncMock):
-            await _crawl_all_profiles()
-            assert mock_crawl.await_count == 2
-
-    async def test_continues_on_error(self):
-        async with aiosqlite.connect(DATABASE_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            await upsert_character(db, "1", "Alpha", "https://example.com/1")
-            await upsert_character(db, "2", "Beta", "https://example.com/2")
-
-        with patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock,
-                    side_effect=[Exception("fail"), {"name": "Beta"}]) as mock_crawl, \
-             patch("asyncio.sleep", new_callable=AsyncMock):
-            await _crawl_all_profiles()
-            assert mock_crawl.await_count == 2
+            await _crawl_all_characters()
+            assert mock_profile.await_count == 2
+            assert mock_threads.await_count == 2

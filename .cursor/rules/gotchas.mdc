@@ -1,0 +1,36 @@
+---
+description: Hard-won lessons and non-obvious gotchas from past debugging sessions
+globs:
+  - app/services/**
+  - app/static/css/**
+  - app/templates/**
+alwaysApply: false
+---
+
+# Learned Patterns & Gotchas
+
+**Power grid centering:** Flexbox `flex: 1` with `justify-content: center` does NOT
+visually center the power grid in the card because the left side (avatar + info) is much
+wider than the right side (buttons), skewing the available gap. Solution: absolute
+positioning at `left: 50%; transform: translateX(-50%)` to center relative to the card
+itself, not the remaining flex gap. Mobile breakpoint reverts to `position: static`.
+
+**JCink search cooldown:** JCink throttles search requests. The crawler detects cooldown
+responses and retries with exponential backoff rather than failing.
+
+**Playwright fallback:** Playwright is only used for power grid extraction (JS-rendered
+profile stats). If Playwright fails, the system falls back to httpx. The application
+thread fallback provides a secondary extraction path if the profile page doesn't have
+stats rendered.
+
+**Post date accuracy:** HTML-scraped post dates use relative formats ("Today", "Yesterday")
+which are unreliable. ACP SQL dumps provide Unix timestamps for accurate dates. The system
+purges stale NULL-date posts on startup to keep the activity data clean.
+
+**CSS cache busting:** Static CSS uses `?v=N` query strings. Always bump the version
+when editing CSS or users will see stale styles. The `APP_BUILD_TIME` in config.py also
+serves as a cache key for dynamic content.
+
+**Activity bar overlap:** The fixed-position activity bar at the bottom of the dashboard
+can overlap content. The version tag positioning needed explicit margin to avoid being
+hidden behind it.

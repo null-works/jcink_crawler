@@ -26,6 +26,7 @@ from app.config import settings
 _POST_COL_AUTHOR_ID = 3
 _POST_COL_AUTHOR_NAME = 4
 _POST_COL_POST_DATE = 8
+_POST_COL_POST_BODY = 10
 _POST_COL_TOPIC_ID = 12
 _POST_COL_FORUM_ID = 13
 
@@ -169,10 +170,11 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
     return raw
 
 
-def extract_post_records(raw: dict[str, list[list]]) -> list[dict]:
+def extract_post_records(raw: dict[str, list[list]], include_body: bool = False) -> list[dict]:
     """Extract structured post records from parsed SQL dump.
 
     Returns list of dicts with: character_id, thread_id, post_date, forum_id, author_name
+    When include_body=True, also includes post_body (HTML content) for quote extraction.
     """
     posts_rows = raw.get("posts", [])
     records = []
@@ -185,13 +187,19 @@ def extract_post_records(raw: dict[str, list[list]]) -> list[dict]:
         if author_id is None:
             continue
 
-        records.append({
+        record = {
             "character_id": str(author_id),
             "thread_id": str(row[_POST_COL_TOPIC_ID]) if row[_POST_COL_TOPIC_ID] else None,
             "post_date": _unix_to_iso(row[_POST_COL_POST_DATE]),
             "forum_id": str(row[_POST_COL_FORUM_ID]) if row[_POST_COL_FORUM_ID] else None,
             "author_name": row[_POST_COL_AUTHOR_NAME],
-        })
+        }
+
+        if include_body and len(row) > _POST_COL_POST_BODY:
+            body = row[_POST_COL_POST_BODY]
+            record["post_body"] = body if isinstance(body, str) else None
+
+        records.append(record)
 
     return records
 

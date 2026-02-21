@@ -2,12 +2,12 @@
 
 /* Sort direction toggle on sortable column headers */
 document.addEventListener('click', function(e) {
-    const th = e.target.closest('.sortable');
+    var th = e.target.closest('.sortable');
     if (!th) return;
 
-    const currentUrl = new URL(th.getAttribute('hx-get'), window.location.origin);
-    const currentDir = currentUrl.searchParams.get('dir') || 'asc';
-    const newDir = currentDir === 'asc' ? 'desc' : 'asc';
+    var currentUrl = new URL(th.getAttribute('hx-get'), window.location.origin);
+    var currentDir = currentUrl.searchParams.get('dir') || 'asc';
+    var newDir = currentDir === 'asc' ? 'desc' : 'asc';
     currentUrl.searchParams.set('dir', newDir);
     th.setAttribute('hx-get', currentUrl.pathname + currentUrl.search);
 
@@ -47,5 +47,59 @@ document.addEventListener('click', function(e) {
 document.body.addEventListener('htmx:responseError', function(event) {
     if (event.detail.xhr && event.detail.xhr.status === 401) {
         window.location.href = '/login';
+    }
+});
+
+/* === Debug Panel === */
+
+function toggleDebugPanel() {
+    var panel = document.getElementById('debug-panel');
+    if (!panel) return;
+    panel.classList.toggle('open');
+    /* Auto-scroll to bottom when opening */
+    if (panel.classList.contains('open')) {
+        var log = document.getElementById('debug-log');
+        if (log) {
+            setTimeout(function() { log.scrollTop = log.scrollHeight; }, 100);
+        }
+    }
+}
+
+function exportDebugLog() {
+    var log = document.getElementById('debug-log');
+    if (!log) return;
+    var entries = log.querySelectorAll('.debug-entry');
+    var lines = ['Debug Log Export', '='.repeat(60), ''];
+    entries.forEach(function(entry) {
+        var time = entry.querySelector('.debug-time');
+        var msg = entry.querySelector('.debug-msg');
+        if (time && msg) {
+            lines.push('[' + time.textContent.trim() + '] ' + msg.textContent.trim());
+        }
+    });
+    var text = lines.join('\n');
+    var blob = new Blob([text], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'debug-log-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function clearDebugLog() {
+    fetch('/htmx/debug-log/clear', { method: 'POST' });
+    var log = document.getElementById('debug-log');
+    if (log) log.innerHTML = '<div class="debug-entry"><span class="text-comment">Log cleared</span></div>';
+}
+
+/* Auto-scroll debug log when new entries arrive */
+document.body.addEventListener('htmx:afterSwap', function(event) {
+    if (event.detail.target && event.detail.target.id === 'debug-log') {
+        var panel = document.getElementById('debug-panel');
+        if (panel && panel.classList.contains('open')) {
+            var log = event.detail.target;
+            log.scrollTop = log.scrollHeight;
+        }
     }
 });

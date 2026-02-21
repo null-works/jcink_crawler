@@ -29,8 +29,8 @@ from app.services import (
     crawl_character_profile,
     register_character,
 )
-from app.services.crawler import discover_characters, crawl_single_thread, sync_posts_from_acp, crawl_quotes_only
-from app.services.scheduler import _crawl_all_threads, _crawl_all_profiles
+from app.services.crawler import crawl_single_thread, sync_posts_from_acp, crawl_quotes_only
+from app.services.scheduler import _crawl_all_characters
 from app.services.activity import get_activity
 
 router = APIRouter()
@@ -230,19 +230,9 @@ async def trigger_crawl(
     background_tasks: BackgroundTasks,
 ):
     """Manually trigger a crawl for a character."""
-    if data.crawl_type == "discover":
-        background_tasks.add_task(
-            discover_characters, settings.database_path
-        )
-        return {"status": "crawl_queued", "character_id": None, "crawl_type": "discover"}
-
-    if data.crawl_type == "all-threads":
-        background_tasks.add_task(_crawl_all_threads)
-        return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-threads"}
-
-    if data.crawl_type == "all-profiles":
-        background_tasks.add_task(_crawl_all_profiles)
-        return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-profiles"}
+    if data.crawl_type in ("discover", "all-threads", "all-profiles"):
+        background_tasks.add_task(_crawl_all_characters)
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-characters"}
 
     if data.crawl_type == "sync-posts":
         background_tasks.add_task(sync_posts_from_acp, settings.database_path)

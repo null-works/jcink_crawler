@@ -1,0 +1,52 @@
+---
+description: Deployment workflow, version bumping, and CSS cache busting rules
+globs:
+  - app/config.py
+  - app/static/css/**
+  - app/templates/base.html
+  - docker-compose.yml
+  - Dockerfile
+alwaysApply: false
+---
+
+# Deployment Rules
+
+The server working directory is `~/jcink_crawler`. Docker Compose bind-mounts `./app`
+into the container, and uvicorn runs with `--reload`, so file changes take effect
+immediately — no rebuild needed.
+
+## Version Bumping (MANDATORY)
+
+Every push to a feature branch MUST increment the patch version in `app/config.py`
+(`APP_VERSION`). This is how we confirm the deploy took on the server — check the
+version tag in the dashboard activity bar. Example: `2.7.0` → `2.7.1` → `2.7.2`.
+Never skip this step.
+
+## CSS Cache Busting (MANDATORY)
+
+Static CSS files use query-string cache busting (`?v=N`) in `base.html`.
+When editing CSS, bump the version number on the corresponding `<link>` tag.
+Current versions: `dracula.css?v=12`, `components.css?v=15`, `layout.css?v=13`.
+
+## Test a Feature Branch Live
+
+```bash
+cd ~/jcink_crawler
+git fetch origin <branch-name>
+git checkout <branch-name>
+```
+Uvicorn auto-reloads. Verify the version number in the dashboard activity bar.
+
+## Roll Back to Main
+
+```bash
+cd ~/jcink_crawler
+git checkout main
+```
+
+## Full Rebuild (only if dependencies changed)
+
+```bash
+cd ~/jcink_crawler
+docker compose up --build -d
+```
