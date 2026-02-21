@@ -2,6 +2,7 @@ import re
 from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
 from app.config import settings
+from app.services.activity import log_debug
 
 
 @dataclass
@@ -570,7 +571,15 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
     quotes = []
     min_words = settings.quote_min_words
 
-    for post_container in soup.select(".pr-a"):
+    post_containers = soup.select(".pr-a")
+    if not post_containers:
+        log_debug(f"quote-extract: no .pr-a containers found on page for {character_name}")
+        return quotes
+
+    authors_seen: set[str] = set()
+    matched_posts = 0
+
+    for post_container in post_containers:
         # Check if this post is by the character — extract name from the <a>
         # link inside .pr-j specifically, not the whole div (which may contain
         # badges, status indicators, or group labels that break exact matching).
@@ -580,8 +589,11 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
 
         name_link = name_el.select_one("a")
         post_author = (name_link.get_text(strip=True) if name_link else name_el.get_text(strip=True))
+        authors_seen.add(post_author)
         if post_author.lower() != character_name.lower():
             continue
+
+        matched_posts += 1
 
         # Find the post body
         post_body = post_container.select_one(".postcolor")
@@ -589,6 +601,12 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
             continue
 
         quotes.extend(_extract_from_post_body(post_body, min_words))
+
+    if not quotes:
+        log_debug(
+            f"quote-extract: 0 quotes for '{character_name}' — {len(post_containers)} containers, "
+            f"{matched_posts} matched posts, authors: {', '.join(sorted(authors_seen)) if authors_seen else '(none)'}"
+        )
 
     return quotes
 

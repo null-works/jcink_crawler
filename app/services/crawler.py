@@ -236,8 +236,12 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                 for page_html in all_pages:
                     page_quotes = extract_quotes_from_html(page_html, cname)
                     char_quotes.extend(page_quotes)
+                if char_quotes:
+                    log_debug(f"Quote extraction: {cname} in thread {thread.thread_id} — {len(char_quotes)} quotes")
                 quotes_by_character[cid] = char_quotes
                 characters_to_mark_scraped.append(cid)
+        else:
+            log_debug(f"No chars needing scrape for thread {thread.thread_id} (all {len(all_characters)} already scraped)")
 
         return {
             "thread": thread,
@@ -258,6 +262,29 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
 
     # Step 5: Batch write all results to DB in a single connection
     results = {"ongoing": 0, "comms": 0, "complete": 0, "incomplete": 0, "quotes_added": 0}
+
+    # Summarize quote extraction results for debugging
+    total_quotes_all_chars = 0
+    total_quotes_target = 0
+    threads_with_quotes = 0
+    for r in thread_results:
+        if isinstance(r, Exception) or r is None:
+            continue
+        qbc = r.get("quotes_by_character", {})
+        thread_has_quotes = False
+        for cid, cq in qbc.items():
+            total_quotes_all_chars += len(cq)
+            if cid == character_id:
+                total_quotes_target += len(cq)
+            if cq:
+                thread_has_quotes = True
+        if thread_has_quotes:
+            threads_with_quotes += 1
+    if character_name:
+        log_debug(
+            f"Quote summary for {character_name}: {total_quotes_target} quotes from {threads_with_quotes}/{len(all_threads)} threads "
+            f"({total_quotes_all_chars} total across all chars)"
+        )
 
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
