@@ -8,9 +8,6 @@ from app.services.crawler import (
     crawl_character_threads,
     crawl_character_profile,
     check_profile_exists,
-    sync_posts_from_acp,
-    crawl_quotes_only,
-    crawl_recent_threads,
 )
 from app.services.activity import set_activity, clear_activity, log_debug
 
@@ -20,47 +17,32 @@ _scheduler: AsyncIOScheduler | None = None
 MAX_CONSECUTIVE_MISSES = 100
 
 
-async def _acp_available() -> bool:
-    """Check if ACP credentials are configured (env or DB)."""
-    if settings.admin_username and settings.admin_password:
-        return True
-    # Check DB for dashboard-saved credentials
+async def _clear_quote_crawl_log():
+    """Wipe stale quote_crawl_log entries on startup.
+
+    Previous ACP syncs may have marked (thread, character) pairs as
+    quote-scraped even though no quotes were actually extracted from
+    the raw BBCode.  Clearing the log lets the HTML crawl pass
+    re-extract everything cleanly.
+    """
     try:
-        from app.models.operations import get_crawl_status
         async with aiosqlite.connect(settings.database_path) as db:
-            db.row_factory = aiosqlite.Row
-            user = await get_crawl_status(db, "acp_username")
-            pwd = await get_crawl_status(db, "acp_password")
-            return bool(user and pwd)
-    except Exception:
-        return False
+            await db.execute("DELETE FROM quote_crawl_log")
+            await db.commit()
+        log_debug("Cleared quote_crawl_log for fresh extraction", level="done")
+    except Exception as e:
+        log_debug(f"Error clearing quote_crawl_log: {e}", level="error")
 
 
 async def _crawl_all_characters():
     """Crawl every account by iterating showuser=1, 2, 3...
 
-    No discovery step — just walks user IDs sequentially.  For each ID:
+    Pure HTML crawling — no ACP dependency.  For each user ID:
     lightweight httpx check first, then full Playwright profile crawl +
-    thread/quote crawl for valid accounts.  Stops after 20 consecutive
+    thread/quote crawl for valid accounts.  Stops after 100 consecutive
     misses (deleted/banned profiles).
-
-    When ACP is available, runs a bulk sync first for post dates.
     """
     excluded = settings.excluded_name_set
-
-    # ── Phase 1: ACP bulk sync (if available) ──
-    if await _acp_available():
-        log_debug("ACP configured — running bulk sync first")
-        try:
-            result = await sync_posts_from_acp(settings.database_path)
-            if "error" not in result:
-                log_debug(f"ACP sync succeeded: {result}", level="done")
-            else:
-                log_debug(f"ACP sync failed: {result.get('error')}", level="error")
-        except Exception as e:
-            log_debug(f"ACP sync error: {e}", level="error")
-
-    # ── Phase 2: Walk user IDs sequentially ──
     consecutive_misses = 0
     processed = 0
     user_id = 0
@@ -124,16 +106,6 @@ async def _crawl_all_characters():
     )
 
 
-async def _sync_posts_acp():
-    """Sync post data from JCink Admin CP SQL dump."""
-    log_debug("Starting scheduled ACP post sync")
-    try:
-        result = await sync_posts_from_acp(settings.database_path)
-        log_debug(f"ACP sync complete: {result}", level="done")
-    except Exception as e:
-        log_debug(f"Error during ACP sync: {e}", level="error")
-
-
 def start_scheduler():
     """Start the APScheduler with configured intervals."""
     global _scheduler
@@ -150,8 +122,12 @@ def start_scheduler():
 
     _scheduler.start()
 
-    # Kick off full crawl on startup
-    asyncio.get_running_loop().create_task(_crawl_all_characters())
+    # Clear stale quote log then start the full crawl
+    async def _startup():
+        await _clear_quote_crawl_log()
+        await _crawl_all_characters()
+
+    asyncio.get_running_loop().create_task(_startup())
 
     log_debug(f"Scheduler started - full crawl every {settings.crawl_threads_interval_minutes}min")
 
