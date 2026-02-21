@@ -946,24 +946,15 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                     if added:
                         quotes_added += 1
 
-            # Mark (thread, character) pairs as quote-scraped ONLY for characters
-            # who actually had posts in that thread (i.e. we attempted extraction).
-            # Previously this marked ALL characters linked to the thread, which
-            # prevented crawl_quotes_only from ever HTML-scraping threads where a
-            # character was linked but had no posts in the ACP dump.
-            acp_scraped_pairs: set[tuple[str, str]] = set()
-            for p in posts:
-                cid = p["character_id"]
-                tid = p.get("thread_id")
-                if tid and cid in tracked_chars:
-                    acp_scraped_pairs.add((tid, cid))
-            for tid, cid in acp_scraped_pairs:
-                await mark_thread_quote_scraped(db, tid, cid)
-            log_debug(f"ACP quote-scraped log: {len(acp_scraped_pairs)} (thread, character) pairs marked")
+            # NOTE: We intentionally do NOT mark threads as quote-scraped here.
+            # ACP post bodies are raw BBCode/stored format, not rendered HTML,
+            # so the bold/color-based quote extractor misses most dialog.
+            # The per-character HTML crawl pass handles proper quote extraction
+            # and marks threads as scraped once it processes the rendered HTML.
 
             await db.commit()
 
-        log_debug(f"ACP quote extraction: {quotes_added} quotes added")
+        log_debug(f"ACP quote extraction: {quotes_added} quotes added (HTML pass will catch the rest)")
 
         # Record last sync time
         async with aiosqlite.connect(db_path) as db:
