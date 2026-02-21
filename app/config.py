@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "2.7.30"
+APP_VERSION = "2.7.31"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     acp_sync_interval_minutes: int = 0  # 0 = disabled
     affiliation_field_key: str = "affiliation"
     player_field_key: str = "player"
-    excluded_names: str = "Watcher,Null,Spider,Kat,Randompercision"
+    excluded_names: str = "Watcher,Null,Spider,Kat,RandomPrecision"
     dashboard_password_b64: str = ""
     dashboard_secret_key: str = "change-me-in-production"
 
