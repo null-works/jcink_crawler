@@ -234,14 +234,10 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             for cid, cname in chars_needing_scrape.items():
                 char_quotes = []
                 for page_html in all_pages:
-                    page_quotes = extract_quotes_from_html(page_html, cname)
+                    page_quotes = extract_quotes_from_html(page_html, cname, cid)
                     char_quotes.extend(page_quotes)
-                if char_quotes:
-                    log_debug(f"Quote extraction: {cname} in thread {thread.thread_id} — {len(char_quotes)} quotes")
                 quotes_by_character[cid] = char_quotes
                 characters_to_mark_scraped.append(cid)
-        else:
-            log_debug(f"No chars needing scrape for thread {thread.thread_id} (all {len(all_characters)} already scraped)")
 
         return {
             "thread": thread,
@@ -509,7 +505,7 @@ async def crawl_single_thread(
         if cid not in already_scraped:
             char_quotes = []
             for page_html in all_pages:
-                char_quotes.extend(extract_quotes_from_html(page_html, cname))
+                char_quotes.extend(extract_quotes_from_html(page_html, cname, cid))
             quotes_by_character[cid] = char_quotes
             chars_to_mark.append(cid)
 
@@ -1084,7 +1080,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
             for cid, cname in chars_needing.items():
                 char_quotes = []
                 for page_html in all_pages:
-                    char_quotes.extend(extract_quotes_from_html(page_html, cname))
+                    char_quotes.extend(extract_quotes_from_html(page_html, cname, cid))
 
                 added_count = 0
                 for q in char_quotes:

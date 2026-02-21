@@ -2,7 +2,6 @@ import re
 from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
 from app.config import settings
-from app.services.activity import log_debug
 
 
 @dataclass
@@ -556,11 +555,16 @@ def _extract_from_post_body(post_body, min_words: int) -> list[dict]:
     return quotes
 
 
-def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
+def extract_quotes_from_html(html: str, character_name: str, character_id: str | None = None) -> list[dict]:
     """Extract dialog quotes from a thread page.
 
     Finds dialog patterns in bold and color-styled text
     but ONLY from posts authored by the specified character.
+
+    Matching uses the user ID from the author link href (showuser=N) when
+    character_id is provided, falling back to name matching.  This is
+    necessary because JCink display names in threads often differ from
+    the full profile name stored in the database.
 
     The TWAI theme uses .pr-a for post wrappers, .pr-j for the author name div,
     and .postcolor for the post body (all nested inside .pr-a).
@@ -573,24 +577,30 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
 
     post_containers = soup.select(".pr-a")
     if not post_containers:
-        log_debug(f"quote-extract: no .pr-a containers found on page for {character_name}")
         return quotes
 
-    authors_seen: set[str] = set()
     matched_posts = 0
 
     for post_container in post_containers:
-        # Check if this post is by the character — extract name from the <a>
-        # link inside .pr-j specifically, not the whole div (which may contain
-        # badges, status indicators, or group labels that break exact matching).
         name_el = post_container.select_one(".pr-j")
         if not name_el:
             continue
 
+        # Match by user ID when available (reliable), fall back to name.
+        # ID matching is preferred because JCink display names in threads
+        # often differ from the full profile name stored in the DB.
         name_link = name_el.select_one("a")
-        post_author = (name_link.get_text(strip=True) if name_link else name_el.get_text(strip=True))
-        authors_seen.add(post_author)
-        if post_author.lower() != character_name.lower():
+        is_match = False
+        if character_id and name_link:
+            href = name_link.get("href", "")
+            uid_match = re.search(r"showuser=(\d+)", href)
+            if uid_match:
+                is_match = uid_match.group(1) == character_id
+        if not is_match:
+            post_author = (name_link.get_text(strip=True) if name_link else name_el.get_text(strip=True))
+            is_match = post_author.lower() == character_name.lower()
+
+        if not is_match:
             continue
 
         matched_posts += 1
@@ -601,12 +611,6 @@ def extract_quotes_from_html(html: str, character_name: str) -> list[dict]:
             continue
 
         quotes.extend(_extract_from_post_body(post_body, min_words))
-
-    if not quotes:
-        log_debug(
-            f"quote-extract: 0 quotes for '{character_name}' — {len(post_containers)} containers, "
-            f"{matched_posts} matched posts, authors: {', '.join(sorted(authors_seen)) if authors_seen else '(none)'}"
-        )
 
     return quotes
 
