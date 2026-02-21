@@ -1,0 +1,104 @@
+---
+description: JCink Crawler — project architecture, conventions, and deployment rules
+globs:
+alwaysApply: true
+---
+
+# JCink Crawler
+
+Server-side web crawler and caching service for JCink forum data.
+Companion service to `jcink_audio` — follows identical architectural patterns.
+
+## Architecture
+
+- **FastAPI** + **uvicorn** web server (port 8944 external, 8000 internal)
+- **aiosqlite** for caching crawled data
+- **httpx** + **BeautifulSoup4** for fetching and parsing JCink pages
+- **Playwright** for JS-rendered profile pages (power grid extraction)
+- **APScheduler** for periodic crawl jobs
+- **Jinja2** + **HTMX** + **Chart.js** for the web dashboard
+- **Docker** deployment
+
+## What It Does
+
+Replaces heavy client-side JS scraping with server-side crawling:
+- Crawls character profiles for custom field data (58+ fields)
+- Tracks threads per character (ongoing/comms/complete/incomplete) by forum ID
+- Determines last poster per thread (fetches thread pages, handles pagination)
+- Extracts dialog quotes from character posts (bold text matching `"..."` pattern)
+- Extracts power grid stats (INT/STR/SPD/DUR/PWR/CMB on 1–7 scale) via Playwright
+- Tracks individual post dates for activity analysis
+- Syncs data from JCink ACP SQL dumps for accurate post dates
+- Serves all data via REST API for instant client-side consumption
+- Full web dashboard with character browser, thread browser, player analytics, and admin panel
+
+## Forum Config
+
+- Base URL: `https://therewasanidea.jcink.net`
+- Forum IDs: Complete=49, Incomplete=59, Comms=31
+- Excluded forums configured in docker-compose.yml (28 excluded by default)
+
+## Key Files
+
+### Core
+- `app/main.py` — FastAPI app entry point, lifespan events (DB init, scheduler start/stop)
+- `app/config.py` — Pydantic settings with env var mapping, version/build timestamp
+- `app/database.py` — SQLite schema (8 tables, 6 indices)
+
+### Models
+- `app/models/character.py` — Pydantic response models (CharacterSummary, ClaimsSummary, ThreadInfo, Quote, etc.)
+- `app/models/operations.py` — Database CRUD (upsert_character, get_character, add_quote, replace_thread_posts, etc.)
+- `app/models/dashboard_queries.py` — Complex search/filter/aggregation queries for dashboard views
+
+### Routes
+- `app/routes/character.py` — REST API endpoints
+- `app/routes/dashboard.py` — Dashboard HTML routes + HTMX partial endpoints
+
+### Services
+- `app/services/crawler.py` — Core crawl orchestration (profiles, threads, quotes, ACP sync)
+- `app/services/parser.py` — HTML parsing with BeautifulSoup (700+ lines)
+- `app/services/fetcher.py` — HTTP client abstraction (httpx + Playwright for JS rendering)
+- `app/services/scheduler.py` — APScheduler periodic jobs
+- `app/services/acp_client.py` — JCink ACP SQL dump client for accurate post date tracking
+- `app/services/activity.py` — In-memory crawl activity state for live dashboard indicator
+
+### Web Assets
+- `app/static/css/dracula.css` — Color scheme variables (Dracula dark theme)
+- `app/static/css/components.css` — Component styles (buttons, cards, tables, badges, power grid, etc.)
+- `app/static/css/layout.css` — Grid/flexbox page structure
+- `app/static/js/app.js` — Chart.js integration, HTMX enhancements
+- `app/templates/` — 22 Jinja2 templates (base, 9 pages, 3 components, 9 HTMX partials)
+
+### Other
+- `cli.py` — Rich-powered CLI client
+- `tui.py` — TUI dashboard
+- `setup_dashboard.py` — Generate secure dashboard secret key
+
+## Running
+
+```bash
+docker compose up --build
+```
+
+## Testing
+
+```bash
+pytest
+```
+
+## Known Considerations
+
+This is a single-deployment service for `imagehut.ch` targeting one JCink forum.
+Many "best practice" concerns (scalability, hardcoded values, connection pooling) are
+intentionally accepted given that context.
+
+**Unauthenticated API endpoints:** The crawl trigger (`POST /api/crawl/trigger`) and
+register (`POST /api/character/register`) endpoints have no authentication. This is a
+known tradeoff — the port is not publicly advertised and the semaphore caps concurrent
+requests, so the blast radius is low.
+
+**CORS is wide open:** `allow_origins=["*"]` with `allow_credentials=True`. Acceptable
+for now since the API serves an embedded widget on a known site.
+
+**Dashboard secret key:** Defaults to `"change-me-in-production"` in `config.py`. Run
+`python setup_dashboard.py` on the host (not inside Docker) to generate a real one.

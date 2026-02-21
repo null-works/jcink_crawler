@@ -1,0 +1,53 @@
+---
+description: Full API endpoint reference — REST, dashboard HTML, and HTMX partials
+globs:
+  - app/routes/**
+alwaysApply: false
+---
+
+# API Endpoints
+
+## REST API
+- `GET /health` — Health check
+- `GET /api/status` — Service stats (character/thread/quote counts, last crawl times, current activity)
+- `GET /api/characters` — List all tracked characters with thread counts
+- `GET /api/claims` — Bulk claims data (all characters with face_claim, species, codename, alias, affiliation, connections, thread_counts)
+- `GET /api/characters/fields?ids=42,55&fields=square_image,short_quote` — Batch profile fields for multiple characters
+- `GET /api/character/{id}` — Full character profile + threads + fields
+- `GET /api/character/{id}/threads` — Categorized thread list
+- `GET /api/character/{id}/thread-counts` — Lightweight counts only
+- `GET /api/character/{id}/quote` — Random quote
+- `GET /api/character/{id}/quotes` — All quotes
+- `GET /api/character/{id}/quote-count` — Total quote count
+- `POST /api/character/register` — Register a character for tracking
+- `POST /api/crawl/trigger` — Manually trigger a crawl (threads, profile, discover, all-threads, all-profiles, sync-posts, crawl-quotes)
+- `POST /api/webhook/activity` — Theme webhook for real-time updates (new_post, new_topic, profile_edit)
+
+## Dashboard HTML Routes
+- `GET /dashboard` — Overview page
+- `GET /characters` — Character list
+- `GET /character/{id}` — Character detail
+- `GET /threads` — Thread browser
+- `GET /quotes` — Quote browser
+- `GET /players` — Player list
+- `GET /player/{name}` — Player detail
+- `GET /admin` — Admin panel
+- `GET /login`, `POST /login`, `GET /logout` — Session auth
+
+## HTMX Partials
+- `GET /htmx/characters`, `/htmx/players`, `/htmx/threads`, `/htmx/quotes` — Table rows
+- `GET /htmx/activity`, `/htmx/stats`, `/htmx/overview-charts` — Dashboard widgets
+- `GET /htmx/character/{id}/threads`, `/htmx/character/{id}/quotes` — Detail sections
+- `POST /htmx/register`, `/htmx/crawl`, `/htmx/acp-credentials`, `/htmx/acp-sync` — Admin actions
+
+## Database Schema
+
+8 tables:
+1. **characters** — Core entity (id, name, profile_url, group_name, avatar_url, crawl timestamps)
+2. **profile_fields** — Key/value store for 58+ custom fields (UNIQUE character_id + field_key)
+3. **threads** — Thread metadata (id, title, url, forum_id, category, last_poster info)
+4. **character_threads** — Many-to-many with category and post_count
+5. **quotes** — Dialog quotes (UNIQUE character_id + quote_text)
+6. **quote_crawl_log** — Tracks which threads have been quote-scraped
+7. **posts** — Individual post records (character_id, thread_id, post_date) for activity tracking
+8. **crawl_status** — Key/value store for crawl state (ACP credentials, last sync time)
