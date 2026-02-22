@@ -1091,6 +1091,26 @@ select.form-input {
 }
 
 /* === Hero Image Gallery === */
+.hero-gallery-rect {
+    margin-bottom: 1rem;
+}
+
+.hero-img-rect {
+    width: 100%;
+    height: auto;
+    max-height: 200px;
+}
+
+.hero-placeholder-rect {
+    width: 100%;
+    height: 120px;
+}
+
+.hero-gallery-squares {
+    display: flex;
+    gap: 1rem;
+}
+
 .hero-gallery {
     display: flex;
     flex-wrap: wrap;

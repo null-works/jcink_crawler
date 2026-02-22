@@ -121,8 +121,25 @@
 <div class="profile-columns">
     <div class="card profile-col-graphics">
         <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Graphics</h3>
-        <div class="hero-gallery">
-            {% for key, label, api_key in image_fields %}
+        {# Rectangle / GIF on top, full width #}
+        <div class="hero-gallery-rect" data-api-call="GET /api/characters/fields?ids={{ character.id }}&amp;fields=rectangle_gif">
+            {% if fields.get('rectangle_gif') %}
+            <img src="{{ fields['rectangle_gif'] }}" alt="Rectangle / GIF" class="hero-gallery-img hero-img-rect" loading="lazy">
+            {% else %}
+            <div class="hero-gallery-placeholder hero-placeholder-rect">
+                <span>No Rectangle / GIF</span>
+            </div>
+            {% endif %}
+            <div class="hero-gallery-label">Rectangle / GIF</div>
+        </div>
+        {# Three square images below #}
+        {% set square_fields = [
+            ('portrait_image', 'Portrait Image', 'portrait_image'),
+            ('square_image', 'Square Image', 'square_image'),
+            ('secondary_square_image', 'Secondary Square', 'secondary_square_image'),
+        ] %}
+        <div class="hero-gallery-squares">
+            {% for key, label, api_key in square_fields %}
             <div class="hero-gallery-item" data-api-call="GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}">
                 {% if fields.get(key) %}
                 <img src="{{ fields[key] }}" alt="{{ label }}" class="hero-gallery-img" loading="lazy">
@@ -132,10 +149,6 @@
                 </div>
                 {% endif %}
                 <div class="hero-gallery-label">{{ label }}</div>
-                <div class="hero-gallery-tooltip">
-                    <code>GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}</code>
-                    <span class="hero-gallery-tip-sub">Response: <code>{ "{{ character.id }}": { "{{ api_key }}": "..." } }</code></span>
-                </div>
             </div>
             {% endfor %}
         </div>
