@@ -799,17 +799,20 @@ class TestParseProfileHeroImages:
 
 
     def test_extracts_images_from_pf_static_skin(self):
-        """The static (pf-*) skin uses pf-c, pf-p, pf-w for images."""
+        """The static (pf-*) skin uses pf-c for square, pf-p for secondary square,
+        pf-w for rectangle, and #mp-e (inside .mp-c) for portrait."""
         html = """
         <html>
         <div class="pf-e">Jessica Jones</div>
         <div class="pf-b"><div class="pf-c" style="background: url(https://img.com/square.gif), url(https://fallback.com/img.jpg);"></div></div>
-        <div class="pf-n"><div class="pf-o"><div class="pf-p" style="background: url(https://img.com/portrait.jpg), url(https://fallback.com/img.jpg);"></div></div></div>
+        <div class="pf-n"><div class="pf-o"><div class="pf-p" style="background: url(https://img.com/secondary.jpg), url(https://fallback.com/img.jpg);"></div></div></div>
         <div class="pf-v"><div class="pf-w" style="background: url(https://img.com/rect.gif);"></div></div>
+        <div class="mp-c"><div class="mp-d"><div id="mp-e" style="background: url(https://img.com/portrait.jpg);"></div></div></div>
         </html>
         """
         profile = parse_profile_page(html, "3")
         assert profile.fields["square_image"] == "https://img.com/square.gif"
+        assert profile.fields["secondary_square_image"] == "https://img.com/secondary.jpg"
         assert profile.fields["portrait_image"] == "https://img.com/portrait.jpg"
         assert profile.fields["rectangle_gif"] == "https://img.com/rect.gif"
 
@@ -819,11 +822,14 @@ class TestParseProfileHeroImages:
         <html>
         <h1 class="profile-name">Test</h1>
         <div class="hero-portrait" style="background-image: url('https://img.com/hero-portrait.jpg');"></div>
-        <div class="pf-p" style="background: url(https://img.com/pf-portrait.jpg);"></div>
+        <div class="mp-c"><div class="mp-d"><div id="mp-e" style="background: url(https://img.com/mp-portrait.jpg);"></div></div></div>
+        <div class="hero-sq-bot" style="background-image: url('https://img.com/hero-secondary.jpg');"></div>
+        <div class="pf-p" style="background: url(https://img.com/pf-secondary.jpg);"></div>
         </html>
         """
         profile = parse_profile_page(html, "42")
         assert profile.fields["portrait_image"] == "https://img.com/hero-portrait.jpg"
+        assert profile.fields["secondary_square_image"] == "https://img.com/hero-secondary.jpg"
 
 
 class TestParseProfileOOCFields:

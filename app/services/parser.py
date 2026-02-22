@@ -334,9 +334,9 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     # The authenticated custom template uses hero-* classes; the static
     # skin (pf-*) is the server-rendered fallback.  Try both.
     _IMAGE_SELECTORS: list[tuple[list[str], str]] = [
-        ([".hero-portrait", ".pf-p"], "portrait_image"),
+        ([".hero-portrait", "#mp-e"], "portrait_image"),
         ([".hero-sq-top", ".pf-c"], "square_image"),
-        ([".hero-sq-bot"], "secondary_square_image"),
+        ([".hero-sq-bot", ".pf-p"], "secondary_square_image"),
         ([".hero-rect", ".pf-w"], "rectangle_gif"),
     ]
     for selectors, key in _IMAGE_SELECTORS:
