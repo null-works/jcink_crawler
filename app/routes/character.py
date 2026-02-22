@@ -30,7 +30,7 @@ from app.services import (
     register_character,
 )
 from app.services.crawler import crawl_single_thread, sync_posts_from_acp, crawl_quotes_only
-from app.services.scheduler import _crawl_all_characters
+from app.services.scheduler import _crawl_all_characters, _crawl_all_profiles
 from app.services.activity import get_activity
 
 router = APIRouter()
@@ -230,9 +230,13 @@ async def trigger_crawl(
     background_tasks: BackgroundTasks,
 ):
     """Manually trigger a crawl for a character."""
-    if data.crawl_type in ("discover", "all-threads", "all-profiles"):
+    if data.crawl_type in ("discover", "all-threads"):
         background_tasks.add_task(_crawl_all_characters)
         return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-characters"}
+
+    if data.crawl_type in ("all-profiles", "profiles"):
+        background_tasks.add_task(_crawl_all_profiles)
+        return {"status": "crawl_queued", "character_id": None, "crawl_type": "all-profiles"}
 
     if data.crawl_type == "sync-posts":
         background_tasks.add_task(sync_posts_from_acp, settings.database_path)
@@ -254,7 +258,7 @@ async def trigger_crawl(
             crawl_character_profile, data.character_id, settings.database_path
         )
     else:
-        raise HTTPException(status_code=400, detail="Invalid crawl_type. Use 'threads', 'profile', 'discover', 'sync-posts', or 'crawl-quotes'")
+        raise HTTPException(status_code=400, detail="Invalid crawl_type. Use 'threads', 'profile', 'discover', 'all-profiles', 'sync-posts', or 'crawl-quotes'")
 
     return {
         "status": "crawl_queued",

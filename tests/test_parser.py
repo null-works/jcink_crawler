@@ -743,6 +743,60 @@ class TestParseProfileHeroImages:
         profile = parse_profile_page(html, "42")
         assert profile.fields["portrait_image"] == "https://img.com/portrait.jpg"
 
+    def test_real_twai_hero_structure(self):
+        """Test with exact HTML structure from the TWAI theme: multi-class divs
+        inside .profile-hero-images container."""
+        html = """
+        <html>
+        <title>Viewing Profile -> Aaron Fischer</title>
+        <div class="profile-app group-6">
+          <header class="profile-hero">
+            <div class="profile-hero-images">
+              <div class="profile-hero-img hero-rect" style="background-image: url('https://i.imgur.com/rectgif.gif');"></div>
+              <div class="profile-hero-img hero-sq-top" style="background-image: url('https://i.imgur.com/square.png');"></div>
+              <div class="profile-hero-img hero-sq-bot" style="background-image: url('https://i.imgur.com/square2.png');"></div>
+              <div class="profile-hero-img hero-portrait" style="background-image: url('https://i.imgur.com/portrait.png');"></div>
+            </div>
+            <div class="profile-hero-info">
+              <h1 class="profile-name" data-text="Aaron Fischer">Aaron Fischer</h1>
+              <h2 class="profile-codename">Captain America</h2>
+            </div>
+          </header>
+          <aside class="profile-sidebar">
+            <div class="profile-card glass profile-dossier-card">
+              <dl class="profile-dossier">
+                <dt>Face Claim</dt><dd>Some Actor</dd>
+                <dt>Species</dt><dd>human</dd>
+              </dl>
+            </div>
+          </aside>
+          <div class="profile-short-quote">No more running.</div>
+        </div>
+        </html>
+        """
+        profile = parse_profile_page(html, "91")
+        assert profile.name == "Aaron Fischer"
+        assert profile.fields["portrait_image"] == "https://i.imgur.com/portrait.png"
+        assert profile.fields["square_image"] == "https://i.imgur.com/square.png"
+        assert profile.fields["secondary_square_image"] == "https://i.imgur.com/square2.png"
+        assert profile.fields["rectangle_gif"] == "https://i.imgur.com/rectgif.gif"
+        assert profile.fields["short_quote"] == "No more running."
+        assert profile.fields["face claim"] == "Some Actor"
+        assert profile.fields["codename"] == "Captain America"
+
+    def test_empty_background_image_url_skipped(self):
+        """Empty url('') should NOT produce a field entry."""
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="hero-portrait" style="background-image: url('');"></div>
+        <div class="hero-rect" style="background-image: url('https://img.com/rect.gif');"></div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert "portrait_image" not in profile.fields
+        assert profile.fields["rectangle_gif"] == "https://img.com/rect.gif"
+
 
 class TestParseProfileOOCFields:
     """Test extraction of OOC alias, short quote, and connections."""
