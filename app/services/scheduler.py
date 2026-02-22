@@ -106,6 +106,55 @@ async def _crawl_all_characters():
     )
 
 
+async def _crawl_all_profiles():
+    """Re-crawl profiles for all tracked characters.
+
+    Lightweight alternative to _crawl_all_characters — only re-fetches
+    profile pages and updates profile fields (hero images, dossier data,
+    power grid, etc.).  Skips threads entirely.
+
+    Iterates over characters already in the database rather than brute-
+    forcing user IDs, so it's fast even on boards with sparse ID ranges.
+    """
+    log_debug("Starting profile-only re-crawl for all tracked characters")
+    set_activity("Re-crawling all profiles")
+
+    async with aiosqlite.connect(settings.database_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT id, name FROM characters ORDER BY id")
+        characters = [(row["id"], row["name"]) for row in await cursor.fetchall()]
+
+    if not characters:
+        clear_activity()
+        log_debug("No characters to re-crawl")
+        return
+
+    total = len(characters)
+    processed = 0
+    errors = 0
+
+    for cid, name in characters:
+        processed += 1
+        set_activity(
+            f"Re-crawling profile {processed}/{total}: {name}",
+            character_id=cid,
+            character_name=name,
+        )
+        try:
+            result = await crawl_character_profile(cid, settings.database_path)
+            fields_count = result.get("fields_count", 0)
+            log_debug(f"Profile re-crawl {processed}/{total}: {name} ({cid}) — {fields_count} fields")
+        except Exception as e:
+            errors += 1
+            log_debug(f"Error re-crawling profile for {name} ({cid}): {e}", level="error")
+
+    clear_activity()
+    log_debug(
+        f"Profile re-crawl complete: {processed} characters, {errors} errors",
+        level="done",
+    )
+
+
 def start_scheduler():
     """Start the APScheduler with configured intervals."""
     global _scheduler

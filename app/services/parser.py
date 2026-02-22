@@ -330,19 +330,24 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         if value and value != "No Information":
             fields[title] = value
 
-    # Extract hero images from background-image styles (fields 7, 8, 21, 9)
-    for selector, key in [
-        (".hero-portrait", "portrait_image"),
-        (".hero-sq-top", "square_image"),
-        (".hero-sq-bot", "secondary_square_image"),
-        (".hero-rect", "rectangle_gif"),
-    ]:
-        el = soup.select_one(selector)
-        if el:
-            style = el.get("style", "")
-            img_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
-            if img_match:
-                fields[key] = img_match.group(1)
+    # Extract hero images from background-image / background styles.
+    # The authenticated custom template uses hero-* classes; the static
+    # skin (pf-*) is the server-rendered fallback.  Try both.
+    _IMAGE_SELECTORS: list[tuple[list[str], str]] = [
+        ([".hero-portrait", "#mp-e"], "portrait_image"),
+        ([".hero-sq-top", ".pf-c"], "square_image"),
+        ([".hero-sq-bot", ".pf-p"], "secondary_square_image"),
+        ([".hero-rect", ".pf-w"], "rectangle_gif"),
+    ]
+    for selectors, key in _IMAGE_SELECTORS:
+        for selector in selectors:
+            el = soup.select_one(selector)
+            if el:
+                style = el.get("style", "")
+                img_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
+                if img_match:
+                    fields[key] = img_match.group(1)
+                    break
 
     # Extract OOC alias from .profile-ooc-footer (field_1)
     ooc_footer = soup.select_one(".profile-ooc-footer")
@@ -369,20 +374,17 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     # Each stat has a .profile-stat-label (INT/STR/etc) and a
     # .profile-stat-fill with data-value="N" holding the numeric value.
     profile_stats = soup.select("div.profile-stat")
-    print(f"[Parser] Power grid: found {len(profile_stats)} div.profile-stat elements")
     for stat in profile_stats:
         label_el = stat.select_one(".profile-stat-label")
         fill_el = stat.select_one(".profile-stat-fill")
         if not label_el or not fill_el:
-            print(f"[Parser] Power grid: stat element missing label or fill: {stat}")
             continue
         label = label_el.get_text(strip=True).lower()
         value = (fill_el.get("data-value") or "").strip()
-        print(f"[Parser] Power grid: {label} = '{value}' (data-value attr)")
         if value and value != "No Information":
             fields[f"power grid - {label}"] = value
 
-    print(f"[Parser] All extracted field keys for {user_id}: {list(fields.keys())}")
+    print(f"[Parser] Profile {user_id}: {len(fields)} fields extracted")
 
     return ParsedProfile(
         user_id=user_id,

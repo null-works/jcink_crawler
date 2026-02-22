@@ -55,8 +55,7 @@ class TestCrawlAllCharacters:
         """Should stop after MAX_CONSECUTIVE_MISSES board-message responses."""
         with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, return_value=None) as mock_check, \
              patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock) as mock_profile, \
-             patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
-             patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False):
+             patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads:
             await _crawl_all_characters()
             # Should have checked 100 IDs then stopped
             assert mock_check.await_count == 100
@@ -71,7 +70,6 @@ class TestCrawlAllCharacters:
         with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects) as mock_check, \
              patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock) as mock_profile, \
              patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
-             patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False), \
              patch("asyncio.sleep", new_callable=AsyncMock):
             await _crawl_all_characters()
             assert mock_profile.await_count == 3
@@ -85,7 +83,6 @@ class TestCrawlAllCharacters:
         with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects) as mock_check, \
              patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock), \
              patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock), \
-             patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False), \
              patch("asyncio.sleep", new_callable=AsyncMock):
             await _crawl_all_characters()
             # 5 misses + 1 valid + 100 misses = 106 checks
@@ -99,7 +96,6 @@ class TestCrawlAllCharacters:
         with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects), \
              patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock) as mock_profile, \
              patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
-             patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False), \
              patch("asyncio.sleep", new_callable=AsyncMock):
             await _crawl_all_characters()
             # Only Alpha should be crawled, Watcher is excluded
@@ -114,7 +110,6 @@ class TestCrawlAllCharacters:
              patch("app.services.scheduler.crawl_character_profile", new_callable=AsyncMock,
                    side_effect=[Exception("fail"), {"name": "Beta"}]) as mock_profile, \
              patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
-             patch("app.services.scheduler._acp_available", new_callable=AsyncMock, return_value=False), \
              patch("asyncio.sleep", new_callable=AsyncMock):
             await _crawl_all_characters()
             assert mock_profile.await_count == 2

@@ -313,3 +313,51 @@ class TestBatchFieldsEndpoint:
     async def test_batch_fields_missing_ids_param(self, client):
         response = await client.get("/api/characters/fields")
         assert response.status_code == 422
+
+    async def test_batch_fields_hero_images(self, client):
+        """Hero image fields (portrait_image, rectangle_gif, etc.) should be
+        returned by the batch fields endpoint when stored via upsert_profile_field."""
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(db, "91", "Aaron Fischer", "https://example.com/91")
+            await upsert_profile_field(db, "91", "portrait_image", "https://i.imgur.com/portrait91.png")
+            await upsert_profile_field(db, "91", "rectangle_gif", "https://i.imgur.com/rect91.gif")
+            await upsert_profile_field(db, "91", "square_image", "https://i.imgur.com/sq91.png")
+            await upsert_profile_field(db, "91", "secondary_square_image", "https://i.imgur.com/sq2_91.png")
+            await upsert_profile_field(db, "91", "short_quote", "No more running.")
+            await upsert_character(db, "44", "Adam Warlock", "https://example.com/44")
+            await upsert_profile_field(db, "44", "portrait_image", "https://i.imgur.com/portrait44.png")
+            await db.commit()
+
+        response = await client.get(
+            "/api/characters/fields?ids=91,44&fields=portrait_image,rectangle_gif,short_quote"
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["91"]["portrait_image"] == "https://i.imgur.com/portrait91.png"
+        assert data["91"]["rectangle_gif"] == "https://i.imgur.com/rect91.gif"
+        assert data["91"]["short_quote"] == "No more running."
+        assert data["44"]["portrait_image"] == "https://i.imgur.com/portrait44.png"
+        assert "rectangle_gif" not in data["44"]
+
+
+class TestCrawlTriggerAllProfiles:
+    async def test_trigger_all_profiles(self, client):
+        """all-profiles crawl type should trigger profile-only re-crawl."""
+        with patch("app.routes.character._crawl_all_profiles", new_callable=AsyncMock):
+            response = await client.post("/api/crawl/trigger", json={
+                "crawl_type": "all-profiles",
+            })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "crawl_queued"
+        assert data["crawl_type"] == "all-profiles"
+
+    async def test_trigger_profiles_alias(self, client):
+        """'profiles' should work as an alias for 'all-profiles'."""
+        with patch("app.routes.character._crawl_all_profiles", new_callable=AsyncMock):
+            response = await client.post("/api/crawl/trigger", json={
+                "crawl_type": "profiles",
+            })
+        assert response.status_code == 200
+        assert response.json()["crawl_type"] == "all-profiles"
