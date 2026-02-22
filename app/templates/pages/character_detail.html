@@ -113,25 +113,27 @@
     ('secondary_square_image', 'Secondary Square', 'secondary_square_image'),
     ('rectangle_gif', 'Rectangle / GIF', 'rectangle_gif'),
 ] %}
-{% if fields.get('portrait_image') or fields.get('square_image') or fields.get('secondary_square_image') or fields.get('rectangle_gif') %}
 <div class="card">
     <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Graphics</h3>
     <div class="hero-gallery">
         {% for key, label, api_key in image_fields %}
-        {% if fields.get(key) %}
         <div class="hero-gallery-item" data-api-call="GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}">
+            {% if fields.get(key) %}
             <img src="{{ fields[key] }}" alt="{{ label }}" class="hero-gallery-img" loading="lazy">
+            {% else %}
+            <div class="hero-gallery-placeholder">
+                <span>No {{ label }}</span>
+            </div>
+            {% endif %}
             <div class="hero-gallery-label">{{ label }}</div>
             <div class="hero-gallery-tooltip">
                 <code>GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}</code>
                 <span class="hero-gallery-tip-sub">Response: <code>{ "{{ character.id }}": { "{{ api_key }}": "..." } }</code></span>
             </div>
         </div>
-        {% endif %}
         {% endfor %}
     </div>
 </div>
-{% endif %}
 
 {# Profile fields (excluding power grid and image fields) #}
 {% set image_keys = ['portrait_image', 'square_image', 'secondary_square_image', 'rectangle_gif'] %}

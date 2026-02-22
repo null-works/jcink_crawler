@@ -1103,6 +1103,19 @@ select.form-input {
     border-color: var(--purple);
 }
 
+.hero-gallery-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 140px;
+    height: 140px;
+    border-radius: var(--radius);
+    border: 2px dashed var(--current);
+    color: var(--comment);
+    font-size: 0.75rem;
+    text-align: center;
+}
+
 .hero-gallery-label {
     margin-top: 0.35rem;
     font-size: 0.75rem;
