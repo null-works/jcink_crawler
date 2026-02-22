@@ -1,4 +1,6 @@
 import asyncio
+import re
+
 import httpx
 from app.config import settings
 
@@ -140,8 +142,9 @@ async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", ti
     """Fetch a page using Playwright to execute JS and return rendered HTML.
 
     Used for profile pages where the power grid card is built client-side.
-    Authenticates as the bot account so the browser uses the correct skin
-    (Development) which contains the power grid template.
+    Transfers auth cookies from the httpx client (which already handles login
+    via a direct POST) into the Playwright browser context so it sees the
+    authenticated skin with the custom profile template.
     Falls back to regular httpx fetch if Playwright fails.
 
     Args:
@@ -152,25 +155,32 @@ async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", ti
     try:
         from playwright.async_api import async_playwright
 
+        # Ensure httpx has authenticated so we can transfer its cookies
+        await ensure_authenticated()
+        client = await get_client()
+
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            try:
-                # Authenticate so the browser gets the bot's skin preference
-                if settings.bot_username and settings.bot_password:
-                    login_url = f"{settings.forum_base_url}/index.php?act=Login&CODE=01"
-                    await page.goto(login_url, wait_until="domcontentloaded", timeout=timeout_ms)
-                    try:
-                        await page.fill('input[name="UserName"]', settings.bot_username)
-                        await page.fill('input[name="PassWord"]', settings.bot_password)
-                        await page.click('input[type="submit"][value*="Log"]')
-                        await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
-                        print(f"[Fetcher] Playwright authenticated as {settings.bot_username}")
-                    except Exception as e:
-                        print(f"[Fetcher] Playwright login failed: {e}, continuing as guest")
+            context = await browser.new_context()
 
+            # Transfer auth cookies from httpx to Playwright
+            pw_cookies = []
+            for name, value in client.cookies.items():
+                pw_cookies.append({
+                    "name": name,
+                    "value": value,
+                    "url": settings.forum_base_url,
+                })
+            if pw_cookies:
+                await context.add_cookies(pw_cookies)
+                print(f"[Fetcher] Transferred {len(pw_cookies)} auth cookies to Playwright: {[c['name'] for c in pw_cookies]}")
+            else:
+                print("[Fetcher] No auth cookies to transfer, Playwright will browse as guest")
+
+            page = await context.new_page()
+            try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                # Wait for JS to render the power grid card
+                # Wait for JS to render the custom profile template
                 try:
                     await page.wait_for_selector(wait_selector, timeout=timeout_ms)
                     print(f"[Fetcher] Playwright found '{wait_selector}' on {url}")
@@ -181,36 +191,14 @@ async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", ti
                 await page.wait_for_timeout(1000)
                 html = await page.content()
 
-                # Dump HTML snapshot for debugging
-                import pathlib
-                snap_path = pathlib.Path("/app/debug_snapshot.html")
-                snap_path.write_text(html[:200_000], encoding="utf-8")
-                print(f"[Fetcher] HTML snapshot saved to {snap_path} ({len(html)} chars)")
-
-                # Diagnostic: log what elements exist for debugging power grid
+                # Diagnostic: log what elements exist for debugging
                 from bs4 import BeautifulSoup
                 diag_soup = BeautifulSoup(html, "html.parser")
                 stat_count = len(diag_soup.select("div.profile-stat"))
-                pf_k_count = len(diag_soup.select("div.pf-k"))
-                pf_ab_count = len(diag_soup.select("div.pf-ab"))
-                dossier = diag_soup.select_one("dl.profile-dossier")
-                dossier_keys = []
-                if dossier:
-                    dossier_keys = [dt.get_text(strip=True) for dt in dossier.select("dt")]
-                pf_ab_titles = [el.get("title", "") for el in diag_soup.select("div.pf-ab")]
+                hero_count = len(diag_soup.find_all(attrs={"class": re.compile(r"hero", re.IGNORECASE)}))
+                bg_count = len(diag_soup.find_all(style=re.compile(r"background-image", re.IGNORECASE)))
                 print(f"[Fetcher] Rendered HTML diagnostics for {url}:")
-                print(f"  div.profile-stat count: {stat_count}")
-                print(f"  div.pf-k count: {pf_k_count}")
-                print(f"  div.pf-ab count: {pf_ab_count}")
-                if dossier_keys:
-                    print(f"  Dossier keys: {dossier_keys}")
-                if pf_ab_titles:
-                    print(f"  pf-ab titles: {pf_ab_titles}")
-                # Check for any elements containing power grid stat names
-                page_text = diag_soup.get_text()
-                for stat_name in ["INT", "STR", "SPD", "DUR", "PWR", "CMB"]:
-                    if stat_name in page_text:
-                        print(f"  Found '{stat_name}' in page text")
+                print(f"  div.profile-stat: {stat_count}, hero elements: {hero_count}, background-image elements: {bg_count}")
 
                 return html
             finally:
