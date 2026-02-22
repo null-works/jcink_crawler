@@ -343,6 +343,11 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
             img_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
             if img_match:
                 fields[key] = img_match.group(1)
+                print(f"[Parser] Found {key}: {img_match.group(1)[:80]}...")
+            else:
+                print(f"[Parser] {selector} found but no background-image URL in style: {style[:120]}")
+        else:
+            print(f"[Parser] {selector} NOT found in HTML")
 
     # Extract OOC alias from .profile-ooc-footer (field_1)
     ooc_footer = soup.select_one(".profile-ooc-footer")
