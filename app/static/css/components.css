@@ -1092,7 +1092,9 @@ select.form-input {
 
 /* === Hero Image Gallery === */
 .hero-gallery-rect {
+    position: relative;
     margin-bottom: 1rem;
+    cursor: pointer;
 }
 
 .hero-gallery-img.hero-img-rect {
@@ -1101,6 +1103,15 @@ select.form-input {
     object-fit: cover;
     border-radius: var(--radius);
     border: 2px solid var(--current);
+    transition: border-color 0.2s;
+}
+
+.hero-gallery-rect:hover .hero-img-rect {
+    border-color: var(--purple);
+}
+
+.hero-gallery-rect:hover .hero-gallery-tooltip {
+    display: block;
 }
 
 .hero-placeholder-rect {

@@ -145,6 +145,10 @@
             </div>
             {% endif %}
             <div class="hero-gallery-label">Rectangle / GIF</div>
+            <div class="hero-gallery-tooltip">
+                <code>GET /api/characters/fields?ids={{ character.id }}&amp;fields=rectangle_gif</code>
+                <span class="hero-gallery-tip-sub">Response: <code>{ "{{ character.id }}": { "rectangle_gif": "..." } }</code></span>
+            </div>
         </div>
         {# Three square images below #}
         {% set square_fields = [
@@ -163,6 +167,10 @@
                 </div>
                 {% endif %}
                 <div class="hero-gallery-label">{{ label }}</div>
+                <div class="hero-gallery-tooltip">
+                    <code>GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}</code>
+                    <span class="hero-gallery-tip-sub">Response: <code>{ "{{ character.id }}": { "{{ api_key }}": "..." } }</code></span>
+                </div>
             </div>
             {% endfor %}
         </div>
