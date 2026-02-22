@@ -106,10 +106,39 @@
     {% endif %}
 </div>
 
-{# Profile fields (excluding power grid) #}
+{# Hero images gallery #}
+{% set image_fields = [
+    ('portrait_image', 'Portrait Image', 'portrait_image'),
+    ('square_image', 'Square Image', 'square_image'),
+    ('secondary_square_image', 'Secondary Square', 'secondary_square_image'),
+    ('rectangle_gif', 'Rectangle / GIF', 'rectangle_gif'),
+] %}
+{% set has_images = image_fields|selectattr(0, 'in', fields)|list %}
+{% if has_images %}
+<div class="card">
+    <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Graphics</h3>
+    <div class="hero-gallery">
+        {% for key, label, api_key in image_fields %}
+        {% if fields.get(key) %}
+        <div class="hero-gallery-item" data-api-call="GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}">
+            <img src="{{ fields[key] }}" alt="{{ label }}" class="hero-gallery-img" loading="lazy">
+            <div class="hero-gallery-label">{{ label }}</div>
+            <div class="hero-gallery-tooltip">
+                <code>GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}</code>
+                <span class="hero-gallery-tip-sub">Response: <code>{ "{{ character.id }}": { "{{ api_key }}": "..." } }</code></span>
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# Profile fields (excluding power grid and image fields) #}
+{% set image_keys = ['portrait_image', 'square_image', 'secondary_square_image', 'rectangle_gif'] %}
 {% set regular_fields = {} %}
 {% for key, value in fields.items() %}
-    {% if key not in pg_keys %}{% if regular_fields.update({key: value}) %}{% endif %}{% endif %}
+    {% if key not in pg_keys and key not in image_keys %}{% if regular_fields.update({key: value}) %}{% endif %}{% endif %}
 {% endfor %}
 {% if regular_fields %}
 <div class="card">
