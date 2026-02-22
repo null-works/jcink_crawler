@@ -1076,6 +1076,20 @@ select.form-input {
     border: 1px solid rgba(255, 85, 85, 0.5);
 }
 
+/* === Profile Two-Column Layout === */
+.profile-columns {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1rem;
+    align-items: start;
+}
+
+@media (max-width: 768px) {
+    .profile-columns {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* === Hero Image Gallery === */
 .hero-gallery {
     display: flex;

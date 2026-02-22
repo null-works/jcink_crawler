@@ -106,54 +106,55 @@
     {% endif %}
 </div>
 
-{# Hero images gallery #}
+{# Profile: Graphics (left) + Fields (right) #}
 {% set image_fields = [
     ('portrait_image', 'Portrait Image', 'portrait_image'),
     ('square_image', 'Square Image', 'square_image'),
     ('secondary_square_image', 'Secondary Square', 'secondary_square_image'),
     ('rectangle_gif', 'Rectangle / GIF', 'rectangle_gif'),
 ] %}
-<div class="card">
-    <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Graphics</h3>
-    <div class="hero-gallery">
-        {% for key, label, api_key in image_fields %}
-        <div class="hero-gallery-item" data-api-call="GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}">
-            {% if fields.get(key) %}
-            <img src="{{ fields[key] }}" alt="{{ label }}" class="hero-gallery-img" loading="lazy">
-            {% else %}
-            <div class="hero-gallery-placeholder">
-                <span>No {{ label }}</span>
-            </div>
-            {% endif %}
-            <div class="hero-gallery-label">{{ label }}</div>
-            <div class="hero-gallery-tooltip">
-                <code>GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}</code>
-                <span class="hero-gallery-tip-sub">Response: <code>{ "{{ character.id }}": { "{{ api_key }}": "..." } }</code></span>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-</div>
-
-{# Profile fields (excluding power grid and image fields) #}
 {% set image_keys = ['portrait_image', 'square_image', 'secondary_square_image', 'rectangle_gif'] %}
 {% set regular_fields = {} %}
 {% for key, value in fields.items() %}
     {% if key not in pg_keys and key not in image_keys %}{% if regular_fields.update({key: value}) %}{% endif %}{% endif %}
 {% endfor %}
-{% if regular_fields %}
-<div class="card">
-    <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Fields</h3>
-    <table class="fields-table">
-        {% for key, value in regular_fields.items() %}
-        <tr>
-            <td class="field-key">{{ key }}</td>
-            <td class="field-value">{{ value }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+<div class="profile-columns">
+    <div class="card profile-col-graphics">
+        <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Graphics</h3>
+        <div class="hero-gallery">
+            {% for key, label, api_key in image_fields %}
+            <div class="hero-gallery-item" data-api-call="GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}">
+                {% if fields.get(key) %}
+                <img src="{{ fields[key] }}" alt="{{ label }}" class="hero-gallery-img" loading="lazy">
+                {% else %}
+                <div class="hero-gallery-placeholder">
+                    <span>No {{ label }}</span>
+                </div>
+                {% endif %}
+                <div class="hero-gallery-label">{{ label }}</div>
+                <div class="hero-gallery-tooltip">
+                    <code>GET /api/characters/fields?ids={{ character.id }}&amp;fields={{ api_key }}</code>
+                    <span class="hero-gallery-tip-sub">Response: <code>{ "{{ character.id }}": { "{{ api_key }}": "..." } }</code></span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% if regular_fields %}
+    <div class="card profile-col-fields">
+        <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Fields</h3>
+        <table class="fields-table">
+            {% for key, value in regular_fields.items() %}
+            <tr>
+                <td class="field-key">{{ key }}</td>
+                <td class="field-value">{{ value }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endif %}
 </div>
-{% endif %}
 
 {# Threads section #}
 <div class="card">
