@@ -1096,6 +1096,7 @@ select.form-input {
     grid-template-columns: 1fr 1fr 1fr;
     grid-template-rows: auto auto;
     gap: 1rem;
+    container-type: inline-size;
 }
 
 .hero-gallery-rect {
@@ -1107,7 +1108,7 @@ select.form-input {
 
 .hero-gallery-img.hero-img-rect {
     width: 100%;
-    height: 140px;
+    height: calc((100cqi - 2rem) / 3);
     object-fit: cover;
     border-radius: var(--radius);
     border: 2px solid var(--current);
@@ -1124,7 +1125,7 @@ select.form-input {
 
 .hero-placeholder-rect {
     width: 100%;
-    height: 140px;
+    height: calc((100cqi - 2rem) / 3);
     border-radius: var(--radius);
     border: 2px dashed var(--current);
 }
