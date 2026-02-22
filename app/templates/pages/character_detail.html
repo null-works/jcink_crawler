@@ -119,6 +119,20 @@
     {% if key not in pg_keys and key not in image_keys %}{% if regular_fields.update({key: value}) %}{% endif %}{% endif %}
 {% endfor %}
 <div class="profile-columns">
+    {% if regular_fields %}
+    <div class="card profile-col-fields">
+        <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Fields</h3>
+        <table class="fields-table">
+            {% for key, value in regular_fields.items() %}
+            <tr>
+                <td class="field-key">{{ key }}</td>
+                <td class="field-value">{{ value }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% endif %}
+
     <div class="card profile-col-graphics">
         <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Graphics</h3>
         {# Rectangle / GIF on top, full width #}
@@ -153,20 +167,6 @@
             {% endfor %}
         </div>
     </div>
-
-    {% if regular_fields %}
-    <div class="card profile-col-fields">
-        <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Fields</h3>
-        <table class="fields-table">
-            {% for key, value in regular_fields.items() %}
-            <tr>
-                <td class="field-key">{{ key }}</td>
-                <td class="field-value">{{ value }}</td>
-            </tr>
-            {% endfor %}
-        </table>
-    </div>
-    {% endif %}
 </div>
 
 {# Threads section #}
