@@ -113,8 +113,7 @@
     ('secondary_square_image', 'Secondary Square', 'secondary_square_image'),
     ('rectangle_gif', 'Rectangle / GIF', 'rectangle_gif'),
 ] %}
-{% set has_images = image_fields|selectattr(0, 'in', fields)|list %}
-{% if has_images %}
+{% if fields.get('portrait_image') or fields.get('square_image') or fields.get('secondary_square_image') or fields.get('rectangle_gif') %}
 <div class="card">
     <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Graphics</h3>
     <div class="hero-gallery">
