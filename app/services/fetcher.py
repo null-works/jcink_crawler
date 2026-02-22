@@ -181,6 +181,12 @@ async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", ti
                 await page.wait_for_timeout(1000)
                 html = await page.content()
 
+                # Dump HTML snapshot for debugging
+                import pathlib
+                snap_path = pathlib.Path("/app/debug_snapshot.html")
+                snap_path.write_text(html[:200_000], encoding="utf-8")
+                print(f"[Fetcher] HTML snapshot saved to {snap_path} ({len(html)} chars)")
+
                 # Diagnostic: log what elements exist for debugging power grid
                 from bs4 import BeautifulSoup
                 diag_soup = BeautifulSoup(html, "html.parser")
