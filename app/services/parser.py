@@ -330,6 +330,25 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         if value and value != "No Information":
             fields[title] = value
 
+    # Diagnostic: check what's in the profile-hero area
+    hero_container = soup.select_one(".profile-hero-images")
+    if hero_container:
+        print(f"[Parser] .profile-hero-images container found, children: {len(hero_container.find_all(True))}")
+        for child in hero_container.find_all(True):
+            print(f"[Parser]   child: <{child.name} class='{child.get('class', [])}' style='{(child.get('style', '') or '')[:100]}'>")
+    else:
+        print(f"[Parser] .profile-hero-images container NOT found")
+        # Check for any element with 'hero' in class name
+        hero_els = soup.find_all(attrs={"class": re.compile(r"hero", re.I)})
+        print(f"[Parser] Elements with 'hero' in class: {len(hero_els)}")
+        for el in hero_els[:5]:
+            print(f"[Parser]   <{el.name} class='{el.get('class', [])}'>")
+        # Check for any background-image in the whole page
+        bg_els = soup.find_all(style=re.compile(r"background-image", re.I))
+        print(f"[Parser] Elements with background-image style: {len(bg_els)}")
+        for el in bg_els[:5]:
+            print(f"[Parser]   <{el.name} class='{el.get('class', [])}' style='{(el.get('style', '') or '')[:120]}'>")
+
     # Extract hero images from background-image styles (fields 7, 8, 21, 9)
     for selector, key in [
         (".hero-portrait", "portrait_image"),
