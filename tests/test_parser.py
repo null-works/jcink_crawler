@@ -798,6 +798,34 @@ class TestParseProfileHeroImages:
         assert profile.fields["rectangle_gif"] == "https://img.com/rect.gif"
 
 
+    def test_extracts_images_from_pf_static_skin(self):
+        """The static (pf-*) skin uses pf-c, pf-p, pf-w for images."""
+        html = """
+        <html>
+        <div class="pf-e">Jessica Jones</div>
+        <div class="pf-b"><div class="pf-c" style="background: url(https://img.com/square.gif), url(https://fallback.com/img.jpg);"></div></div>
+        <div class="pf-n"><div class="pf-o"><div class="pf-p" style="background: url(https://img.com/portrait.jpg), url(https://fallback.com/img.jpg);"></div></div></div>
+        <div class="pf-v"><div class="pf-w" style="background: url(https://img.com/rect.gif);"></div></div>
+        </html>
+        """
+        profile = parse_profile_page(html, "3")
+        assert profile.fields["square_image"] == "https://img.com/square.gif"
+        assert profile.fields["portrait_image"] == "https://img.com/portrait.jpg"
+        assert profile.fields["rectangle_gif"] == "https://img.com/rect.gif"
+
+    def test_hero_selectors_take_priority_over_pf(self):
+        """If both hero-* and pf-* exist, hero-* should win (it appears first in selector list)."""
+        html = """
+        <html>
+        <h1 class="profile-name">Test</h1>
+        <div class="hero-portrait" style="background-image: url('https://img.com/hero-portrait.jpg');"></div>
+        <div class="pf-p" style="background: url(https://img.com/pf-portrait.jpg);"></div>
+        </html>
+        """
+        profile = parse_profile_page(html, "42")
+        assert profile.fields["portrait_image"] == "https://img.com/hero-portrait.jpg"
+
+
 class TestParseProfileOOCFields:
     """Test extraction of OOC alias, short quote, and connections."""
 

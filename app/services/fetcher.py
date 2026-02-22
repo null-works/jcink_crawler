@@ -138,7 +138,7 @@ async def fetch_page_with_delay(url: str) -> str | None:
         return await fetch_page(url)
 
 
-async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", timeout_ms: int = 15000) -> str | None:
+async def fetch_page_rendered(url: str, wait_selector: str = ".pf-a", timeout_ms: int = 15000) -> str | None:
     """Fetch a page using Playwright to execute JS and return rendered HTML.
 
     Used for profile pages where the power grid card is built client-side.
@@ -191,14 +191,14 @@ async def fetch_page_rendered(url: str, wait_selector: str = ".profile-stat", ti
                 await page.wait_for_timeout(1000)
                 html = await page.content()
 
-                # Diagnostic: log what elements exist for debugging
+                # Diagnostic: log what image-bearing elements exist
                 from bs4 import BeautifulSoup
                 diag_soup = BeautifulSoup(html, "html.parser")
-                stat_count = len(diag_soup.select("div.profile-stat"))
-                hero_count = len(diag_soup.find_all(attrs={"class": re.compile(r"hero", re.IGNORECASE)}))
-                bg_count = len(diag_soup.find_all(style=re.compile(r"background-image", re.IGNORECASE)))
-                print(f"[Fetcher] Rendered HTML diagnostics for {url}:")
-                print(f"  div.profile-stat: {stat_count}, hero elements: {hero_count}, background-image elements: {bg_count}")
+                pf_c = 1 if diag_soup.select_one(".pf-c") else 0
+                pf_p = 1 if diag_soup.select_one(".pf-p") else 0
+                pf_w = 1 if diag_soup.select_one(".pf-w") else 0
+                bg_count = len(diag_soup.find_all(style=re.compile(r"url\(", re.IGNORECASE)))
+                print(f"[Fetcher] Rendered diagnostics for {url}: pf-c={pf_c} pf-p={pf_p} pf-w={pf_w} bg-url={bg_count}")
 
                 return html
             finally:
