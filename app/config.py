@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     crawl_discovery_interval_minutes: int = 1440
     crawl_quotes_batch_size: int = 0  # 0 = unlimited, process all unscraped threads
     quote_min_words: int = 3
+    webhook_crawl_delay_seconds: float = 5.0
     request_delay_seconds: float = 2.0
     max_concurrent_requests: int = 5
     database_path: str = "/app/data/crawler.db"

@@ -6,36 +6,64 @@ All endpoints are under `/api/`. No authentication required.
 
 ---
 
-## ACTION NEEDED: Fix Mixed Content Errors
+## ACTION NEEDED: Fix Webhook Payloads
 
-**Problem:** The crawler API now runs behind Nginx with TLS (`https://imagehut.ch:8943`).
-The JCink theme's JavaScript is still calling `http://imagehut.ch:8943` (plain HTTP).
-Browsers block these requests as **mixed content** because the forum itself is served
-over HTTPS.
+The theme's form-submit webhook (the `document.addEventListener('submit', ...)` block) has three bugs that prevent real-time thread tracker / post count updates.
 
-**Symptom:** Browser console shows:
-```
-Mixed Content: The page at 'https://therewasanidea.jcink.net/...' was loaded over HTTPS,
-but requested an insecure resource 'http://imagehut.ch:8943/api/claims'.
-This request has been blocked; the content must be served over HTTPS.
-```
+### Bug 1: `new_post` missing `user_id`
 
-**Fix:** Find every API URL in the JCink theme code and change `http://` to `https://`:
+The `new_post` event sends `thread_id` and `forum_id` but not `user_id`. The crawler can still process the thread, but passing `user_id` lets it prioritize linking the posting character.
 
-```diff
-- fetch("http://imagehut.ch:8943/api/claims")
-+ fetch("https://imagehut.ch:8943/api/claims")
+**Current:**
+```js
+WatcherAPI.sendActivity('new_post', {
+  thread_id: threadMatch ? threadMatch[1] : null,
+  forum_id: forumMatch ? forumMatch[1] : null
+});
 ```
 
-**Where to look:** All `fetch()` calls, `XMLHttpRequest` URLs, and any JS constants/variables
-that reference `imagehut.ch:8943`. These are likely in:
-- Board wrappers (global header/footer)
-- Custom JS includes
-- Individual skin templates that render claims, roster, hover cards, or thread trackers
+**Fix:** Add `user_id` using JCink's template variable:
+```js
+WatcherAPI.sendActivity('new_post', {
+  thread_id: threadMatch ? threadMatch[1] : null,
+  forum_id: forumMatch ? forumMatch[1] : null,
+  user_id: '<% USER_ID %>'
+});
+```
 
-**Scope:** This is a find-and-replace across theme JS — every instance of
-`http://imagehut.ch:8943` → `https://imagehut.ch:8943`. No API changes, no endpoint
-changes, no payload changes. The API itself is unchanged; only the protocol in the URL.
+### Bug 2: `new_topic` missing both `thread_id` and `user_id`
+
+When creating a new topic, the form action has no `t=` parameter (the thread doesn't exist yet) and no `user_id` is sent. The server receives `{event: "new_topic", forum_id: "30"}` with nothing to act on — it returns `{"action": "none"}`.
+
+**Fix:** At minimum, send `user_id` so the server can fall back to a full thread crawl for that character:
+```js
+WatcherAPI.sendActivity('new_topic', {
+  forum_id: forumMatch2 ? forumMatch2[1] : null,
+  user_id: '<% USER_ID %>'
+});
+```
+
+### Bug 3: `profile_edit` sends CSS class instead of user ID
+
+The `profile_edit` handler extracts `user_id` from `document.body.className.match(/group-\d+/)`, which gives a CSS class like `"group-6"` (the member group), not the numeric user ID. The server tries `crawl_character_profile("group-6")` which fails silently.
+
+**Current:**
+```js
+WatcherAPI.sendActivity('profile_edit', {
+  user_id: (document.body.className.match(/group-\d+/) || [''])[0]
+});
+```
+
+**Fix:** Use JCink's template variable for the logged-in user:
+```js
+WatcherAPI.sendActivity('profile_edit', {
+  user_id: '<% USER_ID %>'
+});
+```
+
+### Note on timing
+
+The webhook fires on the `submit` event — before JCink actually saves the post. The crawler now waits 5 seconds (`WEBHOOK_CRAWL_DELAY_SECONDS`) before fetching the thread, giving JCink time to process the form. This is handled server-side and requires no theme changes.
 
 ---
 
@@ -309,21 +337,30 @@ Returns `null` (HTTP 200 with `null` body) if the character has no quotes.
 | `new_post`/`new_topic` + `user_id` only | Falls back to full thread search for that character |
 | Anything else | Accepts and does nothing (`"action": "none"`) |
 
-**Theme integration example:**
+---
 
-```js
-// In your JCink theme's post submission handler:
-fetch("https://imagehut.ch:8943/api/webhook/activity", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    event: "new_post",
-    thread_id: "<% TOPIC_ID %>",
-    forum_id: "<% FORUM_ID %>",
-    user_id: "<% USER_ID %>"
-  })
-});
-```
+## Profile Image Fields
+
+The crawler extracts four hero/portrait image fields from character profile pages:
+
+| Field Key | CSS Selector | Description |
+|-----------|-------------|-------------|
+| `portrait_image` | `.hero-portrait` | Tall portrait image |
+| `square_image` | `.hero-sq-top` | Primary square image (also used as avatar) |
+| `secondary_square_image` | `.hero-sq-bot` | Secondary square image |
+| `rectangle_gif` | `.hero-rect` | Rectangle image / GIF |
+
+All values are HTTPS URLs extracted from `background-image: url(...)` styles.
+
+**Avatar URL selection priority:** `.hero-sq-top` > `.pf-c` > `.profile-gif` > `.hero-rect` > `.hero-portrait`
+
+### Triggering a profile re-crawl
+
+If image fields are missing or stale:
+
+- **All profiles:** `POST /api/crawl/trigger` with `{"crawl_type": "all-profiles"}`
+- **Single profile:** `POST /api/crawl/trigger` with `{"crawl_type": "profile", "character_id": "42"}`
+- **Via webhook:** `POST /api/webhook/activity` with `{"event": "profile_edit", "user_id": "42"}`
 
 ---
 
@@ -351,3 +388,6 @@ fetch("https://imagehut.ch:8943/api/webhook/activity", {
 - Use `/api/character/{id}/thread-counts` for lightweight badge/count data without fetching full thread lists.
 - The webhook is fire-and-forget. It always returns 202. If the crawler is down, the data just refreshes on the next scheduled cycle.
 - Thread category mapping: forum 49 = complete, forum 59 = incomplete, forum 31 = comms, everything else = ongoing.
+- Field keys are **lowercase strings** — use them exactly as shown (e.g. `portrait_image`, not `Portrait_Image`).
+- Dossier fields like `face claim` use a **space** (not underscore) as the separator.
+- Missing fields are simply absent from the response — there are no `null` values.
