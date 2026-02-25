@@ -1,3 +1,5 @@
+import pathlib
+
 import aiosqlite
 from app.config import settings
 
@@ -16,6 +18,15 @@ async def get_db():
 
 async def init_db():
     """Initialize database tables."""
+    db_dir = pathlib.Path(DATABASE_PATH).parent
+    try:
+        db_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        raise RuntimeError(
+            f"Cannot create database directory '{db_dir}'. "
+            f"If running in Docker, ensure the host volume is writable by UID 1000: "
+            f"sudo mkdir -p /opt/jcink-crawler/data && sudo chown 1000:1000 /opt/jcink-crawler/data"
+        )
     async with aiosqlite.connect(DATABASE_PATH) as db:
         # Enable WAL mode for better concurrent read performance
         await db.execute("PRAGMA journal_mode=WAL")

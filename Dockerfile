@@ -10,8 +10,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
 RUN playwright install --with-deps chromium
 
-# Create non-root user
-RUN useradd --create-home appuser
+# Create non-root user with explicit UID for predictable volume permissions
+RUN useradd --create-home --uid 1000 appuser
 
 # Copy application code
 COPY app/ ./app/
