@@ -25,7 +25,7 @@ async def init_db():
         raise RuntimeError(
             f"Cannot create database directory '{db_dir}'. "
             f"If running in Docker, ensure the host volume is writable by UID 1000: "
-            f"sudo mkdir -p /opt/jcink-crawler/data && sudo chown 1000:1000 /opt/jcink-crawler/data"
+            f"sudo chown 1000:1000 ./data"
         )
     async with aiosqlite.connect(DATABASE_PATH) as db:
         # Enable WAL mode for better concurrent read performance

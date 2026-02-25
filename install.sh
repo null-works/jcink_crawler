@@ -72,11 +72,10 @@ fi
 
 # --- Create host data directory ---
 
-DATA_DIR="/opt/jcink-crawler/data"
+DATA_DIR="./data"
 if [ ! -d "$DATA_DIR" ]; then
     info "Creating data directory at $DATA_DIR ..."
-    sudo mkdir -p "$DATA_DIR"
-    sudo chown "$(id -u):$(id -g)" "$DATA_DIR"
+    mkdir -p "$DATA_DIR"
 else
     info "Data directory already exists at $DATA_DIR"
 fi
