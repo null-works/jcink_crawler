@@ -5,6 +5,7 @@ from httpx import AsyncClient, ASGITransport
 
 # Set test environment variables before importing app
 os.environ["FORUM_BASE_URL"] = "https://therewasanidea.jcink.net"
+os.environ["WEBHOOK_CRAWL_DELAY_SECONDS"] = "0"
 
 _test_db = tempfile.mktemp(suffix=".db")
 os.environ["DATABASE_PATH"] = _test_db

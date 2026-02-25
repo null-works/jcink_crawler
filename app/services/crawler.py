@@ -395,6 +395,12 @@ async def crawl_single_thread(
     log_debug(f"Targeted crawl for thread {thread_id}")
     set_activity(f"Targeted crawl: thread {thread_id}", character_id=user_id)
 
+    # Wait for JCink to finish processing the post submission.
+    # The webhook fires on form submit (before JCink saves the post),
+    # so without this delay we'd fetch stale thread data.
+    if settings.webhook_crawl_delay_seconds > 0:
+        await asyncio.sleep(settings.webhook_crawl_delay_seconds)
+
     # Fetch thread first page
     thread_html = await fetch_page_with_delay(thread_url)
     if not thread_html:
