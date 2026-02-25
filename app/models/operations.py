@@ -1,3 +1,13 @@
+"""Database operations for characters, threads, quotes, and profile fields.
+
+Commit convention:
+- "Top-level" operations that are always called standalone (upsert_character,
+  update_character_crawl_time, set_crawl_status, delete_character) auto-commit.
+- "Batch-friendly" operations (upsert_thread, link_character_thread, add_quote,
+  upsert_profile_field, mark_thread_quote_scraped, replace_thread_posts) do NOT
+  commit — callers must commit explicitly after a batch of writes.
+"""
+
 import aiosqlite
 from app.config import settings
 from app.models.character import (
@@ -282,7 +292,8 @@ async def add_quote(
             VALUES (?, ?, ?, ?)
         """, (character_id, quote_text, source_thread_id, source_thread_title))
         return cursor.rowcount > 0
-    except Exception:
+    except Exception as e:
+        print(f"[DB] Failed to add quote for character {character_id}: {e}")
         return False
 
 

@@ -99,7 +99,8 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             if not page_html:
                 continue
             if is_board_message(page_html):
-                break
+                log_debug("Skipping board message page in search results", level="error")
+                continue
             page_threads, _ = parse_search_results(page_html)
             for t in page_threads:
                 if t.thread_id not in seen_ids:
@@ -729,7 +730,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
 
     Credentials are resolved in order:
     1. Explicit username/password params
-    2. Database crawl_status entries (acp_username / acp_password)
+    2. Database crawl_status username + env var ADMIN_PASSWORD
     3. Environment variables (ADMIN_USERNAME / ADMIN_PASSWORD)
 
     Args:
@@ -745,14 +746,13 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     from app.models.operations import get_crawl_status, set_crawl_status
     from datetime import datetime, timezone
 
-    # Resolve credentials: params > DB > env
+    # Resolve credentials: params > DB username + env password > env
     if not username or not password:
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
             db_user = await get_crawl_status(db, "acp_username")
-            db_pass = await get_crawl_status(db, "acp_password")
         username = username or db_user or settings.admin_username
-        password = password or db_pass or settings.admin_password
+        password = password or settings.admin_password
 
     if not username or not password:
         return {"error": "No admin credentials configured — set them in Admin > ACP Settings"}

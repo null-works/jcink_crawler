@@ -17,6 +17,11 @@ async def get_db():
 async def init_db():
     """Initialize database tables."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Enable WAL mode for better concurrent read performance
+        await db.execute("PRAGMA journal_mode=WAL")
+        # Enforce foreign key constraints
+        await db.execute("PRAGMA foreign_keys=ON")
+
         # Characters - the core entity (JCink user accounts that are IC characters)
         await db.execute("""
             CREATE TABLE IF NOT EXISTS characters (

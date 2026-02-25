@@ -86,11 +86,9 @@ async def authenticate() -> bool:
             print(f"[Fetcher] Authenticated as {settings.bot_username} (via redirect)")
             return True
 
-        print(f"[Fetcher] Login may have failed — status {response.status_code}, no session cookie found")
+        print(f"[Fetcher] Login failed — status {response.status_code}, no session cookie found")
         print(f"[Fetcher] Cookies present: {list(client.cookies.keys())}")
-        # Continue anyway — some JCink installs use different cookie names
-        _authenticated = True
-        return True
+        return False
 
     except Exception as e:
         print(f"[Fetcher] Login failed: {e}")
