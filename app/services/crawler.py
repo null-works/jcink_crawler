@@ -741,7 +741,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     Returns:
         Summary dict with counts
     """
-    from app.services.acp_client import ACPClient, extract_topic_records, extract_post_records as acp_extract_posts
+    from app.services.acp_client import ACPClient, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records
     from app.services.parser import categorize_thread
     from app.models.operations import get_crawl_status, set_crawl_status
     from datetime import datetime, timezone
@@ -767,14 +767,18 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             clear_activity()
             return {"error": "No data retrieved from ACP"}
 
-        # Extract structured records from SQL dump (include post bodies for quote extraction)
+        # Extract structured records from SQL dump
         topics = extract_topic_records(raw)
         posts = acp_extract_posts(raw, include_body=False)
-        log_debug(f"ACP dump: {len(topics)} topics, {len(posts)} posts")
+        forums = extract_forum_records(raw)
+        log_debug(f"ACP dump: {len(topics)} topics, {len(posts)} posts, {len(forums)} forums")
 
         if not topics and not posts:
             clear_activity()
             return {"error": "ACP dump contained no topic or post data"}
+
+        # Build forum name lookup from the dump
+        forum_name_map: dict[str, str] = {f["forum_id"]: f["name"] for f in forums}
 
         set_activity(f"Processing {len(topics)} topics, {len(posts)} posts from ACP")
 
@@ -899,7 +903,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                         title=topic["title"],
                         url=thread_url,
                         forum_id=topic["forum_id"],
-                        forum_name=None,  # SQL dump doesn't have forum names
+                        forum_name=forum_name_map.get(topic["forum_id"]),
                         category=category,
                         last_poster_id=last_poster_id,
                         last_poster_name=topic.get("last_poster_name"),

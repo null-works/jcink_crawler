@@ -3,12 +3,16 @@
 Replicates the login + MySQL dump flow from databaseParser.js:
 1. Login to ACP → get adsess token
 2. Clear previous backup
-3. Iterate through dump pagination
+3. Dump ONLY the specific table parts we need (not the whole DB)
 4. Fetch generated SQL file
 5. Parse REPLACE INTO statements into structured data
 
 This gives us accurate post dates (Unix timestamps from ibf_posts)
 instead of scraping dates from HTML which is fragile.
+
+The targeted dump approach matches databaseParser.js which requests
+specific part numbers instead of step1=1 (full dump). This is 5-10x
+faster since it skips skins, templates, cache, logs, etc.
 """
 
 import asyncio
@@ -43,6 +47,22 @@ _TOPIC_COL_FORUM_ID = 15
 _MEMBER_COL_ID = 0
 _MEMBER_COL_NAME = 1
 _MEMBER_COL_POST_COUNT = 9
+
+# Column indices for ibf_forums
+_FORUM_COL_ID = 0
+_FORUM_COL_NAME = 6
+_FORUM_COL_CATEGORY_ID = 16
+
+# JCink ACP table part numbers — these are the internal IDs JCink uses
+# in its MySQL dump pagination. databaseParser.js uses the same numbers.
+# Only dump the tables we actually need instead of the entire database.
+ACP_PART_MEMBERS = "21"
+ACP_PART_TOPICS = "23"
+ACP_PART_POSTS = "32"
+ACP_PART_FORUMS = "36"
+
+# Default set: topics + posts + forums + members (for post counting & thread tracking)
+DEFAULT_TABLE_PARTS = [ACP_PART_TOPICS, ACP_PART_POSTS, ACP_PART_FORUMS, ACP_PART_MEMBERS]
 
 # Regex to find "next page" link in ACP dump pagination
 _NEXT_LINK_RE = re.compile(
@@ -273,6 +293,33 @@ def extract_member_records(raw: dict[str, list[list]]) -> list[dict]:
     return records
 
 
+def extract_forum_records(raw: dict[str, list[list]]) -> list[dict]:
+    """Extract structured forum records from parsed SQL dump.
+
+    Returns list of dicts with: forum_id, name, category_id
+    """
+    forums_rows = raw.get("forums", [])
+    records = []
+
+    min_cols = max(_FORUM_COL_ID, _FORUM_COL_NAME, _FORUM_COL_CATEGORY_ID) + 1
+
+    for row in forums_rows:
+        if len(row) < min_cols:
+            continue
+
+        forum_id = row[_FORUM_COL_ID]
+        if forum_id is None:
+            continue
+
+        records.append({
+            "forum_id": str(forum_id),
+            "name": row[_FORUM_COL_NAME] or "Unknown Forum",
+            "category_id": str(row[_FORUM_COL_CATEGORY_ID]) if row[_FORUM_COL_CATEGORY_ID] is not None else None,
+        })
+
+    return records
+
+
 class ACPClient:
     """Client for JCink's Admin Control Panel MySQL dump feature."""
 
@@ -352,19 +399,31 @@ class ACPClient:
             print(f"[ACP] Login failed: {e}")
             return False
 
-    async def _dump_database(self) -> str | None:
-        """Trigger a MySQL dump and return the SQL file contents.
+    async def _dump_database(self, table_parts: list[str] | None = None) -> str | None:
+        """Trigger a targeted MySQL dump and return the SQL file contents.
+
+        Instead of dumping the entire database (step1=1), requests only the
+        specific table parts we need. This matches databaseParser.js which
+        iterates through specific part numbers, following pagination within
+        each part.
+
+        Args:
+            table_parts: List of ACP table part numbers to dump.
+                         Defaults to DEFAULT_TABLE_PARTS (topics, posts, forums, members).
 
         Flow:
         1. Clear previous backup
-        2. Start dump with step1=1
-        3. Follow pagination links until no more
+        2. Start dump with step1=1 (required to initialize the dump job)
+        3. Request each table part and follow pagination within it
         4. Wait for SQL file generation
         5. Fetch and return the SQL file
         """
         if not self._token:
             print("[ACP] No token — must login first")
             return None
+
+        if table_parts is None:
+            table_parts = DEFAULT_TABLE_PARTS
 
         client = await self._get_client()
         base = settings.forum_base_url
@@ -381,46 +440,53 @@ class ACPClient:
 
         await asyncio.sleep(1)
 
-        # Step 2: Start dump
-        print("[ACP] Starting database dump...")
+        # Step 2: Initialize the dump job
+        print("[ACP] Initializing database dump...")
         try:
-            resp = await client.get(
+            await client.get(
                 f"{base}/admin.php?act=mysql&code=dump&step1=1&adsess={self._token}",
                 follow_redirects=True,
             )
-            html = resp.text
         except Exception as e:
-            print(f"[ACP] Dump start failed: {e}")
+            print(f"[ACP] Dump init failed: {e}")
             return None
 
-        # Step 3: Follow pagination links
-        page_count = 0
-        max_pages = 500  # Safety limit
-        while page_count < max_pages:
-            match = _NEXT_LINK_RE.search(html)
-            if not match:
-                break
+        # Step 3: Request each table part and follow pagination within it
+        # This mirrors the JS: for each part, start at line=0 and follow
+        # "next page" links until the part number changes or there's no link.
+        total_pages = 0
+        for part_num in table_parts:
+            line = 0
+            current_part = part_num
+            page_count = 0
+            max_pages_per_part = 200  # Safety limit per table
 
-            line = match.group(1)
-            part = match.group(2)
-            page_count += 1
+            while current_part == part_num and page_count < max_pages_per_part:
+                url = f"{base}/admin.php?act=mysql&adsess={self._token}&code=dump&line={line}&part={current_part}"
+                try:
+                    resp = await client.get(url, follow_redirects=True)
+                    html = resp.text
+                except Exception as e:
+                    print(f"[ACP] Dump page failed (part {part_num}): {e}")
+                    break
 
-            if page_count % 10 == 0:
-                print(f"[ACP] Dump progress: page {page_count} (part {part}, line {line})")
+                page_count += 1
+                total_pages += 1
 
-            try:
-                resp = await client.get(
-                    f"{base}/admin.php?act=mysql&code=dump&line={line}&part={part}&adsess={self._token}",
-                    follow_redirects=True,
-                )
-                html = resp.text
-            except Exception as e:
-                print(f"[ACP] Dump page failed: {e}")
-                break
+                # Look for the next pagination link
+                match = _NEXT_LINK_RE.search(html)
+                if match:
+                    line = int(match.group(1))
+                    current_part = match.group(2)
+                else:
+                    break
 
-            await asyncio.sleep(0.5)  # Be polite to the ACP
+                await asyncio.sleep(0.3)
 
-        print(f"[ACP] Dump pagination complete after {page_count} pages")
+            if page_count > 1:
+                print(f"[ACP] Part {part_num}: {page_count} pages")
+
+        print(f"[ACP] Targeted dump complete: {len(table_parts)} tables, {total_pages} total pages")
 
         # Step 4: Wait for SQL file generation
         sql_url = f"{base}/sqls/{self._token}-{self._forum_name}_.sql"
@@ -444,7 +510,7 @@ class ACPClient:
         return sql_content
 
     async def fetch_posts(self) -> list[dict]:
-        """Login, dump database, and extract post records.
+        """Login, dump posts table, and extract post records.
 
         Returns list of post dicts with:
             character_id, thread_id, post_date (ISO), forum_id, author_name
@@ -452,7 +518,7 @@ class ACPClient:
         if not await self.login():
             return []
 
-        sql_content = await self._dump_database()
+        sql_content = await self._dump_database(table_parts=[ACP_PART_POSTS])
         if not sql_content:
             return []
 
@@ -467,16 +533,20 @@ class ACPClient:
 
         return posts
 
-    async def fetch_all_data(self) -> dict[str, list]:
-        """Login, dump database, and return all parsed tables.
+    async def fetch_all_data(self, table_parts: list[str] | None = None) -> dict[str, list]:
+        """Login, dump specific tables, and return all parsed data.
 
-        Returns dict with keys like 'posts', 'topics', 'members', etc.
+        Args:
+            table_parts: List of ACP table part numbers to dump.
+                         Defaults to DEFAULT_TABLE_PARTS.
+
+        Returns dict with keys like 'posts', 'topics', 'members', 'forums', etc.
         Each value is a list of row arrays.
         """
         if not await self.login():
             return {}
 
-        sql_content = await self._dump_database()
+        sql_content = await self._dump_database(table_parts=table_parts)
         if not sql_content:
             return {}
 
