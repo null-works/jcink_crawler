@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
         print("[WARNING] DASHBOARD_SECRET_KEY is set to the insecure default. "
               "Session cookies can be forged. Set a random secret in your .env file.")
     await init_db()
-    start_scheduler()
+    await start_scheduler()
     yield
     stop_scheduler()
     await close_client()

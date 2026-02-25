@@ -379,7 +379,8 @@ async def admin_page(
 
     # ACP state
     acp_username = await get_crawl_status(db, "acp_username") or settings.admin_username
-    acp_configured = bool(acp_username)
+    acp_password = await get_crawl_status(db, "acp_password") or settings.admin_password
+    acp_configured = bool(acp_username and acp_password)
     acp_last_sync = await get_crawl_status(db, "acp_last_sync")
 
     return templates.TemplateResponse(request, "pages/admin.html", {
@@ -752,16 +753,18 @@ async def htmx_save_acp_credentials(
 
     form = await request.form()
     username = form.get("acp_username", "").strip()
+    password = form.get("acp_password", "").strip()
 
     if not username:
         return HTMLResponse('<span class="text-red">Username is required</span>')
 
-    if not settings.admin_password:
-        return HTMLResponse('<span class="text-red">ADMIN_PASSWORD must be set in environment variables (not stored in DB for security)</span>')
+    if not password:
+        return HTMLResponse('<span class="text-red">Password is required</span>')
 
     await set_crawl_status(db, "acp_username", username)
+    await set_crawl_status(db, "acp_password", password)
 
-    return HTMLResponse(f'<span class="text-green">ACP username saved for {username}. Password is read from ADMIN_PASSWORD env var.</span>')
+    return HTMLResponse(f'<span class="text-green">ACP credentials saved for {username}.</span>')
 
 
 @router.post("/htmx/acp-sync", response_class=HTMLResponse)
@@ -776,7 +779,8 @@ async def htmx_acp_sync(
 
     # Check if credentials are configured
     acp_user = await get_crawl_status(db, "acp_username") or settings.admin_username
-    if not acp_user or not settings.admin_password:
+    acp_pass = await get_crawl_status(db, "acp_password") or settings.admin_password
+    if not acp_user or not acp_pass:
         return HTMLResponse('<span class="text-red">No ACP credentials configured — save them first</span>')
 
     background_tasks.add_task(sync_posts_from_acp, settings.database_path)

@@ -20,9 +20,16 @@ _startup_task: asyncio.Task | None = None
 MAX_CONSECUTIVE_MISSES = 100
 
 
-def _has_acp_credentials() -> bool:
-    """Check if ACP admin credentials are configured."""
-    return bool(settings.admin_username and settings.admin_password)
+async def _has_acp_credentials() -> bool:
+    """Check if ACP admin credentials are configured (DB or env)."""
+    if settings.admin_username and settings.admin_password:
+        return True
+    async with aiosqlite.connect(settings.database_path) as db:
+        db.row_factory = aiosqlite.Row
+        from app.models.operations import get_crawl_status
+        db_user = await get_crawl_status(db, "acp_username")
+        db_pass = await get_crawl_status(db, "acp_password")
+    return bool(db_user and db_pass)
 
 
 async def _clear_quote_crawl_log():
@@ -267,7 +274,7 @@ async def _crawl_all_profiles():
     )
 
 
-def start_scheduler():
+async def start_scheduler():
     """Start the APScheduler with configured intervals.
 
     Two modes:
@@ -279,7 +286,7 @@ def start_scheduler():
     global _scheduler, _startup_task
     _scheduler = AsyncIOScheduler()
 
-    use_acp = _has_acp_credentials()
+    use_acp = await _has_acp_credentials()
 
     if use_acp:
         # ACP mode: fast targeted SQL dump for threads + posts

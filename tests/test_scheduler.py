@@ -28,7 +28,7 @@ class TestStartStopScheduler:
         from app.services import scheduler
         scheduler._scheduler = None
         with patch("app.services.scheduler._crawl_all_characters", new_callable=AsyncMock):
-            start_scheduler()
+            await start_scheduler()
         assert scheduler._scheduler is not None
         stop_scheduler()
         assert scheduler._scheduler is None
@@ -43,7 +43,7 @@ class TestStartStopScheduler:
         from app.services import scheduler
         scheduler._scheduler = None
         with patch("app.services.scheduler._crawl_all_characters", new_callable=AsyncMock):
-            start_scheduler()
+            await start_scheduler()
         jobs = scheduler._scheduler.get_jobs()
         job_ids = {j.id for j in jobs}
         assert "crawl_all_characters" in job_ids
