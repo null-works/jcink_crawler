@@ -3,6 +3,7 @@ import aiosqlite
 
 from app.database import get_db
 from app.config import settings
+from app.services.activity import log_debug
 from app.models import (
     CharacterSummary,
     ClaimsSummary,
@@ -195,6 +196,12 @@ async def webhook_activity(
     Accepts new_post, new_topic, and profile_edit events.
     Acknowledges immediately (202) and processes asynchronously.
     """
+    log_debug(
+        f"Webhook received: event={data.event} thread_id={data.thread_id} "
+        f"forum_id={data.forum_id} user_id={data.user_id}",
+        level="webhook",
+    )
+
     if data.event == "profile_edit" and data.user_id:
         background_tasks.add_task(
             crawl_character_profile, data.user_id, settings.database_path
@@ -219,6 +226,10 @@ async def webhook_activity(
             )
             return {"status": "accepted", "action": "thread_recrawl", "user_id": data.user_id}
 
+    log_debug(
+        f"Webhook dropped: event={data.event} — no actionable data",
+        level="warn",
+    )
     return {"status": "accepted", "action": "none"}
 
 

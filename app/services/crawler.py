@@ -393,7 +393,10 @@ async def crawl_single_thread(
     base_url = settings.forum_base_url
     thread_url = f"{base_url}/index.php?showtopic={thread_id}"
 
-    log_debug(f"Targeted crawl for thread {thread_id}")
+    log_debug(
+        f"Targeted crawl for thread {thread_id} (user_id={user_id}, forum_id={forum_id})",
+        level="webhook",
+    )
     set_activity(f"Targeted crawl: thread {thread_id}", character_id=user_id)
 
     # Wait for JCink to finish processing the post submission.
@@ -405,10 +408,12 @@ async def crawl_single_thread(
     # Fetch thread first page
     thread_html = await fetch_page_with_delay(thread_url)
     if not thread_html:
+        log_debug(f"Targeted crawl FAILED: could not fetch thread {thread_id}", level="error")
         clear_activity()
         return {"error": "Failed to fetch thread"}
 
     if is_board_message(thread_html):
+        log_debug(f"Targeted crawl FAILED: board message for thread {thread_id}", level="error")
         clear_activity()
         return {"error": "Board message (cooldown)"}
 
@@ -523,65 +528,87 @@ async def crawl_single_thread(
         else False
     )
 
+    log_debug(
+        f"Targeted crawl thread {thread_id}: last_poster={last_poster_name} "
+        f"(id={last_poster_id}), authors={thread_author_ids}, "
+        f"user_id={user_id}, is_user_last={is_user_last}",
+        level="webhook",
+    )
+
     # Write everything to DB
     quotes_added = 0
-    async with aiosqlite.connect(db_path) as db:
-        db.row_factory = aiosqlite.Row
+    linked_characters: list[str] = []
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
 
-        await upsert_thread(
-            db,
-            thread_id=thread_id,
-            title=title,
-            url=thread_url,
-            forum_id=forum_id,
-            forum_name=forum_name,
-            category=category,
-            last_poster_id=last_poster_id,
-            last_poster_name=last_poster_name,
-            last_poster_avatar=last_poster_avatar,
-        )
-
-        # Link to requesting user
-        if user_id:
-            await link_character_thread(
+            await upsert_thread(
                 db,
-                character_id=user_id,
                 thread_id=thread_id,
+                title=title,
+                url=thread_url,
+                forum_id=forum_id,
+                forum_name=forum_name,
                 category=category,
-                is_user_last_poster=bool(is_user_last),
-                post_count=post_counts_by_char.get(user_id, 0),
+                last_poster_id=last_poster_id,
+                last_poster_name=last_poster_name,
+                last_poster_avatar=last_poster_avatar,
             )
 
-        # Also link other known authors
-        for author_id in thread_author_ids:
-            if author_id in all_characters and author_id != user_id:
-                is_author_last = last_poster_id == author_id if last_poster_id else False
+            # Link to requesting user
+            if user_id:
                 await link_character_thread(
                     db,
-                    character_id=author_id,
+                    character_id=user_id,
                     thread_id=thread_id,
                     category=category,
-                    is_user_last_poster=is_author_last,
-                    post_count=post_counts_by_char.get(author_id, 0),
+                    is_user_last_poster=bool(is_user_last),
+                    post_count=post_counts_by_char.get(user_id, 0),
                 )
+                linked_characters.append(f"{user_id}(last={is_user_last})")
 
-        # Store post records for date-based activity queries
-        if all_post_records:
-            await replace_thread_posts(db, thread_id, all_post_records)
+            # Also link other known authors
+            for author_id in thread_author_ids:
+                if author_id in all_characters and author_id != user_id:
+                    is_author_last = last_poster_id == author_id if last_poster_id else False
+                    await link_character_thread(
+                        db,
+                        character_id=author_id,
+                        thread_id=thread_id,
+                        category=category,
+                        is_user_last_poster=is_author_last,
+                        post_count=post_counts_by_char.get(author_id, 0),
+                    )
+                    linked_characters.append(f"{author_id}(last={is_author_last})")
 
-        # Save quotes
-        for cid, char_quotes in quotes_by_character.items():
-            for q in char_quotes:
-                added = await add_quote(db, cid, q["text"], thread_id, title)
-                if added:
-                    quotes_added += 1
-        for cid in chars_to_mark:
-            await mark_thread_quote_scraped(db, thread_id, cid)
+            # Store post records for date-based activity queries
+            if all_post_records:
+                await replace_thread_posts(db, thread_id, all_post_records)
 
-        await db.commit()
+            # Save quotes
+            for cid, char_quotes in quotes_by_character.items():
+                for q in char_quotes:
+                    added = await add_quote(db, cid, q["text"], thread_id, title)
+                    if added:
+                        quotes_added += 1
+            for cid in chars_to_mark:
+                await mark_thread_quote_scraped(db, thread_id, cid)
+
+            await db.commit()
+    except Exception as exc:
+        log_debug(
+            f"Targeted crawl FAILED for thread {thread_id}: {type(exc).__name__}: {exc}",
+            level="error",
+        )
+        clear_activity()
+        return {"error": str(exc)}
 
     clear_activity()
-    log_debug(f"Targeted crawl complete: thread {thread_id}, {quotes_added} quotes added", level="done")
+    log_debug(
+        f"Targeted crawl complete: thread {thread_id}, "
+        f"linked={linked_characters}, {quotes_added} quotes added",
+        level="done",
+    )
     return {
         "thread_id": thread_id,
         "title": title,
