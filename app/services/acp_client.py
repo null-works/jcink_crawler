@@ -65,9 +65,16 @@ ACP_PART_FORUMS = "36"
 # Default set: topics + posts + forums + members (for post counting & thread tracking)
 DEFAULT_TABLE_PARTS = [ACP_PART_TOPICS, ACP_PART_POSTS, ACP_PART_FORUMS, ACP_PART_MEMBERS]
 
-# Regex to find "next page" link in ACP dump pagination
+# Regex to find "next page" link in ACP dump pagination.
+# Uses lookaheads so parameter order doesn't matter — JCink may put
+# adsess first, last, or anywhere in the query string.
 _NEXT_LINK_RE = re.compile(
-    r"admin\.php\?[^'\"]*act=mysql[^'\"]*code=dump[^'\"]*line=(\d+)[^'\"]*part=(\d+)[^'\"]*adsess=([a-f0-9]+)",
+    r"admin\.php\?"
+    r"(?=[^'\"]*\bact=mysql\b)"
+    r"(?=[^'\"]*\bcode=dump\b)"
+    r"(?=[^'\"]*\bline=(\d+))"
+    r"(?=[^'\"]*\bpart=(\d+))"
+    r"(?=[^'\"]*\badsess=([a-f0-9]+))",
     re.IGNORECASE,
 )
 
@@ -456,6 +463,15 @@ class ACPClient:
         match = _NEXT_LINK_RE.search(html)
         if match:
             parts_seen.add(match.group(2))
+        else:
+            # Log a snippet of the response so we can diagnose link format issues
+            # Look for any admin.php links in the HTML
+            any_links = re.findall(r"admin\.php\?[^'\"<>\s]{10,120}", html)
+            if any_links:
+                log_debug(f"ACP: no pagination match on init page, but found links: {any_links[:3]}", level="warn")
+            else:
+                snippet = html[:500].replace("\n", " ").strip()
+                log_debug(f"ACP: no links found in init response ({len(html)} chars): {snippet[:200]}...", level="warn")
 
         while match and total_pages < max_total_pages:
             line = int(match.group(1))
