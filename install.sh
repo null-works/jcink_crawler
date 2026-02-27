@@ -80,6 +80,14 @@ else
     info "Data directory already exists at $DATA_DIR"
 fi
 
+# Ensure the data directory is writable by the container user (UID 1000).
+# Docker volume mounts use host permissions, so if the host dir is root-owned
+# the container's appuser can't write — causing database init to fail (502).
+if [ "$(stat -c '%u' "$DATA_DIR" 2>/dev/null)" != "1000" ]; then
+    info "Setting data directory ownership to UID 1000 (container user)..."
+    sudo chown 1000:1000 "$DATA_DIR"
+fi
+
 # --- Deploy Nginx config ---
 
 info "Deploying Nginx config..."
