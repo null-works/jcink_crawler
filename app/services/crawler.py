@@ -405,8 +405,9 @@ async def crawl_single_thread(
     if settings.webhook_crawl_delay_seconds > 0:
         await asyncio.sleep(settings.webhook_crawl_delay_seconds)
 
-    # Fetch thread first page
-    thread_html = await fetch_page_with_delay(thread_url)
+    # Fetch thread first page — use fetch_page (no extra delay) since
+    # the webhook delay above already accounts for JCink processing time.
+    thread_html = await fetch_page(thread_url)
     if not thread_html:
         log_debug(f"Targeted crawl FAILED: could not fetch thread {thread_id}", level="error")
         clear_activity()
@@ -422,7 +423,7 @@ async def crawl_single_thread(
     last_page_html = None
     if max_st > 0:
         last_page_url = f"{thread_url}&st={max_st}"
-        last_page_html = await fetch_page_with_delay(last_page_url)
+        last_page_html = await fetch_page(last_page_url)
 
     poster_html = last_page_html or thread_html
 
@@ -434,9 +435,7 @@ async def crawl_single_thread(
     # Fetch last poster avatar
     last_poster_avatar = None
     if last_poster_id:
-        avatar_html = await fetch_page_with_delay(
-            f"{base_url}/index.php?showuser={last_poster_id}"
-        )
+        avatar_html = await fetch_page(f"{base_url}/index.php?showuser={last_poster_id}")
         if avatar_html:
             last_poster_avatar = parse_avatar_from_profile(avatar_html)
 
@@ -521,12 +520,40 @@ async def crawl_single_thread(
             quotes_by_character[cid] = char_quotes
             chars_to_mark.append(cid)
 
-    # Determine if user is last poster
-    is_user_last = (
-        last_poster_id == user_id
-        if last_poster_id and user_id
-        else False
-    )
+    # Determine if user is last poster.
+    # Trust the webhook: if user_id is provided, the theme told us this user
+    # just submitted a post. If HTML disagrees (stale page), override it.
+    if user_id:
+        if last_poster_id and last_poster_id != user_id:
+            log_debug(
+                f"Stale HTML detected: parsed last_poster={last_poster_id}, "
+                f"but webhook says user {user_id} just posted — "
+                f"retrying fetch after 5s",
+                level="warn",
+            )
+            # Retry: JCink may not have saved the post on first fetch
+            await asyncio.sleep(5)
+            retry_html = await fetch_page(
+                f"{thread_url}&st={max_st}" if max_st > 0 else thread_url
+            )
+            if retry_html and not is_board_message(retry_html):
+                retry_poster = parse_last_poster(retry_html)
+                if retry_poster and retry_poster.user_id == user_id:
+                    last_poster_id = retry_poster.user_id
+                    last_poster_name = retry_poster.name
+                    log_debug(f"Retry succeeded: last_poster now {last_poster_id}", level="webhook")
+                else:
+                    log_debug(
+                        f"Retry still stale (got {retry_poster.user_id if retry_poster else None}), "
+                        f"trusting webhook user_id={user_id}",
+                        level="warn",
+                    )
+            # Trust the webhook regardless of HTML result
+            last_poster_id = user_id
+            last_poster_name = all_characters.get(user_id, last_poster_name)
+        is_user_last = True
+    else:
+        is_user_last = last_poster_id == user_id if last_poster_id and user_id else False
 
     log_debug(
         f"Targeted crawl thread {thread_id}: last_poster={last_poster_name} "

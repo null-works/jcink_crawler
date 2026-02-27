@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     bot_password: str = ""
     admin_username: str = ""
     admin_password: str = ""
-    acp_sync_interval_minutes: int = 0  # 0 = disabled
+    acp_sync_interval_minutes: int = 5  # minutes between ACP sync cycles
     affiliation_field_key: str = "affiliation"
     player_field_key: str = "player"
     excluded_names: str = "Watcher,Null,Spider,Kat,RandomPrecision"
