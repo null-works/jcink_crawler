@@ -24,6 +24,7 @@ from urllib.parse import quote as url_quote
 import httpx
 
 from app.config import settings
+from app.services.activity import log_debug
 
 # Column indices for JCink's ibf_posts table (IPB 1.3.x schema).
 # Matches the fizzy activity tracker's field mappings.
@@ -348,7 +349,7 @@ class ACPClient:
         On success, redirects to a URL containing adsess=TOKEN.
         """
         if not self._username or not self._password:
-            print("[ACP] No admin credentials configured")
+            log_debug("ACP: no admin credentials configured", level="error")
             return False
 
         # Extract forum name from base URL
@@ -356,7 +357,7 @@ class ACPClient:
         if match:
             self._forum_name = match.group(1)
         else:
-            print("[ACP] Could not extract forum name from base URL")
+            log_debug("ACP: could not extract forum name from base URL", level="error")
             return False
 
         client = await self._get_client()
@@ -380,7 +381,7 @@ class ACPClient:
                 idx = redirect_url.index("adsess=") + 7
                 end = redirect_url.find("&", idx)
                 self._token = redirect_url[idx:end] if end != -1 else redirect_url[idx:]
-                print(f"[ACP] Login successful, token obtained")
+                log_debug("ACP: login successful, token obtained")
                 return True
 
             # Maybe got a page with a redirect in the HTML
@@ -389,128 +390,124 @@ class ACPClient:
                 adsess_match = re.search(r"adsess=([a-f0-9]+)", text)
                 if adsess_match:
                     self._token = adsess_match.group(1)
-                    print(f"[ACP] Login successful (from response body)")
+                    log_debug("ACP: login successful (from response body)")
                     return True
 
-            print(f"[ACP] Login failed — status {response.status_code}, no adsess token found")
+            log_debug(f"ACP: login failed — status {response.status_code}, no adsess token found", level="error")
             return False
 
         except Exception as e:
-            print(f"[ACP] Login failed: {e}")
+            log_debug(f"ACP: login failed: {e}", level="error")
             return False
 
     async def _dump_database(self, table_parts: list[str] | None = None) -> str | None:
-        """Trigger a targeted MySQL dump and return the SQL file contents.
+        """Trigger a full MySQL dump via ACP and return the SQL file contents.
 
-        Instead of dumping the entire database (step1=1), requests only the
-        specific table parts we need. This matches databaseParser.js which
-        iterates through specific part numbers, following pagination within
-        each part.
-
-        Args:
-            table_parts: List of ACP table part numbers to dump.
-                         Defaults to DEFAULT_TABLE_PARTS (topics, posts, forums, members).
+        Follows JCink's ACP dump pagination sequentially from step1=1 through
+        all pages until no more "next" links are found.  This ensures all
+        tables (topics, posts, forums, members, etc.) are included regardless
+        of part numbering, which can vary between JCink instances.
 
         Flow:
         1. Clear previous backup
-        2. Start dump with step1=1 (required to initialize the dump job)
-        3. Request each table part and follow pagination within it
+        2. Start dump with step1=1
+        3. Follow every pagination link until done
         4. Wait for SQL file generation
         5. Fetch and return the SQL file
         """
         if not self._token:
-            print("[ACP] No token — must login first")
+            log_debug("ACP: no token — must login first", level="error")
             return None
-
-        if table_parts is None:
-            table_parts = DEFAULT_TABLE_PARTS
 
         client = await self._get_client()
         base = settings.forum_base_url
 
         # Step 1: Clear old backup
-        print("[ACP] Clearing previous backup...")
+        log_debug("ACP: clearing previous backup")
         try:
             await client.get(
                 f"{base}/admin.php?act=mysql&code=backup&erase=1&adsess={self._token}",
                 follow_redirects=True,
             )
         except Exception as e:
-            print(f"[ACP] Warning: backup clear failed: {e}")
+            log_debug(f"ACP: backup clear failed: {e}", level="warn")
 
         await asyncio.sleep(1)
 
-        # Step 2: Initialize the dump job
-        print("[ACP] Initializing database dump...")
+        # Step 2: Start the full dump — step1=1 begins at page 1
+        log_debug("ACP: starting full database dump")
         try:
-            await client.get(
+            init_resp = await client.get(
                 f"{base}/admin.php?act=mysql&code=dump&step1=1&adsess={self._token}",
                 follow_redirects=True,
             )
+            html = init_resp.text
         except Exception as e:
-            print(f"[ACP] Dump init failed: {e}")
+            log_debug(f"ACP: dump init failed: {e}", level="error")
             return None
 
-        # Step 3: Request each table part and follow pagination within it
-        # This mirrors the JS: for each part, start at line=0 and follow
-        # "next page" links until the part number changes or there's no link.
-        total_pages = 0
-        for part_num in table_parts:
-            line = 0
-            current_part = part_num
-            page_count = 0
-            max_pages_per_part = 200  # Safety limit per table
+        # Step 3: Follow ALL pagination links sequentially
+        # Each page dumps a batch of rows; the "next" link advances through
+        # every table in the database.  We follow blindly until done.
+        total_pages = 1
+        parts_seen: set[str] = set()
+        max_total_pages = 2000  # Safety limit
 
-            while current_part == part_num and page_count < max_pages_per_part:
-                url = f"{base}/admin.php?act=mysql&adsess={self._token}&code=dump&line={line}&part={current_part}"
-                try:
-                    resp = await client.get(url, follow_redirects=True)
-                    html = resp.text
-                except Exception as e:
-                    print(f"[ACP] Dump page failed (part {part_num}): {e}")
-                    break
+        match = _NEXT_LINK_RE.search(html)
+        if match:
+            parts_seen.add(match.group(2))
 
-                page_count += 1
-                total_pages += 1
+        while match and total_pages < max_total_pages:
+            line = int(match.group(1))
+            part = match.group(2)
+            parts_seen.add(part)
 
-                # Look for the next pagination link
-                match = _NEXT_LINK_RE.search(html)
-                if match:
-                    line = int(match.group(1))
-                    current_part = match.group(2)
-                else:
-                    break
+            url = f"{base}/admin.php?act=mysql&adsess={self._token}&code=dump&line={line}&part={part}"
+            try:
+                resp = await client.get(url, follow_redirects=True)
+                html = resp.text
+            except Exception as e:
+                log_debug(f"ACP: dump page failed (part={part} line={line}): {e}", level="error")
+                break
 
+            total_pages += 1
+            match = _NEXT_LINK_RE.search(html)
+
+            # Brief pause every 10 pages to be polite
+            if total_pages % 10 == 0:
+                log_debug(f"ACP: dump progress — {total_pages} pages, parts seen: {sorted(parts_seen)}")
                 await asyncio.sleep(0.3)
 
-            if page_count > 1:
-                print(f"[ACP] Part {part_num}: {page_count} pages")
-
-        print(f"[ACP] Targeted dump complete: {len(table_parts)} tables, {total_pages} total pages")
+        log_debug(
+            f"ACP: dump complete — {total_pages} pages, "
+            f"{len(parts_seen)} table parts: {sorted(parts_seen)}"
+        )
 
         # Step 4: Wait for SQL file generation
         sql_url = f"{base}/sqls/{self._token}-{self._forum_name}_.sql"
         sql_content = None
 
         for wait_secs in [2, 5, 10, 15, 30]:
-            print(f"[ACP] Waiting {wait_secs}s for SQL file...")
+            log_debug(f"ACP: waiting {wait_secs}s for SQL file")
             await asyncio.sleep(wait_secs)
             try:
                 resp = await client.get(sql_url, follow_redirects=True)
                 if resp.status_code == 200 and len(resp.text) > 100:
                     sql_content = resp.text
-                    print(f"[ACP] SQL file retrieved ({len(sql_content)} bytes)")
+                    log_debug(f"ACP: SQL file retrieved ({len(sql_content):,} bytes)")
                     break
+                else:
+                    log_debug(f"ACP: SQL file not ready (status={resp.status_code}, size={len(resp.text)})")
             except Exception as e:
-                print(f"[ACP] SQL file not ready: {e}")
+                log_debug(f"ACP: SQL file fetch error: {e}", level="warn")
 
         if not sql_content:
-            print("[ACP] Failed to retrieve SQL file after all retries")
+            log_debug("ACP: failed to retrieve SQL file after all retries", level="error")
 
         return sql_content
 
     async def fetch_posts(self) -> list[dict]:
-        """Login, dump posts table, and extract post records.
+        """Login, dump database, and extract post records.
 
         Returns list of post dicts with:
             character_id, thread_id, post_date (ISO), forum_id, author_name
@@ -518,27 +515,23 @@ class ACPClient:
         if not await self.login():
             return []
 
-        sql_content = await self._dump_database(table_parts=[ACP_PART_POSTS])
+        sql_content = await self._dump_database()
         if not sql_content:
             return []
 
-        print("[ACP] Parsing SQL dump...")
+        log_debug("ACP: parsing SQL dump")
         raw = parse_sql_dump(sql_content)
 
         tables_found = list(raw.keys())
-        print(f"[ACP] Tables found in dump: {tables_found}")
+        log_debug(f"ACP: tables found: {tables_found}")
 
         posts = extract_post_records(raw)
-        print(f"[ACP] Extracted {len(posts)} post records")
+        log_debug(f"ACP: extracted {len(posts)} post records")
 
         return posts
 
     async def fetch_all_data(self, table_parts: list[str] | None = None) -> dict[str, list]:
-        """Login, dump specific tables, and return all parsed data.
-
-        Args:
-            table_parts: List of ACP table part numbers to dump.
-                         Defaults to DEFAULT_TABLE_PARTS.
+        """Login, dump database, and return all parsed data.
 
         Returns dict with keys like 'posts', 'topics', 'members', 'forums', etc.
         Each value is a list of row arrays.
@@ -546,13 +539,14 @@ class ACPClient:
         if not await self.login():
             return {}
 
-        sql_content = await self._dump_database(table_parts=table_parts)
+        sql_content = await self._dump_database()
         if not sql_content:
             return {}
 
-        print("[ACP] Parsing SQL dump...")
+        log_debug("ACP: parsing SQL dump")
         raw = parse_sql_dump(sql_content)
-        print(f"[ACP] Tables: {list(raw.keys())} ({sum(len(v) for v in raw.values())} total rows)")
+        row_counts = {k: len(v) for k, v in raw.items()}
+        log_debug(f"ACP: tables parsed — {row_counts}")
 
         return raw
 
