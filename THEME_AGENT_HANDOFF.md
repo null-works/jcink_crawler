@@ -1,58 +1,100 @@
 # Fix Thread & Post Tracking Webhooks
 
-The theme's form-submit webhook (the `document.addEventListener('submit', ...)` block) has three bugs that prevent real-time thread tracker / post count updates.
+The theme's form-submit webhook (the `document.addEventListener('submit', ...)` block)
+does not fire because it reads parameters from `form.action` (the URL), but **JCink post
+forms put `act`, `CODE`, `f`, and `t` in hidden `<input>` fields, not in the URL query
+string.** So `form.action.indexOf('act=Post')` returns `-1` and every submission is
+silently skipped.
 
-## Bug 1: `new_post` missing `user_id`
+## Root Cause
 
-The `new_post` event sends `thread_id` and `forum_id` but not `user_id`. The crawler can still process the thread, but passing `user_id` lets it prioritize linking the posting character.
+JCink (IPB 1.3) post forms look like this:
 
-**Current:**
-```js
-WatcherAPI.sendActivity('new_post', {
-  thread_id: threadMatch ? threadMatch[1] : null,
-  forum_id: forumMatch ? forumMatch[1] : null
-});
+```html
+<form action="https://therewasanidea.jcink.net/index.php" method="post">
+  <input type="hidden" name="act" value="Post">
+  <input type="hidden" name="CODE" value="03">
+  <input type="hidden" name="f" value="30">
+  <input type="hidden" name="t" value="1472">
+  ...
+</form>
 ```
 
-**Fix:** Add `user_id` using JCink's template variable:
-```js
-WatcherAPI.sendActivity('new_post', {
-  thread_id: threadMatch ? threadMatch[1] : null,
-  forum_id: forumMatch ? forumMatch[1] : null,
-  user_id: '<% USER_ID %>'
+`form.action` is just `https://therewasanidea.jcink.net/index.php` — it does NOT contain
+`act=Post` or any other query parameters. The current webhook script only checks
+`form.action.indexOf(...)`, so it never matches.
+
+## The Fix
+
+Replace the **entire** `<!-- Webhook: Ping The Watcher on form submissions -->` script
+block in wrapper.html with:
+
+```html
+<!-- Webhook: Ping The Watcher on form submissions -->
+<script>
+document.addEventListener('submit', function(e) {
+  var form = e.target;
+  if (!form) return;
+
+  // Logged-in user's numeric member ID (rendered by JCink)
+  var userMeta = document.querySelector('meta[name="user-id"]');
+  var userId = userMeta ? userMeta.getAttribute('content') : null;
+
+  // JCink puts params in hidden <input> fields, not the URL.
+  // Check hidden fields first, fall back to URL query string.
+  function getParam(name) {
+    var field = form.querySelector('input[name="' + name + '"]');
+    if (field && field.value) return field.value;
+    var url = form.action || '';
+    var match = url.match(new RegExp('[?&]' + name + '=([^&#]+)'));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  var act = getParam('act');
+  var forumId = getParam('f');
+  var threadId = getParam('t');
+
+  // New topic (act=Post, no thread_id yet) or reply (act=Post + thread_id)
+  if (act === 'Post') {
+    if (threadId) {
+      WatcherAPI.sendActivity('new_post', {
+        thread_id: threadId,
+        forum_id: forumId,
+        user_id: userId
+      });
+    } else {
+      WatcherAPI.sendActivity('new_topic', {
+        forum_id: forumId,
+        user_id: userId
+      });
+    }
+  }
+
+  // Profile edit (act=UserCP, CODE=04)
+  if (act === 'UserCP' && getParam('CODE') === '04') {
+    WatcherAPI.sendActivity('profile_edit', {
+      user_id: userId
+    });
+  }
 });
+</script>
 ```
 
-## Bug 2: `new_topic` missing both `thread_id` and `user_id`
+### Why this works
 
-When creating a new topic, the form action has no `t=` parameter (the thread doesn't exist yet) and no `user_id` is sent. The server receives `{event: "new_topic", forum_id: "30"}` with nothing to act on — it returns `{"action": "none"}`.
+| Old approach | New approach |
+|---|---|
+| `form.action.indexOf('act=Post')` — checks URL only | `getParam('act')` — checks hidden `<input>` fields first, URL second |
+| `form.action.match(/t=(\d+)/)` — misses hidden fields | `getParam('t')` — finds thread ID wherever JCink puts it |
+| `CODE=02` for new topic (wrong code) | Presence of `t` (thread ID) distinguishes reply from new topic |
 
-**Fix:** At minimum, send `user_id` so the server can fall back to a full thread crawl for that character:
-```js
-WatcherAPI.sendActivity('new_topic', {
-  forum_id: forumMatch2 ? forumMatch2[1] : null,
-  user_id: '<% USER_ID %>'
-});
-```
+### What `sendActivity` does
 
-## Bug 3: `profile_edit` sends CSS class instead of user ID
-
-The `profile_edit` handler extracts `user_id` from `document.body.className.match(/group-\d+/)`, which gives a CSS class like `"group-6"` (the member group), not the numeric user ID. The server tries `crawl_character_profile("group-6")` which fails silently.
-
-**Current:**
-```js
-WatcherAPI.sendActivity('profile_edit', {
-  user_id: (document.body.className.match(/group-\d+/) || [''])[0]
-});
-```
-
-**Fix:** Use JCink's template variable for the logged-in user:
-```js
-WatcherAPI.sendActivity('profile_edit', {
-  user_id: '<% USER_ID %>'
-});
-```
+Already correct in the current wrapper — uses `fetch()` with `keepalive: true` and
+`Content-Type: application/json`. No changes needed to the WatcherAPI IIFE.
 
 ## Note on timing
 
-The webhook fires on the `submit` event — before JCink actually saves the post. The crawler now waits 5 seconds before fetching the thread, giving JCink time to process the form. This is handled server-side and requires no theme changes.
+The webhook fires on the `submit` event — before JCink actually saves the post. The
+crawler waits 5 seconds (`webhook_crawl_delay_seconds`) before fetching the thread, giving
+JCink time to process the form. This is handled server-side and requires no theme changes.
