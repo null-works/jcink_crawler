@@ -50,15 +50,38 @@ async def _clear_quote_crawl_log():
 
 
 async def _cleanup_orphaned_data():
-    """Remove orphaned records that reference non-existent parents.
+    """Remove orphaned/corrupted records on startup.
 
     Cleans up:
+    - Threads in excluded forums (from previous bad ACP syncs)
     - character_threads pointing to deleted threads or characters
-    - threads with no character links (orphans from excluded forums)
+    - threads with no character links
     - posts pointing to non-existent threads or characters
     """
+    excluded_forums = settings.excluded_forum_ids
     try:
         async with aiosqlite.connect(settings.database_path) as db:
+            # Remove threads from excluded forums (fixes Guidebook corruption)
+            if excluded_forums:
+                placeholders = ",".join("?" * len(excluded_forums))
+                r0 = await db.execute(
+                    f"DELETE FROM character_threads WHERE thread_id IN "
+                    f"(SELECT id FROM threads WHERE forum_id IN ({placeholders}))",
+                    list(excluded_forums),
+                )
+                excluded_links = r0.rowcount
+                r0b = await db.execute(
+                    f"DELETE FROM threads WHERE forum_id IN ({placeholders})",
+                    list(excluded_forums),
+                )
+                excluded_threads = r0b.rowcount
+                if excluded_links or excluded_threads:
+                    log_debug(
+                        f"Cleanup: removed {excluded_threads} threads and "
+                        f"{excluded_links} links from excluded forums",
+                        level="done",
+                    )
+
             # Remove character_threads with missing thread or character
             r1 = await db.execute("""
                 DELETE FROM character_threads

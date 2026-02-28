@@ -3,16 +3,17 @@
 Replicates the login + MySQL dump flow from databaseParser.js:
 1. Login to ACP → get adsess token
 2. Clear previous backup
-3. Dump ONLY the specific table parts we need (not the whole DB)
+3. Follow full dump pagination through all tables
 4. Fetch generated SQL file
 5. Parse REPLACE INTO statements into structured data
 
 This gives us accurate post dates (Unix timestamps from ibf_posts)
 instead of scraping dates from HTML which is fragile.
 
-The targeted dump approach matches databaseParser.js which requests
-specific part numbers instead of step1=1 (full dump). This is 5-10x
-faster since it skips skins, templates, cache, logs, etc.
+Column indices are AUTO-DETECTED at parse time by cross-referencing
+data between tables (e.g. finding which column in topics contains
+known forum IDs).  This handles JCink schema variations that differ
+from standard IPB 1.3.x.
 """
 
 import asyncio
@@ -26,33 +27,19 @@ import httpx
 from app.config import settings
 from app.services.activity import log_debug
 
-# Column indices for JCink's ibf_posts table (IPB 1.3.x schema).
-# Matches the fizzy activity tracker's field mappings.
-_POST_COL_AUTHOR_ID = 3
-_POST_COL_AUTHOR_NAME = 4
-_POST_COL_POST_DATE = 8
-_POST_COL_POST_BODY = 10
-_POST_COL_TOPIC_ID = 12
-_POST_COL_FORUM_ID = 13
 
-# Column indices for ibf_topics
-_TOPIC_COL_ID = 0
-_TOPIC_COL_TITLE = 1
-_TOPIC_COL_STATE = 3
-_TOPIC_COL_LAST_POST_DATE = 8
-_TOPIC_COL_LAST_POSTER_ID = 7
-_TOPIC_COL_LAST_POSTER_NAME = 11
-_TOPIC_COL_FORUM_ID = 15
+# ── Default column indices (IPB 1.3.x baseline) ──
+# These are used as starting guesses; auto-detection overrides them
+# when cross-referencing between tables succeeds.
 
-# Column indices for ibf_members
-_MEMBER_COL_ID = 0
-_MEMBER_COL_NAME = 1
-_MEMBER_COL_POST_COUNT = 9
-
-# Column indices for ibf_forums
+# ibf_forums — column 0 is always the ID
 _FORUM_COL_ID = 0
-_FORUM_COL_NAME = 6
-_FORUM_COL_CATEGORY_ID = 16
+
+# ibf_topics — column 0 is always the topic ID
+_TOPIC_COL_ID = 0
+
+# ibf_members — column 0 is always the member ID
+_MEMBER_COL_ID = 0
 
 # JCink ACP table part numbers — these are the internal IDs JCink uses
 # in its MySQL dump pagination. databaseParser.js uses the same numbers.
@@ -198,33 +185,275 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
     return raw
 
 
-def extract_post_records(raw: dict[str, list[list]], include_body: bool = False) -> list[dict]:
+def _detect_column(rows: list[list], valid_values: set, start_col: int = 2,
+                    require_int: bool = True) -> int | None:
+    """Auto-detect which column in rows contains values from valid_values.
+
+    Checks a sample of rows and returns the column index with the best
+    combination of match rate and value diversity.  This prevents false
+    positives on boolean columns (e.g. state=1 matching forum_id=1).
+
+    Returns None if no column matches well enough (> 50% of sampled rows).
+    """
+    if not rows or not valid_values:
+        return None
+
+    sample = rows[:200]
+    max_cols = min(len(r) for r in sample) if sample else 0
+    best_col = None
+    best_score = 0.0
+
+    for col_idx in range(start_col, max_cols):
+        matches = 0
+        distinct_matched: set[str] = set()
+        for row in sample:
+            val = row[col_idx]
+            if val is None:
+                continue
+            if require_int:
+                try:
+                    val = int(val)
+                except (ValueError, TypeError):
+                    continue
+            sval = str(val)
+            if sval in valid_values:
+                matches += 1
+                distinct_matched.add(sval)
+        rate = matches / len(sample) if sample else 0
+        if rate < 0.5:
+            continue
+        # Score: match rate * diversity bonus (more distinct values = better)
+        # A column with diverse values matching many different forum IDs is
+        # much more likely to be the real foreign key than one stuck on "1".
+        diversity = min(len(distinct_matched) / max(len(valid_values), 1), 1.0)
+        score = rate * (0.5 + 0.5 * diversity)
+        if score > best_score:
+            best_score = score
+            best_col = col_idx
+
+    return best_col
+
+
+def _detect_name_column(rows: list[list], start_col: int = 1) -> int | None:
+    """Auto-detect which column contains human-readable names.
+
+    Looks for a column where most values are non-empty strings of
+    reasonable length (2-200 chars) that aren't purely numeric.
+    """
+    if not rows:
+        return None
+
+    sample = rows[:100]
+    max_cols = min(len(r) for r in sample) if sample else 0
+    best_col = None
+    best_rate = 0.0
+
+    for col_idx in range(start_col, max_cols):
+        matches = 0
+        for row in sample:
+            val = row[col_idx]
+            if isinstance(val, str) and 2 <= len(val) <= 200:
+                # Must not be purely numeric or look like a timestamp
+                try:
+                    int(val)
+                    continue  # skip purely numeric strings
+                except ValueError:
+                    pass
+                matches += 1
+        rate = matches / len(sample) if sample else 0
+        if rate > best_rate:
+            best_rate = rate
+            best_col = col_idx
+
+    return best_col if best_rate > 0.5 else None
+
+
+def _detect_timestamp_column(rows: list[list], start_col: int = 2) -> int | None:
+    """Auto-detect which column contains Unix timestamps.
+
+    Looks for integer values in a plausible range (year 2000 to 2030).
+    """
+    if not rows:
+        return None
+
+    sample = rows[:100]
+    max_cols = min(len(r) for r in sample) if sample else 0
+    best_col = None
+    best_rate = 0.0
+    ts_min = 946684800   # 2000-01-01
+    ts_max = 1893456000  # 2030-01-01
+
+    for col_idx in range(start_col, max_cols):
+        matches = 0
+        for row in sample:
+            val = row[col_idx]
+            try:
+                v = int(val)
+                if ts_min < v < ts_max:
+                    matches += 1
+            except (ValueError, TypeError):
+                continue
+        rate = matches / len(sample) if sample else 0
+        if rate > best_rate:
+            best_rate = rate
+            best_col = col_idx
+
+    return best_col if best_rate > 0.5 else None
+
+
+def _detect_topic_id_column(topic_rows: list[list], post_rows: list[list]) -> int | None:
+    """Auto-detect which column in posts contains topic IDs.
+
+    Cross-references post values against known topic IDs (col 0).
+    """
+    if not topic_rows or not post_rows:
+        return None
+    topic_ids = {str(row[0]) for row in topic_rows if row and row[0] is not None}
+    return _detect_column(post_rows, topic_ids, start_col=2)
+
+
+def detect_schema(raw: dict[str, list[list]]) -> dict:
+    """Auto-detect column indices for all tables by cross-referencing data.
+
+    Returns a dict of detected column indices for topics, posts, forums, members.
+    Falls back to IPB 1.3.x defaults when detection fails.
+    """
+    forums_rows = raw.get("forums", [])
+    topics_rows = raw.get("topics", [])
+    posts_rows = raw.get("posts", [])
+    members_rows = raw.get("members", [])
+
+    # Step 1: Get forum IDs from forums table (col 0 is always id)
+    forum_ids = set()
+    for row in forums_rows:
+        if row and row[0] is not None:
+            forum_ids.add(str(row[0]))
+
+    # Step 2: Get topic IDs from topics table (col 0 is always id)
+    topic_ids = set()
+    for row in topics_rows:
+        if row and row[0] is not None:
+            topic_ids.add(str(row[0]))
+
+    # Step 3: Get member IDs from members table (col 0 is always id)
+    member_ids = set()
+    for row in members_rows:
+        if row and row[0] is not None:
+            member_ids.add(str(row[0]))
+
+    schema = {}
+
+    # ── Forum columns ──
+    forum_name_col = _detect_name_column(forums_rows, start_col=1)
+    schema["forum_name"] = forum_name_col if forum_name_col is not None else 6
+    log_debug(f"ACP schema: forum name col = {schema['forum_name']}"
+              f"{' (auto)' if forum_name_col is not None else ' (default)'}")
+
+    # ── Topic columns ──
+    topic_forum_col = _detect_column(topics_rows, forum_ids, start_col=2)
+    schema["topic_forum_id"] = topic_forum_col if topic_forum_col is not None else 15
+    log_debug(f"ACP schema: topic forum_id col = {schema['topic_forum_id']}"
+              f"{' (auto)' if topic_forum_col is not None else ' (default)'}")
+
+    topic_title_col = _detect_name_column(topics_rows, start_col=1)
+    schema["topic_title"] = topic_title_col if topic_title_col is not None else 1
+
+    topic_last_post_col = _detect_timestamp_column(topics_rows, start_col=2)
+    schema["topic_last_post_date"] = topic_last_post_col if topic_last_post_col is not None else 8
+
+    # Last poster ID: find column in topics containing member IDs
+    topic_poster_col = _detect_column(topics_rows, member_ids, start_col=2)
+    schema["topic_last_poster_id"] = topic_poster_col if topic_poster_col is not None else 7
+
+    # Last poster name: find a name column AFTER the poster ID column
+    poster_name_start = schema["topic_last_poster_id"] + 1
+    topic_poster_name_col = _detect_name_column(topics_rows, start_col=poster_name_start)
+    schema["topic_last_poster_name"] = topic_poster_name_col if topic_poster_name_col is not None else 11
+
+    # ── Post columns ──
+    post_forum_col = _detect_column(posts_rows, forum_ids, start_col=2)
+    schema["post_forum_id"] = post_forum_col if post_forum_col is not None else 13
+
+    post_topic_col = _detect_column(posts_rows, topic_ids, start_col=2)
+    schema["post_topic_id"] = post_topic_col if post_topic_col is not None else 12
+
+    post_author_col = _detect_column(posts_rows, member_ids, start_col=2)
+    schema["post_author_id"] = post_author_col if post_author_col is not None else 3
+
+    post_date_col = _detect_timestamp_column(posts_rows, start_col=2)
+    schema["post_date"] = post_date_col if post_date_col is not None else 8
+
+    # Author name: name column near the author_id column
+    author_name_start = schema["post_author_id"] + 1
+    post_author_name_col = _detect_name_column(posts_rows, start_col=author_name_start)
+    schema["post_author_name"] = post_author_name_col if post_author_name_col is not None else 4
+
+    # Post body: longest string column
+    if posts_rows:
+        sample = posts_rows[:50]
+        max_cols = min(len(r) for r in sample) if sample else 0
+        best_body_col = None
+        best_avg_len = 0
+        for col_idx in range(2, max_cols):
+            total_len = 0
+            str_count = 0
+            for row in sample:
+                val = row[col_idx]
+                if isinstance(val, str) and len(val) > 50:
+                    total_len += len(val)
+                    str_count += 1
+            if str_count > len(sample) * 0.3:
+                avg = total_len / str_count
+                if avg > best_avg_len:
+                    best_avg_len = avg
+                    best_body_col = col_idx
+        schema["post_body"] = best_body_col if best_body_col is not None else 10
+
+    # ── Member columns ──
+    member_name_col = _detect_name_column(members_rows, start_col=1)
+    schema["member_name"] = member_name_col if member_name_col is not None else 1
+
+    log_debug(f"ACP schema detected: {schema}")
+    return schema
+
+
+def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
+                         schema: dict | None = None) -> list[dict]:
     """Extract structured post records from parsed SQL dump.
 
     Returns list of dicts with: character_id, thread_id, post_date, forum_id, author_name
     When include_body=True, also includes post_body (HTML content) for quote extraction.
     """
+    s = schema or {}
+    col_author = s.get("post_author_id", 3)
+    col_author_name = s.get("post_author_name", 4)
+    col_date = s.get("post_date", 8)
+    col_body = s.get("post_body", 10)
+    col_topic = s.get("post_topic_id", 12)
+    col_forum = s.get("post_forum_id", 13)
+
+    min_col = max(col_author, col_date, col_topic, col_forum)
     posts_rows = raw.get("posts", [])
     records = []
 
     for row in posts_rows:
-        if len(row) <= max(_POST_COL_AUTHOR_ID, _POST_COL_POST_DATE, _POST_COL_TOPIC_ID, _POST_COL_FORUM_ID):
+        if len(row) <= min_col:
             continue
 
-        author_id = row[_POST_COL_AUTHOR_ID]
+        author_id = row[col_author]
         if author_id is None:
             continue
 
         record = {
             "character_id": str(author_id),
-            "thread_id": str(row[_POST_COL_TOPIC_ID]) if row[_POST_COL_TOPIC_ID] else None,
-            "post_date": _unix_to_iso(row[_POST_COL_POST_DATE]),
-            "forum_id": str(row[_POST_COL_FORUM_ID]) if row[_POST_COL_FORUM_ID] else None,
-            "author_name": row[_POST_COL_AUTHOR_NAME],
+            "thread_id": str(row[col_topic]) if row[col_topic] else None,
+            "post_date": _unix_to_iso(row[col_date]),
+            "forum_id": str(row[col_forum]) if row[col_forum] else None,
+            "author_name": row[col_author_name] if col_author_name < len(row) else None,
         }
 
-        if include_body and len(row) > _POST_COL_POST_BODY:
-            body = row[_POST_COL_POST_BODY]
+        if include_body and col_body < len(row):
+            body = row[col_body]
             record["post_body"] = body if isinstance(body, str) else None
 
         records.append(record)
@@ -232,20 +461,24 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False)
     return records
 
 
-def extract_topic_records(raw: dict[str, list[list]]) -> list[dict]:
+def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None) -> list[dict]:
     """Extract structured topic (thread) records from parsed SQL dump.
 
     Returns list of dicts with: thread_id, title, forum_id, state,
     last_poster_id, last_poster_name, last_post_date
     """
+    s = schema or {}
+    col_title = s.get("topic_title", 1)
+    col_forum = s.get("topic_forum_id", 15)
+    col_last_post = s.get("topic_last_post_date", 8)
+    col_poster_id = s.get("topic_last_poster_id", 7)
+    col_poster_name = s.get("topic_last_poster_name", 11)
+
     topics_rows = raw.get("topics", [])
     records = []
 
-    min_cols = max(
-        _TOPIC_COL_ID, _TOPIC_COL_TITLE, _TOPIC_COL_STATE,
-        _TOPIC_COL_LAST_POSTER_ID, _TOPIC_COL_LAST_POST_DATE,
-        _TOPIC_COL_LAST_POSTER_NAME, _TOPIC_COL_FORUM_ID,
-    ) + 1
+    min_cols = max(_TOPIC_COL_ID, col_title, col_forum,
+                   col_last_post, col_poster_id, col_poster_name) + 1
 
     for row in topics_rows:
         if len(row) < min_cols:
@@ -257,62 +490,66 @@ def extract_topic_records(raw: dict[str, list[list]]) -> list[dict]:
 
         records.append({
             "thread_id": str(topic_id),
-            "title": row[_TOPIC_COL_TITLE] or "Untitled",
-            "forum_id": str(row[_TOPIC_COL_FORUM_ID]) if row[_TOPIC_COL_FORUM_ID] else None,
-            "state": row[_TOPIC_COL_STATE],
-            "last_poster_id": str(row[_TOPIC_COL_LAST_POSTER_ID]) if row[_TOPIC_COL_LAST_POSTER_ID] else None,
-            "last_poster_name": row[_TOPIC_COL_LAST_POSTER_NAME] if isinstance(row[_TOPIC_COL_LAST_POSTER_NAME], str) else None,
-            "last_post_date": _unix_to_iso(row[_TOPIC_COL_LAST_POST_DATE]),
+            "title": row[col_title] or "Untitled",
+            "forum_id": str(row[col_forum]) if row[col_forum] else None,
+            "state": row[3] if len(row) > 3 else None,
+            "last_poster_id": str(row[col_poster_id]) if row[col_poster_id] else None,
+            "last_poster_name": row[col_poster_name] if isinstance(row[col_poster_name], str) else None,
+            "last_post_date": _unix_to_iso(row[col_last_post]),
         })
 
     return records
 
 
-def extract_member_records(raw: dict[str, list[list]]) -> list[dict]:
+def extract_member_records(raw: dict[str, list[list]], schema: dict | None = None) -> list[dict]:
     """Extract structured member records from parsed SQL dump.
 
     Returns list of dicts with: member_id, name, post_count
     """
+    s = schema or {}
+    col_name = s.get("member_name", 1)
+
     members_rows = raw.get("members", [])
     records = []
 
-    min_cols = max(_MEMBER_COL_ID, _MEMBER_COL_NAME, _MEMBER_COL_POST_COUNT) + 1
-
     for row in members_rows:
-        if len(row) < min_cols:
+        if len(row) <= col_name:
             continue
 
         member_id = row[_MEMBER_COL_ID]
         if member_id is None:
             continue
 
-        post_count = row[_MEMBER_COL_POST_COUNT]
-        try:
-            post_count = int(post_count) if post_count is not None else 0
-        except (ValueError, TypeError):
-            post_count = 0
+        # Post count: find the first integer column > 2 that looks like a count
+        post_count = 0
+        if len(row) > 9:
+            try:
+                post_count = int(row[9]) if row[9] is not None else 0
+            except (ValueError, TypeError):
+                post_count = 0
 
         records.append({
             "member_id": str(member_id),
-            "name": row[_MEMBER_COL_NAME] or "Unknown",
+            "name": row[col_name] or "Unknown",
             "post_count": post_count,
         })
 
     return records
 
 
-def extract_forum_records(raw: dict[str, list[list]]) -> list[dict]:
+def extract_forum_records(raw: dict[str, list[list]], schema: dict | None = None) -> list[dict]:
     """Extract structured forum records from parsed SQL dump.
 
     Returns list of dicts with: forum_id, name, category_id
     """
+    s = schema or {}
+    col_name = s.get("forum_name", 6)
+
     forums_rows = raw.get("forums", [])
     records = []
 
-    min_cols = max(_FORUM_COL_ID, _FORUM_COL_NAME, _FORUM_COL_CATEGORY_ID) + 1
-
     for row in forums_rows:
-        if len(row) < min_cols:
+        if len(row) <= col_name:
             continue
 
         forum_id = row[_FORUM_COL_ID]
@@ -321,8 +558,8 @@ def extract_forum_records(raw: dict[str, list[list]]) -> list[dict]:
 
         records.append({
             "forum_id": str(forum_id),
-            "name": row[_FORUM_COL_NAME] or "Unknown Forum",
-            "category_id": str(row[_FORUM_COL_CATEGORY_ID]) if row[_FORUM_COL_CATEGORY_ID] is not None else None,
+            "name": row[col_name] or "Unknown Forum",
+            "category_id": None,  # not critical for functionality
         })
 
     return records

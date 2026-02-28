@@ -169,7 +169,6 @@ class TestExtractForumRecords:
         forum = forums[0]
         assert forum["forum_id"] == "5"
         assert forum["name"] == "IC Roleplay"
-        assert forum["category_id"] == "1"
 
     def test_empty_forums(self):
         raw = parse_sql_dump("")

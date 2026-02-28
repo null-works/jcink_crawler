@@ -795,7 +795,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     Returns:
         Summary dict with counts
     """
-    from app.services.acp_client import ACPClient, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records
+    from app.services.acp_client import ACPClient, detect_schema, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records
     from app.services.parser import categorize_thread
     from app.models.operations import get_crawl_status, set_crawl_status
     from datetime import datetime, timezone
@@ -822,10 +822,13 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             clear_activity()
             return {"error": "No data retrieved from ACP"}
 
-        # Extract structured records from SQL dump
-        topics = extract_topic_records(raw)
-        posts = acp_extract_posts(raw, include_body=False)
-        forums = extract_forum_records(raw)
+        # Auto-detect column indices by cross-referencing tables
+        schema = detect_schema(raw)
+
+        # Extract structured records using detected schema
+        topics = extract_topic_records(raw, schema=schema)
+        posts = acp_extract_posts(raw, include_body=False, schema=schema)
+        forums = extract_forum_records(raw, schema=schema)
         log_debug(f"ACP dump: {len(topics)} topics, {len(posts)} posts, {len(forums)} forums")
 
         if not topics and not posts:
@@ -854,8 +857,22 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                 continue
             topic_map[t["thread_id"]] = t
 
+        # Build set of excluded thread IDs (threads in excluded forums)
+        # Check both topic forum_id and post forum_id for excluded forums
+        excluded_thread_ids: set[str] = set()
+        for t in topics:
+            if t["forum_id"] in excluded_forums:
+                excluded_thread_ids.add(t["thread_id"])
+        for p in posts:
+            if p.get("forum_id") in excluded_forums and p.get("thread_id"):
+                excluded_thread_ids.add(p["thread_id"])
+
+        if excluded_thread_ids:
+            log_debug(f"Excluding {len(excluded_thread_ids)} threads from excluded forums")
+
         # ── Phase 2: Figure out which threads involve tracked characters ──
         # Group posts by thread, and by (character, thread)
+        # Skip posts from excluded-forum threads
         posts_by_thread: dict[str, list[dict]] = {}
         post_counts: dict[tuple[str, str], int] = {}
         chars_in_thread: dict[str, set[str]] = {}
@@ -864,6 +881,8 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             tid = p.get("thread_id")
             cid = p["character_id"]
             if not tid:
+                continue
+            if tid in excluded_thread_ids:
                 continue
 
             posts_by_thread.setdefault(tid, []).append(p)
