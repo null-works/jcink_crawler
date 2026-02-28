@@ -52,16 +52,40 @@ async def _clear_quote_crawl_log():
 async def _cleanup_orphaned_data():
     """Remove orphaned/corrupted records on startup.
 
-    Cleans up:
-    - Threads in excluded forums (from previous bad ACP syncs)
+    On first run after the schema-detection fix, wipes ALL thread data
+    so the next ACP sync rebuilds everything with correct column mapping.
+    Uses a crawl_status flag to ensure this only happens once.
+
+    After that, normal cleanup runs:
+    - Threads in excluded forums
     - character_threads pointing to deleted threads or characters
     - threads with no character links
     - posts pointing to non-existent threads or characters
     """
+    from app.models.operations import get_crawl_status, set_crawl_status
+
     excluded_forums = settings.excluded_forum_ids
     try:
         async with aiosqlite.connect(settings.database_path) as db:
-            # Remove threads from excluded forums (fixes Guidebook corruption)
+            db.row_factory = aiosqlite.Row
+
+            # One-time wipe of corrupted thread data from bad column indices
+            schema_fix_done = await get_crawl_status(db, "schema_fix_v297")
+            if not schema_fix_done:
+                r_ct = await db.execute("DELETE FROM character_threads")
+                r_t = await db.execute("DELETE FROM threads")
+                r_p = await db.execute("DELETE FROM posts")
+                r_q = await db.execute("DELETE FROM quotes")
+                r_ql = await db.execute("DELETE FROM quote_crawl_log")
+                await set_crawl_status(db, "schema_fix_v297", "done")
+                log_debug(
+                    f"Schema fix: wiped thread data for rebuild — "
+                    f"{r_t.rowcount} threads, {r_ct.rowcount} links, "
+                    f"{r_p.rowcount} posts, {r_q.rowcount} quotes",
+                    level="done",
+                )
+
+            # Remove threads from excluded forums
             if excluded_forums:
                 placeholders = ",".join("?" * len(excluded_forums))
                 r0 = await db.execute(
