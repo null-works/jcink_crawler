@@ -49,6 +49,51 @@ async def _clear_quote_crawl_log():
         log_debug(f"Error clearing quote_crawl_log: {e}", level="error")
 
 
+async def _cleanup_orphaned_data():
+    """Remove orphaned records that reference non-existent parents.
+
+    Cleans up:
+    - character_threads pointing to deleted threads or characters
+    - threads with no character links (orphans from excluded forums)
+    - posts pointing to non-existent threads or characters
+    """
+    try:
+        async with aiosqlite.connect(settings.database_path) as db:
+            # Remove character_threads with missing thread or character
+            r1 = await db.execute("""
+                DELETE FROM character_threads
+                WHERE thread_id NOT IN (SELECT id FROM threads)
+                   OR character_id NOT IN (SELECT id FROM characters)
+            """)
+            orphan_links = r1.rowcount
+
+            # Remove threads that have zero character links
+            r2 = await db.execute("""
+                DELETE FROM threads
+                WHERE id NOT IN (SELECT DISTINCT thread_id FROM character_threads)
+            """)
+            orphan_threads = r2.rowcount
+
+            # Remove posts with missing thread or character
+            r3 = await db.execute("""
+                DELETE FROM posts
+                WHERE thread_id NOT IN (SELECT id FROM threads)
+                   OR character_id NOT IN (SELECT id FROM characters)
+            """)
+            orphan_posts = r3.rowcount
+
+            await db.commit()
+
+            if orphan_links or orphan_threads or orphan_posts:
+                log_debug(
+                    f"Cleanup: removed {orphan_links} orphan links, "
+                    f"{orphan_threads} orphan threads, {orphan_posts} orphan posts",
+                    level="done",
+                )
+    except Exception as e:
+        log_debug(f"Error during orphan cleanup: {e}", level="error")
+
+
 async def _acp_sync_cycle():
     """Primary data sync using ACP SQL dump.
 
@@ -318,6 +363,7 @@ async def start_scheduler():
 
         async def _startup():
             await _clear_quote_crawl_log()
+            await _cleanup_orphaned_data()
             # ACP sync first (fast) — gets all thread/post data in one dump
             await _acp_sync_cycle()
             # Then discover + crawl profiles (slower, uses Playwright)
@@ -341,6 +387,7 @@ async def start_scheduler():
 
         async def _startup():
             await _clear_quote_crawl_log()
+            await _cleanup_orphaned_data()
             await _crawl_all_characters()
 
     _scheduler.start()

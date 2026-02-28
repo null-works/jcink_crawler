@@ -27,6 +27,9 @@
         <tr>
             <td class="truncate" style="max-width: 400px;">
                 <a href="{{ t.url }}" target="_blank" rel="noopener">{{ t.title }}</a>
+                {% if t.forum_name %}
+                <span class="text-muted" style="font-size: 0.8em; display: block;">{{ t.forum_name }}</span>
+                {% endif %}
             </td>
             <td>
                 {% if t.category == 'ongoing' %}
