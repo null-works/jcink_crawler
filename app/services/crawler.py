@@ -795,7 +795,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     Returns:
         Summary dict with counts
     """
-    from app.services.acp_client import ACPClient, detect_schema, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records
+    from app.services.acp_client import ACPClient, detect_schema, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records, extract_member_records
     from app.services.parser import categorize_thread
     from app.models.operations import get_crawl_status, set_crawl_status
     from datetime import datetime, timezone
@@ -849,9 +849,45 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
         # Build forum name lookup from the dump
         forum_name_map: dict[str, str] = {f["forum_id"]: f["name"] for f in forums}
 
+        # ── Phase 0: Auto-register characters from ACP member dump ──
+        # On a fresh DB, the characters table is empty and ACP sync would
+        # find 0 relevant threads. Fix this by registering members from
+        # the dump itself before matching threads.
+        members = extract_member_records(raw, schema=schema)
+        excluded_names = settings.excluded_name_set
+        base_url = settings.forum_base_url
+
+        if members:
+            async with aiosqlite.connect(db_path) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute("SELECT id FROM characters")
+                existing_ids = {row["id"] for row in await cursor.fetchall()}
+
+                new_chars = 0
+                for m in members:
+                    mid = m["member_id"]
+                    mname = m["name"]
+                    if mid in existing_ids:
+                        continue
+                    if mname.lower() in excluded_names:
+                        continue
+                    if mname == "Unknown" or not mname:
+                        continue
+                    await upsert_character(
+                        db,
+                        character_id=mid,
+                        name=mname,
+                        profile_url=f"{base_url}/index.php?showuser={mid}",
+                    )
+                    existing_ids.add(mid)
+                    new_chars += 1
+
+                if new_chars:
+                    log_debug(f"ACP sync: auto-registered {new_chars} characters from member dump")
+
         set_activity(f"Processing {len(topics)} topics, {len(posts)} posts from ACP")
 
-        # Load tracked character IDs
+        # Load tracked character IDs (now includes auto-registered members)
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT id FROM characters")
@@ -978,7 +1014,6 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
 
         # ── Phase 4: Write everything to DB ──
         set_activity("Writing ACP data to database")
-        base_url = settings.forum_base_url
         threads_upserted = 0
         links_created = 0
         posts_stored = 0
