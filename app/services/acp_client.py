@@ -195,7 +195,7 @@ def _detect_column(rows: list[list], valid_values: set, start_col: int = 2,
     positives on boolean columns (e.g. state=1 matching forum_id=1).
 
     Args:
-        exclude_cols: Column indices to skip (already assigned to other fields).
+        exclude_cols: Column indices to skip (only used for collision resolution).
 
     Returns None if no column matches well enough (> 50% of sampled rows).
     """
@@ -319,8 +319,29 @@ def _detect_topic_id_column(topic_rows: list[list], post_rows: list[list]) -> in
     return _detect_column(post_rows, topic_ids, start_col=2)
 
 
+def _column_cardinality(rows: list[list], col: int) -> float:
+    """Count distinct values in a column as a ratio of total rows.
+
+    Low cardinality (e.g. 0.03) = few distinct values = likely a FK to a small table (forums).
+    High cardinality (e.g. 0.4) = many distinct values = likely a FK to a large table (members).
+    """
+    if not rows:
+        return 0.0
+    sample = rows[:500]
+    vals = set()
+    for row in sample:
+        if col < len(row) and row[col] is not None:
+            vals.add(str(row[col]))
+    return len(vals) / len(sample) if sample else 0.0
+
+
 def detect_schema(raw: dict[str, list[list]]) -> dict:
     """Auto-detect column indices for all tables by cross-referencing data.
+
+    Strategy: detect each field independently (no exclusion), then resolve
+    collisions using cardinality.  Forum_id columns have LOW cardinality
+    (few forums, many topics per forum).  Member_id columns have HIGH
+    cardinality (many different posters).
 
     Returns a dict of detected column indices for topics, posts, forums, members.
     Falls back to IPB 1.3.x defaults when detection fails.
@@ -340,31 +361,14 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
     if members_rows:
         log_debug(f"ACP schema debug: members[0] ({len(members_rows[0])} cols) = {members_rows[0][:12]}")
 
-    # Step 1: Get forum IDs from forums table (col 0 is always id)
-    forum_ids = set()
-    for row in forums_rows:
-        if row and row[0] is not None:
-            forum_ids.add(str(row[0]))
+    # Step 1: Get known IDs from each table (col 0 is always the PK)
+    forum_ids = {str(row[0]) for row in forums_rows if row and row[0] is not None}
+    topic_ids = {str(row[0]) for row in topics_rows if row and row[0] is not None}
+    member_ids = {str(row[0]) for row in members_rows if row and row[0] is not None}
 
-    # Step 2: Get topic IDs from topics table (col 0 is always id)
-    topic_ids = set()
-    for row in topics_rows:
-        if row and row[0] is not None:
-            topic_ids.add(str(row[0]))
-
-    # Step 3: Get member IDs from members table (col 0 is always id)
-    member_ids = set()
-    for row in members_rows:
-        if row and row[0] is not None:
-            member_ids.add(str(row[0]))
+    log_debug(f"ACP schema: {len(forum_ids)} forums, {len(topic_ids)} topics, {len(member_ids)} members")
 
     schema = {}
-
-    # Track assigned columns per table to prevent collisions.
-    # When forum IDs and member IDs overlap (e.g. both contain {1,2,3}),
-    # the same column could be detected as both forum_id and poster_id.
-    topic_assigned: set[int] = set()
-    post_assigned: set[int] = set()
 
     # ── Forum columns ──
     forum_name_col = _detect_name_column(forums_rows, start_col=1)
@@ -373,30 +377,44 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
               f"{' (auto)' if forum_name_col is not None else ' (default)'}")
 
     # ── Topic columns ──
-    # Detect forum_id first (fewer distinct values = more specific match)
-    topic_forum_col = _detect_column(topics_rows, forum_ids, start_col=2,
-                                      exclude_cols=topic_assigned)
+    # Detect both forum_id and poster_id independently (NO exclusion)
+    topic_forum_col = _detect_column(topics_rows, forum_ids, start_col=2)
+    topic_poster_col = _detect_column(topics_rows, member_ids, start_col=2)
+
+    # Resolve collision: if both detected the same column, use cardinality
+    if (topic_forum_col is not None and topic_poster_col is not None
+            and topic_forum_col == topic_poster_col):
+        col = topic_forum_col
+        card = _column_cardinality(topics_rows, col)
+        log_debug(f"ACP schema: COLLISION on topics col {col} "
+                  f"(forum_id vs poster_id), cardinality={card:.3f}")
+        # Low cardinality → forum_id (few forums); re-detect poster_id excluding it
+        # High cardinality → poster_id (many members); re-detect forum_id excluding it
+        if card < 0.15:
+            # Column is forum_id; re-detect poster_id
+            topic_poster_col = _detect_column(
+                topics_rows, member_ids, start_col=2, exclude_cols={col})
+            log_debug(f"ACP schema: resolved — forum_id={col}, "
+                      f"re-detected poster_id={topic_poster_col}")
+        else:
+            # Column is poster_id; re-detect forum_id
+            topic_forum_col = _detect_column(
+                topics_rows, forum_ids, start_col=2, exclude_cols={col})
+            log_debug(f"ACP schema: resolved — poster_id={col}, "
+                      f"re-detected forum_id={topic_forum_col}")
+
     schema["topic_forum_id"] = topic_forum_col if topic_forum_col is not None else 15
-    topic_assigned.add(schema["topic_forum_id"])
+    schema["topic_last_poster_id"] = topic_poster_col if topic_poster_col is not None else 7
     log_debug(f"ACP schema: topic forum_id col = {schema['topic_forum_id']}"
               f"{' (auto)' if topic_forum_col is not None else ' (default)'}")
+    log_debug(f"ACP schema: topic poster_id col = {schema['topic_last_poster_id']}"
+              f"{' (auto)' if topic_poster_col is not None else ' (default)'}")
 
     topic_title_col = _detect_name_column(topics_rows, start_col=1)
     schema["topic_title"] = topic_title_col if topic_title_col is not None else 1
-    topic_assigned.add(schema["topic_title"])
 
     topic_last_post_col = _detect_timestamp_column(topics_rows, start_col=2)
     schema["topic_last_post_date"] = topic_last_post_col if topic_last_post_col is not None else 8
-    topic_assigned.add(schema["topic_last_post_date"])
-
-    # Last poster ID: find column in topics containing member IDs,
-    # EXCLUDING the column already assigned to forum_id
-    topic_poster_col = _detect_column(topics_rows, member_ids, start_col=2,
-                                       exclude_cols=topic_assigned)
-    schema["topic_last_poster_id"] = topic_poster_col if topic_poster_col is not None else 7
-    topic_assigned.add(schema["topic_last_poster_id"])
-    log_debug(f"ACP schema: topic last_poster_id col = {schema['topic_last_poster_id']}"
-              f"{' (auto)' if topic_poster_col is not None else ' (default)'}")
 
     # Last poster name: find a name column AFTER the poster ID column
     poster_name_start = schema["topic_last_poster_id"] + 1
@@ -404,20 +422,45 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
     schema["topic_last_poster_name"] = topic_poster_name_col if topic_poster_name_col is not None else 11
 
     # ── Post columns ──
-    post_forum_col = _detect_column(posts_rows, forum_ids, start_col=2,
-                                     exclude_cols=post_assigned)
+    # Detect all three FK columns independently
+    post_forum_col = _detect_column(posts_rows, forum_ids, start_col=2)
+    post_topic_col = _detect_column(posts_rows, topic_ids, start_col=2)
+    post_author_col = _detect_column(posts_rows, member_ids, start_col=2)
+
+    # Resolve collisions between forum_id and author_id (topic_id rarely collides)
+    if (post_forum_col is not None and post_author_col is not None
+            and post_forum_col == post_author_col):
+        col = post_forum_col
+        card = _column_cardinality(posts_rows, col)
+        log_debug(f"ACP schema: COLLISION on posts col {col} "
+                  f"(forum_id vs author_id), cardinality={card:.3f}")
+        if card < 0.15:
+            post_author_col = _detect_column(
+                posts_rows, member_ids, start_col=2, exclude_cols={col})
+        else:
+            post_forum_col = _detect_column(
+                posts_rows, forum_ids, start_col=2, exclude_cols={col})
+
+    # Resolve collision between topic_id and author_id
+    if (post_topic_col is not None and post_author_col is not None
+            and post_topic_col == post_author_col):
+        col = post_topic_col
+        card = _column_cardinality(posts_rows, col)
+        log_debug(f"ACP schema: COLLISION on posts col {col} "
+                  f"(topic_id vs author_id), cardinality={card:.3f}")
+        # topic_id has very high cardinality (close to 1:1 with posts)
+        if card > 0.3:
+            post_author_col = _detect_column(
+                posts_rows, member_ids, start_col=2, exclude_cols={col})
+        else:
+            post_topic_col = _detect_column(
+                posts_rows, topic_ids, start_col=2, exclude_cols={col})
+
     schema["post_forum_id"] = post_forum_col if post_forum_col is not None else 13
-    post_assigned.add(schema["post_forum_id"])
-
-    post_topic_col = _detect_column(posts_rows, topic_ids, start_col=2,
-                                     exclude_cols=post_assigned)
     schema["post_topic_id"] = post_topic_col if post_topic_col is not None else 12
-    post_assigned.add(schema["post_topic_id"])
-
-    post_author_col = _detect_column(posts_rows, member_ids, start_col=2,
-                                      exclude_cols=post_assigned)
     schema["post_author_id"] = post_author_col if post_author_col is not None else 3
-    post_assigned.add(schema["post_author_id"])
+    log_debug(f"ACP schema: post forum_id={schema['post_forum_id']}, "
+              f"topic_id={schema['post_topic_id']}, author_id={schema['post_author_id']}")
 
     post_date_col = _detect_timestamp_column(posts_rows, start_col=2)
     schema["post_date"] = post_date_col if post_date_col is not None else 8

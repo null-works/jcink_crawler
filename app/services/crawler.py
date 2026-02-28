@@ -833,7 +833,18 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
 
         if not topics and not posts:
             clear_activity()
+            log_debug("ACP sync FAILED: 0 topics and 0 posts extracted", level="error")
             return {"error": "ACP dump contained no topic or post data"}
+
+        # Sanity-check: log sample data to verify schema detection
+        if topics:
+            t = topics[0]
+            log_debug(f"ACP sample topic: id={t['thread_id']} title={t['title'][:40]} "
+                      f"forum={t['forum_id']} poster={t.get('last_poster_id')}")
+        if posts:
+            p = posts[0]
+            log_debug(f"ACP sample post: author={p['character_id']} thread={p['thread_id']} "
+                      f"forum={p.get('forum_id')} date={p.get('post_date')}")
 
         # Build forum name lookup from the dump
         forum_name_map: dict[str, str] = {f["forum_id"]: f["name"] for f in forums}
@@ -896,7 +907,26 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             if char_ids & tracked_chars:
                 relevant_thread_ids.add(tid)
 
-        log_debug(f"{len(relevant_thread_ids)} threads involve tracked characters")
+        log_debug(
+            f"ACP sync: {len(tracked_chars)} tracked chars, "
+            f"{len(topic_map)} non-excluded topics, "
+            f"{len(excluded_thread_ids)} excluded threads, "
+            f"{len(chars_in_thread)} threads with posts, "
+            f"{len(relevant_thread_ids)} threads involve tracked characters"
+        )
+        if not relevant_thread_ids:
+            # Debug: show what character IDs are actually in posts
+            all_post_cids = set()
+            for cids in chars_in_thread.values():
+                all_post_cids.update(cids)
+            sample_post_cids = sorted(all_post_cids)[:20]
+            sample_tracked = sorted(tracked_chars)[:20]
+            log_debug(
+                f"ACP sync WARNING: 0 relevant threads! "
+                f"Post char IDs (sample): {sample_post_cids} | "
+                f"Tracked char IDs (sample): {sample_tracked}",
+                level="error",
+            )
 
         # ── Phase 3: Fetch last poster avatars ──
         # Collect unique last poster IDs that need avatar lookups
