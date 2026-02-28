@@ -186,12 +186,16 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
 
 
 def _detect_column(rows: list[list], valid_values: set, start_col: int = 2,
-                    require_int: bool = True) -> int | None:
+                    require_int: bool = True,
+                    exclude_cols: set[int] | None = None) -> int | None:
     """Auto-detect which column in rows contains values from valid_values.
 
     Checks a sample of rows and returns the column index with the best
     combination of match rate and value diversity.  This prevents false
     positives on boolean columns (e.g. state=1 matching forum_id=1).
+
+    Args:
+        exclude_cols: Column indices to skip (already assigned to other fields).
 
     Returns None if no column matches well enough (> 50% of sampled rows).
     """
@@ -202,8 +206,11 @@ def _detect_column(rows: list[list], valid_values: set, start_col: int = 2,
     max_cols = min(len(r) for r in sample) if sample else 0
     best_col = None
     best_score = 0.0
+    _exclude = exclude_cols or set()
 
     for col_idx in range(start_col, max_cols):
+        if col_idx in _exclude:
+            continue
         matches = 0
         distinct_matched: set[str] = set()
         for row in sample:
@@ -353,6 +360,12 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
 
     schema = {}
 
+    # Track assigned columns per table to prevent collisions.
+    # When forum IDs and member IDs overlap (e.g. both contain {1,2,3}),
+    # the same column could be detected as both forum_id and poster_id.
+    topic_assigned: set[int] = set()
+    post_assigned: set[int] = set()
+
     # ── Forum columns ──
     forum_name_col = _detect_name_column(forums_rows, start_col=1)
     schema["forum_name"] = forum_name_col if forum_name_col is not None else 6
@@ -360,20 +373,30 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
               f"{' (auto)' if forum_name_col is not None else ' (default)'}")
 
     # ── Topic columns ──
-    topic_forum_col = _detect_column(topics_rows, forum_ids, start_col=2)
+    # Detect forum_id first (fewer distinct values = more specific match)
+    topic_forum_col = _detect_column(topics_rows, forum_ids, start_col=2,
+                                      exclude_cols=topic_assigned)
     schema["topic_forum_id"] = topic_forum_col if topic_forum_col is not None else 15
+    topic_assigned.add(schema["topic_forum_id"])
     log_debug(f"ACP schema: topic forum_id col = {schema['topic_forum_id']}"
               f"{' (auto)' if topic_forum_col is not None else ' (default)'}")
 
     topic_title_col = _detect_name_column(topics_rows, start_col=1)
     schema["topic_title"] = topic_title_col if topic_title_col is not None else 1
+    topic_assigned.add(schema["topic_title"])
 
     topic_last_post_col = _detect_timestamp_column(topics_rows, start_col=2)
     schema["topic_last_post_date"] = topic_last_post_col if topic_last_post_col is not None else 8
+    topic_assigned.add(schema["topic_last_post_date"])
 
-    # Last poster ID: find column in topics containing member IDs
-    topic_poster_col = _detect_column(topics_rows, member_ids, start_col=2)
+    # Last poster ID: find column in topics containing member IDs,
+    # EXCLUDING the column already assigned to forum_id
+    topic_poster_col = _detect_column(topics_rows, member_ids, start_col=2,
+                                       exclude_cols=topic_assigned)
     schema["topic_last_poster_id"] = topic_poster_col if topic_poster_col is not None else 7
+    topic_assigned.add(schema["topic_last_poster_id"])
+    log_debug(f"ACP schema: topic last_poster_id col = {schema['topic_last_poster_id']}"
+              f"{' (auto)' if topic_poster_col is not None else ' (default)'}")
 
     # Last poster name: find a name column AFTER the poster ID column
     poster_name_start = schema["topic_last_poster_id"] + 1
@@ -381,14 +404,20 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
     schema["topic_last_poster_name"] = topic_poster_name_col if topic_poster_name_col is not None else 11
 
     # ── Post columns ──
-    post_forum_col = _detect_column(posts_rows, forum_ids, start_col=2)
+    post_forum_col = _detect_column(posts_rows, forum_ids, start_col=2,
+                                     exclude_cols=post_assigned)
     schema["post_forum_id"] = post_forum_col if post_forum_col is not None else 13
+    post_assigned.add(schema["post_forum_id"])
 
-    post_topic_col = _detect_column(posts_rows, topic_ids, start_col=2)
+    post_topic_col = _detect_column(posts_rows, topic_ids, start_col=2,
+                                     exclude_cols=post_assigned)
     schema["post_topic_id"] = post_topic_col if post_topic_col is not None else 12
+    post_assigned.add(schema["post_topic_id"])
 
-    post_author_col = _detect_column(posts_rows, member_ids, start_col=2)
+    post_author_col = _detect_column(posts_rows, member_ids, start_col=2,
+                                      exclude_cols=post_assigned)
     schema["post_author_id"] = post_author_col if post_author_col is not None else 3
+    post_assigned.add(schema["post_author_id"])
 
     post_date_col = _detect_timestamp_column(posts_rows, start_col=2)
     schema["post_date"] = post_date_col if post_date_col is not None else 8

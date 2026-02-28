@@ -69,21 +69,28 @@ async def _cleanup_orphaned_data():
         async with aiosqlite.connect(settings.database_path) as db:
             db.row_factory = aiosqlite.Row
 
-            # One-time wipe of corrupted thread data from bad column indices
-            schema_fix_done = await get_crawl_status(db, "schema_fix_v297")
-            if not schema_fix_done:
-                r_ct = await db.execute("DELETE FROM character_threads")
-                r_t = await db.execute("DELETE FROM threads")
-                r_p = await db.execute("DELETE FROM posts")
-                r_q = await db.execute("DELETE FROM quotes")
-                r_ql = await db.execute("DELETE FROM quote_crawl_log")
-                await set_crawl_status(db, "schema_fix_v297", "done")
-                log_debug(
-                    f"Schema fix: wiped thread data for rebuild — "
-                    f"{r_t.rowcount} threads, {r_ct.rowcount} links, "
-                    f"{r_p.rowcount} posts, {r_q.rowcount} quotes",
-                    level="done",
-                )
+            # One-time wipe of corrupted thread data from bad column indices.
+            # v297: initial fix for hardcoded column indices
+            # v300: fix for column collision (forum_id / poster_id overlap)
+            for fix_flag in ("schema_fix_v297", "schema_fix_v300"):
+                fix_done = await get_crawl_status(db, fix_flag)
+                if not fix_done:
+                    r_ct = await db.execute("DELETE FROM character_threads")
+                    r_t = await db.execute("DELETE FROM threads")
+                    r_p = await db.execute("DELETE FROM posts")
+                    r_q = await db.execute("DELETE FROM quotes")
+                    r_ql = await db.execute("DELETE FROM quote_crawl_log")
+                    await set_crawl_status(db, fix_flag, "done")
+                    # Mark all flags done so we don't re-wipe
+                    for f in ("schema_fix_v297", "schema_fix_v300"):
+                        await set_crawl_status(db, f, "done")
+                    log_debug(
+                        f"Schema fix ({fix_flag}): wiped thread data for rebuild — "
+                        f"{r_t.rowcount} threads, {r_ct.rowcount} links, "
+                        f"{r_p.rowcount} posts, {r_q.rowcount} quotes",
+                        level="done",
+                    )
+                    break  # Only wipe once
 
             # Remove threads from excluded forums
             if excluded_forums:
