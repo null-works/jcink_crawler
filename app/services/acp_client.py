@@ -323,6 +323,16 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
     posts_rows = raw.get("posts", [])
     members_rows = raw.get("members", [])
 
+    # Log first row from each table for schema debugging
+    if forums_rows:
+        log_debug(f"ACP schema debug: forums[0] ({len(forums_rows[0])} cols) = {forums_rows[0][:10]}")
+    if topics_rows:
+        log_debug(f"ACP schema debug: topics[0] ({len(topics_rows[0])} cols) = {topics_rows[0][:20]}")
+    if posts_rows:
+        log_debug(f"ACP schema debug: posts[0] ({len(posts_rows[0])} cols) = {posts_rows[0][:16]}")
+    if members_rows:
+        log_debug(f"ACP schema debug: members[0] ({len(members_rows[0])} cols) = {members_rows[0][:12]}")
+
     # Step 1: Get forum IDs from forums table (col 0 is always id)
     forum_ids = set()
     for row in forums_rows:
