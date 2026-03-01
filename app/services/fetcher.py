@@ -95,6 +95,17 @@ async def authenticate() -> bool:
         return False
 
 
+async def reauthenticate() -> bool:
+    """Force a fresh login, clearing any stale session.
+
+    Call this when a fetch returns a board message that might be caused
+    by an expired JCink session rather than a genuinely restricted page.
+    """
+    global _authenticated
+    _authenticated = False
+    return await authenticate()
+
+
 async def ensure_authenticated() -> None:
     """Ensure the client is authenticated if credentials are available."""
     global _authenticated

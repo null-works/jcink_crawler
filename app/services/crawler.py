@@ -2,7 +2,7 @@ import asyncio
 import aiosqlite
 from app.config import settings
 from app.services.activity import set_activity, clear_activity, log_debug
-from app.services.fetcher import fetch_page, fetch_page_rendered, fetch_page_with_delay, fetch_pages_concurrent
+from app.services.fetcher import fetch_page, fetch_page_rendered, fetch_page_with_delay, fetch_pages_concurrent, reauthenticate
 from app.services.parser import (
     parse_search_results,
     parse_search_redirect,
@@ -414,9 +414,14 @@ async def crawl_single_thread(
         return {"error": "Failed to fetch thread"}
 
     if is_board_message(thread_html):
-        log_debug(f"Targeted crawl FAILED: board message for thread {thread_id}", level="error")
-        clear_activity()
-        return {"error": "Board message (cooldown)"}
+        # Board message may be a stale session — re-authenticate and retry once.
+        log_debug(f"Targeted crawl: board message for thread {thread_id}, re-authenticating", level="webhook")
+        if await reauthenticate():
+            thread_html = await fetch_page(thread_url)
+        if not thread_html or is_board_message(thread_html):
+            log_debug(f"Targeted crawl FAILED: board message for thread {thread_id}", level="error")
+            clear_activity()
+            return {"error": "Board message (cooldown)"}
 
     # Get last page for last poster
     max_st = parse_thread_pagination(thread_html)
