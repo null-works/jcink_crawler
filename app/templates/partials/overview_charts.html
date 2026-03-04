@@ -1,7 +1,7 @@
-{# Row 1: Thread distribution + Affiliation + Post line graphs #}
+{# Row 1: Topic distribution + Affiliation + Post line graphs #}
 <div class="chart-row">
     <div class="chart-card">
-        <h3 class="chart-title">Threads by Category</h3>
+        <h3 class="chart-title">Topics by Category</h3>
         <div class="chart-container chart-container-sm">
             <canvas id="chart-threads-category"></canvas>
         </div>
@@ -39,7 +39,7 @@
         </div>
     </div>
     <div class="chart-card chart-card-wide">
-        <h3 class="chart-title">Threads by Player</h3>
+        <h3 class="chart-title">Topics by Player</h3>
         <div class="chart-container">
             <canvas id="chart-threads-player"></canvas>
         </div>
@@ -92,7 +92,7 @@
     Chart.defaults.borderColor = dracula.current;
     Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
-    // Threads by Category — doughnut
+    // Topics by Category — doughnut
     const catData = {{ chart_data.threads_by_category | tojson }};
     const catLabels = ['Ongoing', 'Comms', 'Complete', 'Incomplete'];
     const catKeys = ['ongoing', 'comms', 'complete', 'incomplete'];
@@ -209,7 +209,7 @@
         data: {
             labels: topChars.map(d => d.label),
             datasets: [{
-                label: 'Threads',
+                label: 'Topics',
                 data: topChars.map(d => d.count),
                 backgroundColor: dracula.purple + '99',
                 borderColor: dracula.purple,
@@ -228,14 +228,14 @@
         }
     });
 
-    // Threads by Player — horizontal bar
+    // Topics by Player — horizontal bar
     const playerData = {{ chart_data.threads_by_player | tojson }};
     new Chart(document.getElementById('chart-threads-player'), {
         type: 'bar',
         data: {
             labels: playerData.map(d => d.label),
             datasets: [{
-                label: 'Threads',
+                label: 'Topics',
                 data: playerData.map(d => d.count),
                 backgroundColor: dracula.cyan + '99',
                 borderColor: dracula.cyan,

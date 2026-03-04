@@ -11,7 +11,7 @@
             <th>Roster</th>
             <th class="sortable {{ 'sort-asc' if sort == 'total_threads' and dir == 'asc' }}{{ 'sort-desc' if sort == 'total_threads' and dir == 'desc' }}"
                 hx-get="/htmx/players?sort=total_threads&dir={{ 'desc' if sort == 'total_threads' and dir == 'asc' else 'asc' }}"
-                hx-target="#player-tbody" hx-include="[name='q']">Threads</th>
+                hx-target="#player-tbody" hx-include="[name='q']">Topics</th>
             <th class="sortable {{ 'sort-asc' if sort == 'ongoing_threads' and dir == 'asc' }}{{ 'sort-desc' if sort == 'ongoing_threads' and dir == 'desc' }}"
                 hx-get="/htmx/players?sort=ongoing_threads&dir={{ 'desc' if sort == 'ongoing_threads' and dir == 'asc' else 'asc' }}"
                 hx-target="#player-tbody" hx-include="[name='q']">Activity</th>

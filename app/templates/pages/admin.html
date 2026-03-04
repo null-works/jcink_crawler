@@ -18,7 +18,7 @@
     <div class="card">
         <h3 class="card-title">Register Character</h3>
         <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
-            Register a JCink user ID for tracking. Profile and threads will be crawled automatically.
+            Register a JCink user ID for tracking. Profile and topics will be crawled automatically.
         </p>
         <form hx-post="/htmx/register" hx-target="#register-result" hx-swap="innerHTML">
             <input type="text" name="user_id" class="form-input" placeholder="JCink User ID" required>
@@ -43,7 +43,7 @@
                     hx-post="/htmx/crawl"
                     hx-vals='{"crawl_type": "all-threads"}'
                     hx-target="#crawl-result"
-                    hx-swap="innerHTML">Crawl All Threads</button>
+                    hx-swap="innerHTML">Crawl All Topics</button>
             <button class="btn btn-ghost"
                     hx-post="/htmx/crawl"
                     hx-vals='{"crawl_type": "all-profiles"}'
@@ -67,7 +67,7 @@
                 {% endfor %}
             </select>
             <select name="crawl_type" class="form-input">
-                <option value="threads">Threads</option>
+                <option value="threads">Topics</option>
                 <option value="profile">Profile</option>
             </select>
             <button type="submit" class="btn btn-purple">Crawl</button>
@@ -80,7 +80,7 @@
 <div class="card" style="margin-top: 1.5rem;">
     <h3 class="card-title" style="margin-bottom: 0.5rem;">ACP Post Sync</h3>
     <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 1rem;">
-        Logs into JCink's Admin Control Panel and dumps the full database. Syncs threads, post counts, last poster data,
+        Logs into JCink's Admin Control Panel and dumps the full database. Syncs topics, post counts, last poster data,
         and accurate timestamps from the SQL database. When configured, this replaces HTML scraping for everything except quotes.
     </p>
 
@@ -137,21 +137,21 @@
 <div class="card" style="margin-top: 1.5rem;">
     <h3 class="card-title" style="margin-bottom: 0.5rem;">Purge &amp; Re-crawl</h3>
     <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
-        Wipes all threads, quotes, and post data, then triggers a full re-crawl.
+        Wipes all topics, quotes, and post data, then triggers a full re-crawl.
         Characters and profile fields are kept. <span class="text-yellow">This cannot be undone.</span>
     </p>
     <button class="btn btn-pink"
             hx-post="/htmx/purge-recrawl"
             hx-target="#purge-result"
             hx-swap="innerHTML"
-            hx-confirm="This will delete ALL threads, quotes, and posts from the database and start a full re-crawl. Are you sure?">
+            hx-confirm="This will delete ALL topics, quotes, and posts from the database and start a full re-crawl. Are you sure?">
         Purge &amp; Re-crawl
     </button>
     <div id="purge-result" class="result"></div>
     <hr style="border-color: var(--current); margin: 1rem 0;">
     <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--red);">Full Nuke</h4>
     <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
-        Wipes <strong>everything</strong> — characters, profiles, threads, quotes, posts.
+        Wipes <strong>everything</strong> — characters, profiles, topics, quotes, posts.
         Re-discovers all characters from scratch. <span class="text-red">You will lose all data.</span>
     </p>
     <button class="btn btn-pink"
@@ -159,7 +159,7 @@
             hx-post="/htmx/nuke-rebuild"
             hx-target="#nuke-result"
             hx-swap="innerHTML"
-            hx-confirm="FULL NUKE: This will delete ALL data including characters and profiles, then re-discover from scratch. Are you absolutely sure?">
+            hx-confirm="FULL NUKE: This will delete ALL data including characters and profiles, then re-discover from scratch. Are you sure?">
         Nuke &amp; Rebuild
     </button>
     <div id="nuke-result" class="result"></div>
@@ -182,7 +182,7 @@
             <td class="field-value">{{ stats.characters_tracked }}</td>
         </tr>
         <tr>
-            <td class="field-key">Total Threads</td>
+            <td class="field-key">Total Topics</td>
             <td class="field-value">{{ stats.total_threads }}</td>
         </tr>
         <tr>

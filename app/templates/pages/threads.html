@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Threads - The Watcher{% endblock %}
+{% block title %}Topics - The Watcher{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h1>Thread Browser</h1>
-    <p class="subtitle">Search and filter threads across all characters</p>
+    <h1>Topic Browser</h1>
+    <p class="subtitle">Search and filter topics across all characters</p>
 </div>
 
 {# Filters #}
 <div class="filters-bar">
-    <input type="search" name="q" class="search-input" placeholder="Search threads..."
+    <input type="search" name="q" class="search-input" placeholder="Search topics..."
            value="{{ q or '' }}"
            hx-get="/htmx/threads"
            hx-trigger="keyup changed delay:300ms"
