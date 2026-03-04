@@ -1091,6 +1091,23 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                         )
                     posts_stored += len(relevant_posts)
 
+            # Update last_thread_crawl for every character touched during this sync.
+            # Without this, the dashboard "Last Crawl" / "Recent Activity" timestamps
+            # never update in ACP mode (they were only set by the HTML crawl path).
+            touched_char_ids = set()
+            for tid in relevant_thread_ids:
+                for cid in chars_in_thread.get(tid, set()):
+                    if cid in tracked_chars:
+                        touched_char_ids.add(cid)
+
+            if touched_char_ids:
+                placeholders = ",".join("?" * len(touched_char_ids))
+                await db.execute(
+                    f"UPDATE characters SET last_thread_crawl = CURRENT_TIMESTAMP, "
+                    f"updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
+                    list(touched_char_ids),
+                )
+
             await db.commit()
 
         # Record last sync time
