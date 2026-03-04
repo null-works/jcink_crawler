@@ -7,7 +7,8 @@ from httpx import AsyncClient, ASGITransport
 os.environ["FORUM_BASE_URL"] = "https://therewasanidea.jcink.net"
 os.environ["WEBHOOK_CRAWL_DELAY_SECONDS"] = "0"
 
-_test_db = tempfile.mktemp(suffix=".db")
+_test_dir = tempfile.mkdtemp()
+_test_db = os.path.join(_test_dir, "test.db")
 os.environ["DATABASE_PATH"] = _test_db
 
 from app.main import app

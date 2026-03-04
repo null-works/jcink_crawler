@@ -6,7 +6,7 @@ services:
     ports:
       - "127.0.0.1:8944:8000"
     volumes:
-      - /opt/jcink-crawler/data:/app/data
+      - ./data:/app/data
       - ./app:/app/app
       - ./cli.py:/app/cli.py
       - ./tui.py:/app/tui.py

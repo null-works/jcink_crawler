@@ -7,14 +7,29 @@ from app.config import settings
 from app.services.crawler import (
     crawl_character_threads,
     crawl_character_profile,
+    crawl_quotes_only,
     check_profile_exists,
+    sync_posts_from_acp,
 )
 from app.services.activity import set_activity, clear_activity, log_debug
 
 
 _scheduler: AsyncIOScheduler | None = None
+_startup_task: asyncio.Task | None = None
 
 MAX_CONSECUTIVE_MISSES = 100
+
+
+async def _has_acp_credentials() -> bool:
+    """Check if ACP admin credentials are configured (DB or env)."""
+    if settings.admin_username and settings.admin_password:
+        return True
+    async with aiosqlite.connect(settings.database_path) as db:
+        db.row_factory = aiosqlite.Row
+        from app.models.operations import get_crawl_status
+        db_user = await get_crawl_status(db, "acp_username")
+        db_pass = await get_crawl_status(db, "acp_password")
+    return bool(db_user and db_pass)
 
 
 async def _clear_quote_crawl_log():
@@ -34,6 +49,205 @@ async def _clear_quote_crawl_log():
         log_debug(f"Error clearing quote_crawl_log: {e}", level="error")
 
 
+async def _cleanup_orphaned_data():
+    """Remove orphaned/corrupted records on startup.
+
+    On first run after the schema-detection fix, wipes ALL thread data
+    so the next ACP sync rebuilds everything with correct column mapping.
+    Uses a crawl_status flag to ensure this only happens once.
+
+    After that, normal cleanup runs:
+    - Threads in excluded forums
+    - character_threads pointing to deleted threads or characters
+    - threads with no character links
+    - posts pointing to non-existent threads or characters
+    """
+    from app.models.operations import get_crawl_status, set_crawl_status
+
+    excluded_forums = settings.excluded_forum_ids
+    try:
+        async with aiosqlite.connect(settings.database_path) as db:
+            db.row_factory = aiosqlite.Row
+
+            # One-time wipe of corrupted thread data from bad column indices.
+            # v297: initial fix for hardcoded column indices
+            # v300: fix for column collision (forum_id / poster_id overlap)
+            for fix_flag in ("schema_fix_v297", "schema_fix_v300"):
+                fix_done = await get_crawl_status(db, fix_flag)
+                if not fix_done:
+                    r_ct = await db.execute("DELETE FROM character_threads")
+                    r_t = await db.execute("DELETE FROM threads")
+                    r_p = await db.execute("DELETE FROM posts")
+                    r_q = await db.execute("DELETE FROM quotes")
+                    r_ql = await db.execute("DELETE FROM quote_crawl_log")
+                    await set_crawl_status(db, fix_flag, "done")
+                    # Mark all flags done so we don't re-wipe
+                    for f in ("schema_fix_v297", "schema_fix_v300"):
+                        await set_crawl_status(db, f, "done")
+                    log_debug(
+                        f"Schema fix ({fix_flag}): wiped thread data for rebuild — "
+                        f"{r_t.rowcount} threads, {r_ct.rowcount} links, "
+                        f"{r_p.rowcount} posts, {r_q.rowcount} quotes",
+                        level="done",
+                    )
+                    break  # Only wipe once
+
+            # Remove threads from excluded forums
+            if excluded_forums:
+                placeholders = ",".join("?" * len(excluded_forums))
+                r0 = await db.execute(
+                    f"DELETE FROM character_threads WHERE thread_id IN "
+                    f"(SELECT id FROM threads WHERE forum_id IN ({placeholders}))",
+                    list(excluded_forums),
+                )
+                excluded_links = r0.rowcount
+                r0b = await db.execute(
+                    f"DELETE FROM threads WHERE forum_id IN ({placeholders})",
+                    list(excluded_forums),
+                )
+                excluded_threads = r0b.rowcount
+                if excluded_links or excluded_threads:
+                    log_debug(
+                        f"Cleanup: removed {excluded_threads} threads and "
+                        f"{excluded_links} links from excluded forums",
+                        level="done",
+                    )
+
+            # Remove character_threads with missing thread or character
+            r1 = await db.execute("""
+                DELETE FROM character_threads
+                WHERE thread_id NOT IN (SELECT id FROM threads)
+                   OR character_id NOT IN (SELECT id FROM characters)
+            """)
+            orphan_links = r1.rowcount
+
+            # Remove threads that have zero character links
+            r2 = await db.execute("""
+                DELETE FROM threads
+                WHERE id NOT IN (SELECT DISTINCT thread_id FROM character_threads)
+            """)
+            orphan_threads = r2.rowcount
+
+            # Remove posts with missing thread or character
+            r3 = await db.execute("""
+                DELETE FROM posts
+                WHERE thread_id NOT IN (SELECT id FROM threads)
+                   OR character_id NOT IN (SELECT id FROM characters)
+            """)
+            orphan_posts = r3.rowcount
+
+            await db.commit()
+
+            if orphan_links or orphan_threads or orphan_posts:
+                log_debug(
+                    f"Cleanup: removed {orphan_links} orphan links, "
+                    f"{orphan_threads} orphan threads, {orphan_posts} orphan posts",
+                    level="done",
+                )
+    except Exception as e:
+        log_debug(f"Error during orphan cleanup: {e}", level="error")
+
+
+async def _acp_sync_cycle():
+    """Primary data sync using ACP SQL dump.
+
+    This is MUCH faster than HTML scraping for post counting and thread
+    tracking because it gets ALL data in a single database dump rather
+    than fetching hundreds of individual pages.
+
+    Only dumps the specific tables we need (topics, posts, forums, members)
+    matching the approach in databaseParser.js.
+
+    After the ACP sync, runs a quote-only HTML crawl pass for threads
+    that haven't been quote-scraped yet.
+    """
+    log_debug("Starting ACP sync cycle")
+
+    try:
+        result = await sync_posts_from_acp(settings.database_path)
+        if "error" in result:
+            log_debug(f"ACP sync failed: {result['error']}", level="error")
+            return
+        log_debug(
+            f"ACP sync complete: {result.get('threads_upserted', 0)} threads, "
+            f"{result.get('posts_stored', 0)} posts, "
+            f"{result.get('character_links', 0)} character links",
+            level="done",
+        )
+    except Exception as e:
+        log_debug(f"ACP sync cycle error: {e}", level="error")
+        return
+
+    # Follow up with quote extraction for unscraped threads
+    try:
+        quote_result = await crawl_quotes_only(settings.database_path)
+        quotes_added = quote_result.get("quotes_added", 0)
+        if quotes_added:
+            log_debug(f"Quote pass: {quotes_added} new quotes", level="done")
+    except Exception as e:
+        log_debug(f"Quote crawl error: {e}", level="error")
+
+
+async def _discover_and_crawl_profiles():
+    """Discover new characters and crawl all profiles.
+
+    Iterates user IDs 1, 2, 3... to find characters, then does a
+    Playwright profile crawl for each. Does NOT crawl threads — that's
+    handled by _acp_sync_cycle when ACP is available, or by
+    _crawl_all_characters_html as fallback.
+    """
+    excluded = settings.excluded_name_set
+    consecutive_misses = 0
+    processed = 0
+    user_id = 0
+
+    log_debug(f"Starting character discovery + profile crawl (stop after {MAX_CONSECUTIVE_MISSES} consecutive misses)")
+
+    while consecutive_misses < MAX_CONSECUTIVE_MISSES:
+        user_id += 1
+        sid = str(user_id)
+
+        set_activity(
+            f"Checking ID {sid} ({consecutive_misses} misses)",
+            character_id=sid,
+        )
+
+        # Quick httpx check — skips board-message / deleted accounts fast
+        name = await check_profile_exists(sid)
+        if name is None:
+            consecutive_misses += 1
+            log_debug(f"ID {sid}: no profile (miss {consecutive_misses}/{MAX_CONSECUTIVE_MISSES})")
+            continue
+
+        # Valid profile — reset miss counter
+        consecutive_misses = 0
+
+        if name.lower() in excluded:
+            log_debug(f"ID {sid}: {name} (excluded)")
+            continue
+
+        processed += 1
+
+        # Full profile crawl (Playwright for power grid)
+        set_activity(
+            f"({processed}) Profile: {name}",
+            character_id=sid,
+            character_name=name,
+        )
+        try:
+            await crawl_character_profile(sid, settings.database_path)
+        except Exception as e:
+            log_debug(f"Error crawling profile for {name} ({sid}): {e}", level="error")
+
+        await asyncio.sleep(2)
+
+    clear_activity()
+    log_debug(
+        f"Discovery complete: checked {user_id} IDs, {processed} characters processed",
+        level="done",
+    )
+
+
 async def _crawl_all_characters():
     """Crawl every account by iterating showuser=1, 2, 3...
 
@@ -41,6 +255,10 @@ async def _crawl_all_characters():
     lightweight httpx check first, then full Playwright profile crawl +
     thread/quote crawl for valid accounts.  Stops after 100 consecutive
     misses (deleted/banned profiles).
+
+    This is the FALLBACK path used when ACP credentials are not available.
+    When ACP is configured, _acp_sync_cycle handles threads/posts and
+    _discover_and_crawl_profiles handles profile discovery.
     """
     excluded = settings.excluded_name_set
     consecutive_misses = 0
@@ -155,35 +373,87 @@ async def _crawl_all_profiles():
     )
 
 
-def start_scheduler():
-    """Start the APScheduler with configured intervals."""
-    global _scheduler
+async def start_scheduler():
+    """Start the APScheduler with configured intervals.
+
+    Two modes:
+    1. ACP mode (admin credentials configured): Uses targeted SQL dump for
+       thread/post data (fast, reliable), HTML only for profiles and quotes.
+    2. HTML-only mode (no admin credentials): Brute-force HTML crawl for
+       everything (slow, fragile, but works without ACP access).
+    """
+    global _scheduler, _startup_task
     _scheduler = AsyncIOScheduler()
 
-    _scheduler.add_job(
-        _crawl_all_characters,
-        trigger=IntervalTrigger(minutes=settings.crawl_threads_interval_minutes),
-        id="crawl_all_characters",
-        name="Full crawl: iterate all user IDs",
-        replace_existing=True,
-        next_run_time=None,  # Startup task handles the first run
-    )
+    use_acp = await _has_acp_credentials()
+
+    if use_acp:
+        # ACP mode: fast targeted SQL dump for threads + posts
+        acp_interval = settings.acp_sync_interval_minutes or settings.crawl_threads_interval_minutes
+        _scheduler.add_job(
+            _acp_sync_cycle,
+            trigger=IntervalTrigger(minutes=acp_interval),
+            id="acp_sync_cycle",
+            name="ACP sync: threads + posts + quotes",
+            replace_existing=True,
+            next_run_time=None,
+        )
+
+        # Profile discovery + crawl on a separate schedule
+        _scheduler.add_job(
+            _discover_and_crawl_profiles,
+            trigger=IntervalTrigger(minutes=settings.crawl_discovery_interval_minutes),
+            id="discover_profiles",
+            name="Discover + crawl character profiles",
+            replace_existing=True,
+            next_run_time=None,
+        )
+
+        log_debug(
+            f"Scheduler started (ACP mode) — "
+            f"ACP sync every {acp_interval}min, "
+            f"profile discovery every {settings.crawl_discovery_interval_minutes}min"
+        )
+
+        async def _startup():
+            await _clear_quote_crawl_log()
+            await _cleanup_orphaned_data()
+            # ACP sync first (fast) — gets all thread/post data in one dump
+            await _acp_sync_cycle()
+            # Then discover + crawl profiles (slower, uses Playwright)
+            await _discover_and_crawl_profiles()
+
+    else:
+        # HTML-only fallback
+        _scheduler.add_job(
+            _crawl_all_characters,
+            trigger=IntervalTrigger(minutes=settings.crawl_threads_interval_minutes),
+            id="crawl_all_characters",
+            name="Full crawl: iterate all user IDs",
+            replace_existing=True,
+            next_run_time=None,
+        )
+
+        log_debug(
+            f"Scheduler started (HTML-only mode, no ACP credentials) — "
+            f"full crawl every {settings.crawl_threads_interval_minutes}min"
+        )
+
+        async def _startup():
+            await _clear_quote_crawl_log()
+            await _cleanup_orphaned_data()
+            await _crawl_all_characters()
 
     _scheduler.start()
-
-    # Clear stale quote log then start the full crawl
-    async def _startup():
-        await _clear_quote_crawl_log()
-        await _crawl_all_characters()
-
-    asyncio.get_running_loop().create_task(_startup())
-
-    log_debug(f"Scheduler started - full crawl every {settings.crawl_threads_interval_minutes}min")
+    _startup_task = asyncio.get_running_loop().create_task(_startup())
 
 
 def stop_scheduler():
     """Stop the scheduler."""
-    global _scheduler
+    global _scheduler, _startup_task
+    if _startup_task and not _startup_task.done():
+        _startup_task.cancel()
+        _startup_task = None
     if _scheduler:
         _scheduler.shutdown()
         _scheduler = None

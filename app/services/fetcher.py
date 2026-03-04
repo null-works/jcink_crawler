@@ -86,15 +86,24 @@ async def authenticate() -> bool:
             print(f"[Fetcher] Authenticated as {settings.bot_username} (via redirect)")
             return True
 
-        print(f"[Fetcher] Login may have failed — status {response.status_code}, no session cookie found")
+        print(f"[Fetcher] Login failed — status {response.status_code}, no session cookie found")
         print(f"[Fetcher] Cookies present: {list(client.cookies.keys())}")
-        # Continue anyway — some JCink installs use different cookie names
-        _authenticated = True
-        return True
+        return False
 
     except Exception as e:
         print(f"[Fetcher] Login failed: {e}")
         return False
+
+
+async def reauthenticate() -> bool:
+    """Force a fresh login, clearing any stale session.
+
+    Call this when a fetch returns a board message that might be caused
+    by an expired JCink session rather than a genuinely restricted page.
+    """
+    global _authenticated
+    _authenticated = False
+    return await authenticate()
 
 
 async def ensure_authenticated() -> None:

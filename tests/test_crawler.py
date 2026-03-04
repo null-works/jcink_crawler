@@ -246,7 +246,11 @@ SINGLE_THREAD_PAGE = """
 
 class TestCrawlSingleThread:
     async def test_successful_single_thread_crawl(self):
-        """Crawl a single thread and verify DB updates."""
+        """Crawl a single thread and verify DB updates.
+
+        The webhook says user 42 posted, but the HTML still shows user 99 as
+        last poster (stale page). The crawler should trust the webhook user_id.
+        """
         async with aiosqlite.connect(DATABASE_PATH) as db:
             db.row_factory = aiosqlite.Row
             await upsert_character(db, "42", "Tony Stark", "https://example.com/42")
@@ -259,13 +263,15 @@ class TestCrawlSingleThread:
                 return PROFILE_HTML
             return "<html></html>"
 
-        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, side_effect=mock_fetch):
+        with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, side_effect=mock_fetch), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
             result = await crawl_single_thread("100", DATABASE_PATH, user_id="42")
 
         assert "error" not in result
         assert result["thread_id"] == "100"
         assert result["title"] == "A Great Adventure"
-        assert result["last_poster"] == "Steve Rogers"
+        # Webhook user_id is trusted as last poster even when HTML is stale
+        assert result["last_poster"] == "Tony Stark"
 
         # Verify thread was linked to requesting user
         async with aiosqlite.connect(DATABASE_PATH) as db:
@@ -286,7 +292,8 @@ class TestCrawlSingleThread:
                 return PROFILE_HTML
             return "<html></html>"
 
-        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, side_effect=mock_fetch):
+        with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, side_effect=mock_fetch), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
             result = await crawl_single_thread("100", DATABASE_PATH, user_id="42", forum_id="49")
 
         assert result["category"] == "complete"
@@ -304,7 +311,8 @@ class TestCrawlSingleThread:
                 return PROFILE_HTML
             return "<html></html>"
 
-        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, side_effect=mock_fetch):
+        with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, side_effect=mock_fetch), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
             result = await crawl_single_thread("100", DATABASE_PATH, user_id="42")
 
         assert result["quotes_added"] >= 1
@@ -327,7 +335,8 @@ class TestCrawlSingleThread:
                 return PROFILE_HTML
             return "<html></html>"
 
-        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, side_effect=mock_fetch):
+        with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, side_effect=mock_fetch), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
             await crawl_single_thread("100", DATABASE_PATH, user_id="42")
 
         # Steve (user 99) also posted, so should be linked
@@ -337,12 +346,14 @@ class TestCrawlSingleThread:
             assert threads.counts["total"] >= 1
 
     async def test_single_thread_failed_fetch(self):
-        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, return_value=None):
+        with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, return_value=None), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
             result = await crawl_single_thread("100", DATABASE_PATH)
         assert "error" in result
 
     async def test_single_thread_board_message(self):
         board_msg = "<html><head><title>Board Message</title></head><body>X</body></html>"
-        with patch("app.services.crawler.fetch_page_with_delay", new_callable=AsyncMock, return_value=board_msg):
+        with patch("app.services.crawler.fetch_page", new_callable=AsyncMock, return_value=board_msg), \
+             patch("asyncio.sleep", new_callable=AsyncMock):
             result = await crawl_single_thread("100", DATABASE_PATH)
         assert "error" in result

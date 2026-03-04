@@ -72,13 +72,20 @@ fi
 
 # --- Create host data directory ---
 
-DATA_DIR="/opt/jcink-crawler/data"
+DATA_DIR="./data"
 if [ ! -d "$DATA_DIR" ]; then
     info "Creating data directory at $DATA_DIR ..."
-    sudo mkdir -p "$DATA_DIR"
-    sudo chown "$(id -u):$(id -g)" "$DATA_DIR"
+    mkdir -p "$DATA_DIR"
 else
     info "Data directory already exists at $DATA_DIR"
+fi
+
+# Ensure the data directory is writable by the container user (UID 1000).
+# Docker volume mounts use host permissions, so if the host dir is root-owned
+# the container's appuser can't write — causing database init to fail (502).
+if [ "$(stat -c '%u' "$DATA_DIR" 2>/dev/null)" != "1000" ]; then
+    info "Setting data directory ownership to UID 1000 (container user)..."
+    sudo chown 1000:1000 "$DATA_DIR"
 fi
 
 # --- Deploy Nginx config ---

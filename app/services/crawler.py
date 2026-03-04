@@ -2,7 +2,7 @@ import asyncio
 import aiosqlite
 from app.config import settings
 from app.services.activity import set_activity, clear_activity, log_debug
-from app.services.fetcher import fetch_page, fetch_page_rendered, fetch_page_with_delay, fetch_pages_concurrent
+from app.services.fetcher import fetch_page, fetch_page_rendered, fetch_page_with_delay, fetch_pages_concurrent, reauthenticate
 from app.services.parser import (
     parse_search_results,
     parse_search_redirect,
@@ -99,7 +99,8 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             if not page_html:
                 continue
             if is_board_message(page_html):
-                break
+                log_debug("Skipping board message page in search results", level="error")
+                continue
             page_threads, _ = parse_search_results(page_html)
             for t in page_threads:
                 if t.thread_id not in seen_ids:
@@ -392,7 +393,10 @@ async def crawl_single_thread(
     base_url = settings.forum_base_url
     thread_url = f"{base_url}/index.php?showtopic={thread_id}"
 
-    log_debug(f"Targeted crawl for thread {thread_id}")
+    log_debug(
+        f"Targeted crawl for thread {thread_id} (user_id={user_id}, forum_id={forum_id})",
+        level="webhook",
+    )
     set_activity(f"Targeted crawl: thread {thread_id}", character_id=user_id)
 
     # Wait for JCink to finish processing the post submission.
@@ -401,22 +405,30 @@ async def crawl_single_thread(
     if settings.webhook_crawl_delay_seconds > 0:
         await asyncio.sleep(settings.webhook_crawl_delay_seconds)
 
-    # Fetch thread first page
-    thread_html = await fetch_page_with_delay(thread_url)
+    # Fetch thread first page — use fetch_page (no extra delay) since
+    # the webhook delay above already accounts for JCink processing time.
+    thread_html = await fetch_page(thread_url)
     if not thread_html:
+        log_debug(f"Targeted crawl FAILED: could not fetch thread {thread_id}", level="error")
         clear_activity()
         return {"error": "Failed to fetch thread"}
 
     if is_board_message(thread_html):
-        clear_activity()
-        return {"error": "Board message (cooldown)"}
+        # Board message may be a stale session — re-authenticate and retry once.
+        log_debug(f"Targeted crawl: board message for thread {thread_id}, re-authenticating", level="webhook")
+        if await reauthenticate():
+            thread_html = await fetch_page(thread_url)
+        if not thread_html or is_board_message(thread_html):
+            log_debug(f"Targeted crawl FAILED: board message for thread {thread_id}", level="error")
+            clear_activity()
+            return {"error": "Board message (cooldown)"}
 
     # Get last page for last poster
     max_st = parse_thread_pagination(thread_html)
     last_page_html = None
     if max_st > 0:
         last_page_url = f"{thread_url}&st={max_st}"
-        last_page_html = await fetch_page_with_delay(last_page_url)
+        last_page_html = await fetch_page(last_page_url)
 
     poster_html = last_page_html or thread_html
 
@@ -428,9 +440,7 @@ async def crawl_single_thread(
     # Fetch last poster avatar
     last_poster_avatar = None
     if last_poster_id:
-        avatar_html = await fetch_page_with_delay(
-            f"{base_url}/index.php?showuser={last_poster_id}"
-        )
+        avatar_html = await fetch_page(f"{base_url}/index.php?showuser={last_poster_id}")
         if avatar_html:
             last_poster_avatar = parse_avatar_from_profile(avatar_html)
 
@@ -515,72 +525,122 @@ async def crawl_single_thread(
             quotes_by_character[cid] = char_quotes
             chars_to_mark.append(cid)
 
-    # Determine if user is last poster
-    is_user_last = (
-        last_poster_id == user_id
-        if last_poster_id and user_id
-        else False
+    # Determine if user is last poster.
+    # Trust the webhook: if user_id is provided, the theme told us this user
+    # just submitted a post. If HTML disagrees (stale page), override it.
+    if user_id:
+        if last_poster_id and last_poster_id != user_id:
+            log_debug(
+                f"Stale HTML detected: parsed last_poster={last_poster_id}, "
+                f"but webhook says user {user_id} just posted — "
+                f"retrying fetch after 5s",
+                level="warn",
+            )
+            # Retry: JCink may not have saved the post on first fetch
+            await asyncio.sleep(5)
+            retry_html = await fetch_page(
+                f"{thread_url}&st={max_st}" if max_st > 0 else thread_url
+            )
+            if retry_html and not is_board_message(retry_html):
+                retry_poster = parse_last_poster(retry_html)
+                if retry_poster and retry_poster.user_id == user_id:
+                    last_poster_id = retry_poster.user_id
+                    last_poster_name = retry_poster.name
+                    log_debug(f"Retry succeeded: last_poster now {last_poster_id}", level="webhook")
+                else:
+                    log_debug(
+                        f"Retry still stale (got {retry_poster.user_id if retry_poster else None}), "
+                        f"trusting webhook user_id={user_id}",
+                        level="warn",
+                    )
+            # Trust the webhook regardless of HTML result
+            last_poster_id = user_id
+            last_poster_name = all_characters.get(user_id, last_poster_name)
+        is_user_last = True
+    else:
+        is_user_last = last_poster_id == user_id if last_poster_id and user_id else False
+
+    log_debug(
+        f"Targeted crawl thread {thread_id}: last_poster={last_poster_name} "
+        f"(id={last_poster_id}), authors={thread_author_ids}, "
+        f"user_id={user_id}, is_user_last={is_user_last}",
+        level="webhook",
     )
 
     # Write everything to DB
     quotes_added = 0
-    async with aiosqlite.connect(db_path) as db:
-        db.row_factory = aiosqlite.Row
+    linked_characters: list[str] = []
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
 
-        await upsert_thread(
-            db,
-            thread_id=thread_id,
-            title=title,
-            url=thread_url,
-            forum_id=forum_id,
-            forum_name=forum_name,
-            category=category,
-            last_poster_id=last_poster_id,
-            last_poster_name=last_poster_name,
-            last_poster_avatar=last_poster_avatar,
-        )
-
-        # Link to requesting user
-        if user_id:
-            await link_character_thread(
+            await upsert_thread(
                 db,
-                character_id=user_id,
                 thread_id=thread_id,
+                title=title,
+                url=thread_url,
+                forum_id=forum_id,
+                forum_name=forum_name,
                 category=category,
-                is_user_last_poster=bool(is_user_last),
-                post_count=post_counts_by_char.get(user_id, 0),
+                last_poster_id=last_poster_id,
+                last_poster_name=last_poster_name,
+                last_poster_avatar=last_poster_avatar,
             )
 
-        # Also link other known authors
-        for author_id in thread_author_ids:
-            if author_id in all_characters and author_id != user_id:
-                is_author_last = last_poster_id == author_id if last_poster_id else False
+            # Link to requesting user
+            if user_id:
                 await link_character_thread(
                     db,
-                    character_id=author_id,
+                    character_id=user_id,
                     thread_id=thread_id,
                     category=category,
-                    is_user_last_poster=is_author_last,
-                    post_count=post_counts_by_char.get(author_id, 0),
+                    is_user_last_poster=bool(is_user_last),
+                    post_count=post_counts_by_char.get(user_id, 0),
                 )
+                linked_characters.append(f"{user_id}(last={is_user_last})")
 
-        # Store post records for date-based activity queries
-        if all_post_records:
-            await replace_thread_posts(db, thread_id, all_post_records)
+            # Also link other known authors
+            for author_id in thread_author_ids:
+                if author_id in all_characters and author_id != user_id:
+                    is_author_last = last_poster_id == author_id if last_poster_id else False
+                    await link_character_thread(
+                        db,
+                        character_id=author_id,
+                        thread_id=thread_id,
+                        category=category,
+                        is_user_last_poster=is_author_last,
+                        post_count=post_counts_by_char.get(author_id, 0),
+                    )
+                    linked_characters.append(f"{author_id}(last={is_author_last})")
 
-        # Save quotes
-        for cid, char_quotes in quotes_by_character.items():
-            for q in char_quotes:
-                added = await add_quote(db, cid, q["text"], thread_id, title)
-                if added:
-                    quotes_added += 1
-        for cid in chars_to_mark:
-            await mark_thread_quote_scraped(db, thread_id, cid)
+            # Store post records for date-based activity queries
+            if all_post_records:
+                await replace_thread_posts(db, thread_id, all_post_records)
 
-        await db.commit()
+            # Save quotes
+            for cid, char_quotes in quotes_by_character.items():
+                for q in char_quotes:
+                    added = await add_quote(db, cid, q["text"], thread_id, title)
+                    if added:
+                        quotes_added += 1
+            for cid in chars_to_mark:
+                await mark_thread_quote_scraped(db, thread_id, cid)
+
+            await db.commit()
+    except Exception as exc:
+        log_debug(
+            f"Targeted crawl FAILED for thread {thread_id}: {type(exc).__name__}: {exc}",
+            level="error",
+        )
+        clear_activity()
+        return {"error": str(exc)}
 
     clear_activity()
-    log_debug(f"Targeted crawl complete: thread {thread_id}, {quotes_added} quotes added", level="done")
+    log_debug(
+        f"Targeted crawl complete: thread {thread_id}, "
+        f"linked={linked_characters}, {quotes_added} quotes added",
+        level="done",
+    )
     return {
         "thread_id": thread_id,
         "title": title,
@@ -729,7 +789,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
 
     Credentials are resolved in order:
     1. Explicit username/password params
-    2. Database crawl_status entries (acp_username / acp_password)
+    2. Database crawl_status (acp_username / acp_password)
     3. Environment variables (ADMIN_USERNAME / ADMIN_PASSWORD)
 
     Args:
@@ -740,7 +800,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     Returns:
         Summary dict with counts
     """
-    from app.services.acp_client import ACPClient, extract_topic_records, extract_post_records as acp_extract_posts
+    from app.services.acp_client import ACPClient, detect_schema, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records, extract_member_records
     from app.services.parser import categorize_thread
     from app.models.operations import get_crawl_status, set_crawl_status
     from datetime import datetime, timezone
@@ -767,18 +827,72 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             clear_activity()
             return {"error": "No data retrieved from ACP"}
 
-        # Extract structured records from SQL dump (include post bodies for quote extraction)
-        topics = extract_topic_records(raw)
-        posts = acp_extract_posts(raw, include_body=False)
-        log_debug(f"ACP dump: {len(topics)} topics, {len(posts)} posts")
+        # Auto-detect column indices by cross-referencing tables
+        schema = detect_schema(raw)
+
+        # Extract structured records using detected schema
+        topics = extract_topic_records(raw, schema=schema)
+        posts = acp_extract_posts(raw, include_body=False, schema=schema)
+        forums = extract_forum_records(raw, schema=schema)
+        log_debug(f"ACP dump: {len(topics)} topics, {len(posts)} posts, {len(forums)} forums")
 
         if not topics and not posts:
             clear_activity()
+            log_debug("ACP sync FAILED: 0 topics and 0 posts extracted", level="error")
             return {"error": "ACP dump contained no topic or post data"}
+
+        # Sanity-check: log sample data to verify schema detection
+        if topics:
+            t = topics[0]
+            log_debug(f"ACP sample topic: id={t['thread_id']} title={t['title'][:40]} "
+                      f"forum={t['forum_id']} poster={t.get('last_poster_id')}")
+        if posts:
+            p = posts[0]
+            log_debug(f"ACP sample post: author={p['character_id']} thread={p['thread_id']} "
+                      f"forum={p.get('forum_id')} date={p.get('post_date')}")
+
+        # Build forum name lookup from the dump
+        forum_name_map: dict[str, str] = {f["forum_id"]: f["name"] for f in forums}
+
+        # ── Phase 0: Auto-register characters from ACP member dump ──
+        # On a fresh DB, the characters table is empty and ACP sync would
+        # find 0 relevant threads. Fix this by registering members from
+        # the dump itself before matching threads.
+        members = extract_member_records(raw, schema=schema)
+        excluded_names = settings.excluded_name_set
+        base_url = settings.forum_base_url
+
+        if members:
+            async with aiosqlite.connect(db_path) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute("SELECT id FROM characters")
+                existing_ids = {row["id"] for row in await cursor.fetchall()}
+
+                new_chars = 0
+                for m in members:
+                    mid = m["member_id"]
+                    mname = m["name"]
+                    if mid in existing_ids:
+                        continue
+                    if mname.lower() in excluded_names:
+                        continue
+                    if mname == "Unknown" or not mname:
+                        continue
+                    await upsert_character(
+                        db,
+                        character_id=mid,
+                        name=mname,
+                        profile_url=f"{base_url}/index.php?showuser={mid}",
+                    )
+                    existing_ids.add(mid)
+                    new_chars += 1
+
+                if new_chars:
+                    log_debug(f"ACP sync: auto-registered {new_chars} characters from member dump")
 
         set_activity(f"Processing {len(topics)} topics, {len(posts)} posts from ACP")
 
-        # Load tracked character IDs
+        # Load tracked character IDs (now includes auto-registered members)
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT id FROM characters")
@@ -795,8 +909,22 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                 continue
             topic_map[t["thread_id"]] = t
 
+        # Build set of excluded thread IDs (threads in excluded forums)
+        # Check both topic forum_id and post forum_id for excluded forums
+        excluded_thread_ids: set[str] = set()
+        for t in topics:
+            if t["forum_id"] in excluded_forums:
+                excluded_thread_ids.add(t["thread_id"])
+        for p in posts:
+            if p.get("forum_id") in excluded_forums and p.get("thread_id"):
+                excluded_thread_ids.add(p["thread_id"])
+
+        if excluded_thread_ids:
+            log_debug(f"Excluding {len(excluded_thread_ids)} threads from excluded forums")
+
         # ── Phase 2: Figure out which threads involve tracked characters ──
         # Group posts by thread, and by (character, thread)
+        # Skip posts from excluded-forum threads
         posts_by_thread: dict[str, list[dict]] = {}
         post_counts: dict[tuple[str, str], int] = {}
         chars_in_thread: dict[str, set[str]] = {}
@@ -805,6 +933,8 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             tid = p.get("thread_id")
             cid = p["character_id"]
             if not tid:
+                continue
+            if tid in excluded_thread_ids:
                 continue
 
             posts_by_thread.setdefault(tid, []).append(p)
@@ -818,7 +948,26 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             if char_ids & tracked_chars:
                 relevant_thread_ids.add(tid)
 
-        log_debug(f"{len(relevant_thread_ids)} threads involve tracked characters")
+        log_debug(
+            f"ACP sync: {len(tracked_chars)} tracked chars, "
+            f"{len(topic_map)} non-excluded topics, "
+            f"{len(excluded_thread_ids)} excluded threads, "
+            f"{len(chars_in_thread)} threads with posts, "
+            f"{len(relevant_thread_ids)} threads involve tracked characters"
+        )
+        if not relevant_thread_ids:
+            # Debug: show what character IDs are actually in posts
+            all_post_cids = set()
+            for cids in chars_in_thread.values():
+                all_post_cids.update(cids)
+            sample_post_cids = sorted(all_post_cids)[:20]
+            sample_tracked = sorted(tracked_chars)[:20]
+            log_debug(
+                f"ACP sync WARNING: 0 relevant threads! "
+                f"Post char IDs (sample): {sample_post_cids} | "
+                f"Tracked char IDs (sample): {sample_tracked}",
+                level="error",
+            )
 
         # ── Phase 3: Fetch last poster avatars ──
         # Collect unique last poster IDs that need avatar lookups
@@ -870,7 +1019,6 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
 
         # ── Phase 4: Write everything to DB ──
         set_activity("Writing ACP data to database")
-        base_url = settings.forum_base_url
         threads_upserted = 0
         links_created = 0
         posts_stored = 0
@@ -899,7 +1047,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                         title=topic["title"],
                         url=thread_url,
                         forum_id=topic["forum_id"],
-                        forum_name=None,  # SQL dump doesn't have forum names
+                        forum_name=forum_name_map.get(topic["forum_id"]),
                         category=category,
                         last_poster_id=last_poster_id,
                         last_poster_name=topic.get("last_poster_name"),

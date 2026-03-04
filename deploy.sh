@@ -30,6 +30,13 @@ git fetch origin "$BRANCH"
 git reset --hard "origin/$BRANCH"
 echo "        Done."
 
+# Ensure data directory exists and is writable by the container user (UID 1000)
+mkdir -p ./data
+if [ "$(stat -c '%u' ./data 2>/dev/null)" != "1000" ]; then
+    echo "        Fixing data directory permissions for container user..."
+    sudo chown 1000:1000 ./data
+fi
+
 # Build container (no cache to ensure all file changes are picked up)
 echo "  [2/5] Building container..."
 docker compose build --no-cache

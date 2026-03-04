@@ -1,3 +1,5 @@
+import pathlib
+
 import aiosqlite
 from app.config import settings
 
@@ -8,6 +10,7 @@ async def get_db():
     """Get database connection."""
     db = await aiosqlite.connect(DATABASE_PATH)
     db.row_factory = aiosqlite.Row
+    await db.execute("PRAGMA journal_mode=WAL")
     try:
         yield db
     finally:
@@ -16,7 +19,21 @@ async def get_db():
 
 async def init_db():
     """Initialize database tables."""
+    db_dir = pathlib.Path(DATABASE_PATH).parent
+    try:
+        db_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        raise RuntimeError(
+            f"Cannot create database directory '{db_dir}'. "
+            f"If running in Docker, ensure the host volume is writable by UID 1000: "
+            f"sudo chown 1000:1000 ./data"
+        )
     async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Enable WAL mode for better concurrent read performance
+        await db.execute("PRAGMA journal_mode=WAL")
+        # Enforce foreign key constraints
+        await db.execute("PRAGMA foreign_keys=ON")
+
         # Characters - the core entity (JCink user accounts that are IC characters)
         await db.execute("""
             CREATE TABLE IF NOT EXISTS characters (
