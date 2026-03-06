@@ -133,6 +133,40 @@
     </div>
 </div>
 
+{# Crawl Schedule #}
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Crawl Schedule</h3>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 1rem;">
+        Control how often each crawl type runs (in minutes). Used by the external crawl script.
+    </p>
+    <form hx-post="/htmx/crawl-schedule" hx-target="#schedule-result" hx-swap="innerHTML">
+        <div class="admin-grid" style="margin-bottom: 0.75rem;">
+            <div style="flex: 1;">
+                <label style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">ACP Sync</label>
+                <input type="number" name="sync_interval" class="form-input"
+                       value="{{ schedule.sync_interval }}" min="1" style="margin-top: 0.25rem;">
+            </div>
+            <div style="flex: 1;">
+                <label style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Quotes</label>
+                <input type="number" name="quote_interval" class="form-input"
+                       value="{{ schedule.quote_interval }}" min="1" style="margin-top: 0.25rem;">
+            </div>
+            <div style="flex: 1;">
+                <label style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Profiles</label>
+                <input type="number" name="profile_interval" class="form-input"
+                       value="{{ schedule.profile_interval }}" min="1" style="margin-top: 0.25rem;">
+            </div>
+            <div style="flex: 1;">
+                <label style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Discovery</label>
+                <input type="number" name="discovery_interval" class="form-input"
+                       value="{{ schedule.discovery_interval }}" min="1" style="margin-top: 0.25rem;">
+            </div>
+        </div>
+        <button type="submit" class="btn btn-purple">Save Schedule</button>
+    </form>
+    <div id="schedule-result" class="result"></div>
+</div>
+
 {# Purge & re-crawl #}
 <div class="card" style="margin-top: 1.5rem;">
     <h3 class="card-title" style="margin-bottom: 0.5rem;">Purge &amp; Re-crawl</h3>

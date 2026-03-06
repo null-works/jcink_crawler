@@ -383,6 +383,13 @@ async def admin_page(
     acp_configured = bool(acp_username and acp_password)
     acp_last_sync = await get_crawl_status(db, "acp_last_sync")
 
+    # Crawl schedule
+    schedule_defaults = {"sync_interval": 30, "quote_interval": 30, "profile_interval": 120, "discovery_interval": 1440}
+    schedule = {}
+    for key, default in schedule_defaults.items():
+        val = await get_crawl_status(db, f"schedule_{key}")
+        schedule[key] = int(val) if val else default
+
     return templates.TemplateResponse(request, "pages/admin.html", {
         "stats": stats,
         "activity": activity,
@@ -390,6 +397,7 @@ async def admin_page(
         "acp_configured": acp_configured,
         "acp_username": acp_username or "",
         "acp_last_sync": acp_last_sync,
+        "schedule": schedule,
     })
 
 
@@ -765,6 +773,36 @@ async def htmx_save_acp_credentials(
     await set_crawl_status(db, "acp_password", password)
 
     return HTMLResponse(f'<span class="text-green">ACP credentials saved for {username}.</span>')
+
+
+@router.post("/htmx/crawl-schedule", response_class=HTMLResponse)
+async def htmx_save_crawl_schedule(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    labels = {
+        "sync_interval": "ACP Sync",
+        "quote_interval": "Quotes",
+        "profile_interval": "Profiles",
+        "discovery_interval": "Discovery",
+    }
+    saved = []
+    for key in labels:
+        val = form.get(key, "").strip()
+        if val:
+            minutes = max(1, int(val))
+            await set_crawl_status(db, f"schedule_{key}", str(minutes))
+            saved.append(f"{labels[key]}: {minutes}m")
+
+    if not saved:
+        return HTMLResponse('<span class="text-red">No values provided</span>')
+
+    return HTMLResponse(f'<span class="text-green">Schedule saved — {", ".join(saved)}</span>')
 
 
 @router.post("/htmx/acp-sync", response_class=HTMLResponse)
