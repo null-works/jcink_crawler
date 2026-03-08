@@ -218,22 +218,22 @@ async def webhook_activity(
         return {"status": "accepted", "action": "profile_recrawl", "user_id": data.user_id}
 
     if data.event in ("new_post", "new_topic"):
-        if data.thread_id:
-            # Targeted: crawl just this one thread
+        if data.user_id:
+            # Full character crawl — refreshes entire thread tracker
+            # (last poster, avatars, excerpts) instead of targeting one thread.
+            background_tasks.add_task(
+                crawl_character_threads, data.user_id, settings.database_path
+            )
+            return {"status": "accepted", "action": "character_recrawl", "user_id": data.user_id}
+        elif data.thread_id:
+            # Fallback: crawl just this thread if no user_id provided
             background_tasks.add_task(
                 crawl_single_thread,
                 data.thread_id,
                 settings.database_path,
-                user_id=data.user_id,
                 forum_id=data.forum_id,
             )
             return {"status": "accepted", "action": "thread_recrawl", "thread_id": data.thread_id}
-        elif data.user_id:
-            # Fallback: full thread crawl if no thread_id provided
-            background_tasks.add_task(
-                crawl_character_threads, data.user_id, settings.database_path
-            )
-            return {"status": "accepted", "action": "thread_recrawl", "user_id": data.user_id}
 
     log_debug(
         f"Webhook dropped: event={data.event} — no actionable data",
