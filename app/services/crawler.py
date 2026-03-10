@@ -107,7 +107,11 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                     all_threads.append(t)
                     seen_ids.add(t.thread_id)
 
-    log_debug(f"Total threads found: {len(all_threads)}")
+    search_poster_count = sum(1 for t in all_threads if t.last_poster_id)
+    log_debug(
+        f"Total threads found: {len(all_threads)} "
+        f"({search_poster_count} with last poster from search results)"
+    )
 
     # Pre-load character info and quote scrape status in bulk
     async with aiosqlite.connect(db_path) as db:
@@ -154,7 +158,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         if not thread_html:
             return None
 
-        # Check for multi-page threads — get last page
+        # Check for multi-page threads — get last page (needed for quotes)
         max_st = parse_thread_pagination(thread_html)
         last_page_html = None
         if max_st > 0:
@@ -162,12 +166,18 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             last_page_url = f"{thread.url}{sep}st={max_st}"
             last_page_html = await fetch_page_with_delay(last_page_url)
 
-        thread_html_for_poster = last_page_html or thread_html
+        # ── Last poster: prefer search-result data (Fizzy method) ──
+        # The search results page already tells us who last posted,
+        # so we don't need to parse the last page of each thread.
+        # Fall back to HTML parsing only if search didn't provide it.
+        last_poster_name = thread.last_poster_name
+        last_poster_id = thread.last_poster_id
+        if not last_poster_id:
+            thread_html_for_poster = last_page_html or thread_html
+            last_poster = parse_last_poster(thread_html_for_poster)
+            last_poster_name = last_poster.name if last_poster else None
+            last_poster_id = last_poster.user_id if last_poster else None
 
-        # Extract last poster and their post excerpt from the last page
-        last_poster = parse_last_poster(thread_html_for_poster)
-        last_poster_name = last_poster.name if last_poster else None
-        last_poster_id = last_poster.user_id if last_poster else None
         is_user_last = (
             last_poster_id == character_id
             if last_poster_id

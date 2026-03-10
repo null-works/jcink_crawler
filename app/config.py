@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "3.9.14"
+APP_VERSION = "3.9.15"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 

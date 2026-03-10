@@ -13,6 +13,9 @@ class ParsedThread:
     forum_id: str | None = None
     forum_name: str | None = None
     category: str = "ongoing"
+    last_poster_name: str | None = None
+    last_poster_id: str | None = None
+    last_post_date: str | None = None
 
 
 @dataclass
@@ -78,60 +81,163 @@ def parse_search_results(html: str) -> tuple[list[ParsedThread], list[str]]:
         for st in range(25, max_st + 1, 25):
             page_urls.append(f"{template_url}{sep}st={st}")
 
-    # Parse thread results from tableborder divs (JCink search result format)
-    for result_div in soup.select(".tableborder"):
-        topic_link = result_div.select_one('a[href*="showtopic="]')
-        if not topic_link:
-            continue
+    # ── Primary parse: JCink search results table (Fizzy-style) ──
+    # The standard JCink search results page uses a table within
+    # #search-topics .tablebasic.  Each row after the header has cells:
+    #   [0] icon  [1] checkbox  [2] title+desc  [3] forum location
+    #   [4] replies  [5] views  [6] starter  [7] last poster + date
+    # This gives us last poster info for free — no individual thread fetch needed.
+    search_table = soup.select_one("#search-topics .tablebasic")
+    if not search_table:
+        # Some themes wrap the table differently
+        search_table = soup.select_one("#search-topics table")
 
-        href = topic_link.get("href", "")
-        topic_match = re.search(r"showtopic=(\d+)", href)
-        if not topic_match:
-            continue
+    if search_table:
+        for row in search_table.select("tbody > tr, tr"):
+            cells = row.find_all("td", recursive=False)
+            if len(cells) < 4:
+                continue
 
-        thread_id = topic_match.group(1)
-        if thread_id in seen_ids:
-            continue
-        seen_ids.add(thread_id)
+            # Find the topic link in any cell
+            topic_link = row.select_one('a[href*="showtopic="]')
+            if not topic_link:
+                continue
 
-        # Get forum info
-        forum_link = result_div.select_one('a[href*="showforum="]')
-        forum_id = None
-        forum_name = ""
-        if forum_link:
-            forum_name = forum_link.get_text(strip=True)
-            f_match = re.search(r"showforum=(\d+)", forum_link.get("href", ""))
-            forum_id = f_match.group(1) if f_match else None
+            href = topic_link.get("href", "")
+            topic_match = re.search(r"showtopic=(\d+)", href)
+            if not topic_match:
+                continue
 
-        # Skip excluded forums
-        if forum_id and forum_id in excluded:
-            continue
+            thread_id = topic_match.group(1)
+            if thread_id in seen_ids:
+                continue
+            seen_ids.add(thread_id)
 
-        # Skip excluded forum names
-        excluded_names = {"Guidebook", "OOC Archives"}
-        if forum_name in excluded_names:
-            continue
+            # Forum info — look for showforum link in all cells
+            forum_link = row.select_one('a[href*="showforum="]')
+            forum_id = None
+            forum_name = ""
+            if forum_link:
+                forum_name = forum_link.get_text(strip=True)
+                f_match = re.search(r"showforum=(\d+)", forum_link.get("href", ""))
+                forum_id = f_match.group(1) if f_match else None
 
-        title = topic_link.get_text(strip=True)
+            if forum_id and forum_id in excluded:
+                continue
+            excluded_names = {"Guidebook", "OOC Archives"}
+            if forum_name in excluded_names:
+                continue
 
-        # Skip auto-claim threads
-        if "From: Auto Claims" in title:
-            continue
+            title = topic_link.get_text(strip=True)
+            if "From: Auto Claims" in title:
+                continue
 
-        # Build full URL
-        if not href.startswith("http"):
-            href = f"{settings.forum_base_url}/{href.lstrip('/')}"
+            if not href.startswith("http"):
+                href = f"{settings.forum_base_url}/{href.lstrip('/')}"
 
-        category = categorize_thread(forum_id)
+            category = categorize_thread(forum_id)
 
-        threads.append(ParsedThread(
-            thread_id=thread_id,
-            title=title,
-            url=href,
-            forum_id=forum_id,
-            forum_name=forum_name,
-            category=category,
-        ))
+            # ── Last poster extraction (Fizzy method) ──
+            # The last cell (or cell[7]) contains the last poster link + date.
+            last_poster_name = None
+            last_poster_id = None
+            last_post_date = None
+
+            # Try the last cell first, then scan all cells for showuser link
+            poster_link = None
+            poster_cell = None
+            for cell in reversed(cells):
+                poster_link = cell.select_one('a[href*="showuser="]')
+                if poster_link:
+                    poster_cell = cell
+                    break
+
+            if poster_link:
+                last_poster_name = poster_link.get_text(strip=True)
+                uid_match = re.search(r"showuser=(\d+)", poster_link.get("href", ""))
+                last_poster_id = uid_match.group(1) if uid_match else None
+
+                # Date is the text before the first <br> or <a> in the cell
+                if poster_cell:
+                    cell_html = str(poster_cell)
+                    # Extract text before the <br> tag (date string)
+                    br_match = re.search(r"<td[^>]*>(.*?)<br", cell_html, re.DOTALL | re.IGNORECASE)
+                    if br_match:
+                        date_text = re.sub(r"<[^>]+>", "", br_match.group(1)).strip()
+                        if date_text:
+                            last_post_date = date_text
+
+            threads.append(ParsedThread(
+                thread_id=thread_id,
+                title=title,
+                url=href,
+                forum_id=forum_id,
+                forum_name=forum_name,
+                category=category,
+                last_poster_name=last_poster_name,
+                last_poster_id=last_poster_id,
+                last_post_date=last_post_date,
+            ))
+
+    # ── Fallback: tableborder div parsing (for non-standard search layouts) ──
+    if not threads:
+        for result_div in soup.select(".tableborder"):
+            topic_link = result_div.select_one('a[href*="showtopic="]')
+            if not topic_link:
+                continue
+
+            href = topic_link.get("href", "")
+            topic_match = re.search(r"showtopic=(\d+)", href)
+            if not topic_match:
+                continue
+
+            thread_id = topic_match.group(1)
+            if thread_id in seen_ids:
+                continue
+            seen_ids.add(thread_id)
+
+            forum_link = result_div.select_one('a[href*="showforum="]')
+            forum_id = None
+            forum_name = ""
+            if forum_link:
+                forum_name = forum_link.get_text(strip=True)
+                f_match = re.search(r"showforum=(\d+)", forum_link.get("href", ""))
+                forum_id = f_match.group(1) if f_match else None
+
+            if forum_id and forum_id in excluded:
+                continue
+            excluded_names = {"Guidebook", "OOC Archives"}
+            if forum_name in excluded_names:
+                continue
+
+            title = topic_link.get_text(strip=True)
+            if "From: Auto Claims" in title:
+                continue
+
+            if not href.startswith("http"):
+                href = f"{settings.forum_base_url}/{href.lstrip('/')}"
+
+            category = categorize_thread(forum_id)
+
+            # Try to extract last poster from this div too
+            last_poster_name = None
+            last_poster_id = None
+            poster_link = result_div.select_one('a[href*="showuser="]')
+            if poster_link:
+                last_poster_name = poster_link.get_text(strip=True)
+                uid_match = re.search(r"showuser=(\d+)", poster_link.get("href", ""))
+                last_poster_id = uid_match.group(1) if uid_match else None
+
+            threads.append(ParsedThread(
+                thread_id=thread_id,
+                title=title,
+                url=href,
+                forum_id=forum_id,
+                forum_name=forum_name,
+                category=category,
+                last_poster_name=last_poster_name,
+                last_poster_id=last_poster_id,
+            ))
 
     return threads, page_urls
 
