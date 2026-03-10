@@ -166,17 +166,15 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             last_page_url = f"{thread.url}{sep}st={max_st}"
             last_page_html = await fetch_page_with_delay(last_page_url)
 
-        # ── Last poster: prefer search-result data (Fizzy method) ──
-        # The search results page already tells us who last posted,
-        # so we don't need to parse the last page of each thread.
-        # Fall back to HTML parsing only if search didn't provide it.
-        last_poster_name = thread.last_poster_name
-        last_poster_id = thread.last_poster_id
-        if not last_poster_id:
-            thread_html_for_poster = last_page_html or thread_html
-            last_poster = parse_last_poster(thread_html_for_poster)
-            last_poster_name = last_poster.name if last_poster else None
-            last_poster_id = last_poster.user_id if last_poster else None
+        # ── Last poster: always parse from the actual thread page ──
+        # JCink's "posts by user" search shows the user's own last post
+        # in the "Last Post" column, NOT the thread's actual last poster.
+        # So search-result data is unreliable for is_user_last_poster;
+        # we must check the real last page of the thread.
+        thread_html_for_poster = last_page_html or thread_html
+        last_poster = parse_last_poster(thread_html_for_poster)
+        last_poster_name = last_poster.name if last_poster else thread.last_poster_name
+        last_poster_id = last_poster.user_id if last_poster else thread.last_poster_id
 
         is_user_last = (
             last_poster_id == character_id
