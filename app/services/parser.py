@@ -287,20 +287,24 @@ def extract_thread_authors(html: str) -> set[str]:
     return author_ids
 
 
-def parse_thread_pagination(html: str) -> int:
-    """Get the highest st= value from thread pagination.
+def parse_thread_pagination(html: str) -> tuple[int, list[int]]:
+    """Get pagination offsets from thread HTML.
 
-    Returns 0 if single page.
+    Returns a tuple of (max_st, page_offsets) where page_offsets is a sorted
+    list of all st= values > 0 found in pagination links.
+    Returns (0, []) if single page.
     """
     soup = BeautifulSoup(html, "html.parser")
-    max_st = 0
+    offsets: set[int] = set()
     for link in soup.select('.pagination a[href*="st="]'):
         match = re.search(r"st=(\d+)", link.get("href", ""))
         if match:
             st = int(match.group(1))
-            if st > max_st:
-                max_st = st
-    return max_st
+            if st > 0:
+                offsets.add(st)
+    sorted_offsets = sorted(offsets)
+    max_st = sorted_offsets[-1] if sorted_offsets else 0
+    return max_st, sorted_offsets
 
 
 # Group ID to name mapping for the proper TWAI theme

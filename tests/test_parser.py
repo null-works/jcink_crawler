@@ -395,9 +395,11 @@ class TestParseSearchResults:
 class TestParseThreadPagination:
     def test_single_page_returns_zero(self):
         html = "<html><body>No pagination</body></html>"
-        assert parse_thread_pagination(html) == 0
+        max_st, offsets = parse_thread_pagination(html)
+        assert max_st == 0
+        assert offsets == []
 
-    def test_finds_max_st(self):
+    def test_finds_max_st_and_all_offsets(self):
         html = """
         <html>
         <div class="pagination">
@@ -407,7 +409,9 @@ class TestParseThreadPagination:
         </div>
         </html>
         """
-        assert parse_thread_pagination(html) == 50
+        max_st, offsets = parse_thread_pagination(html)
+        assert max_st == 50
+        assert offsets == [25, 50]
 
     def test_handles_single_pagination_link(self):
         html = """
@@ -417,7 +421,24 @@ class TestParseThreadPagination:
         </div>
         </html>
         """
-        assert parse_thread_pagination(html) == 25
+        max_st, offsets = parse_thread_pagination(html)
+        assert max_st == 25
+        assert offsets == [25]
+
+    def test_15_post_pagination(self):
+        html = """
+        <html>
+        <div class="pagination">
+            <a href="/index.php?showtopic=1&st=0">1</a>
+            <a href="/index.php?showtopic=1&st=15">2</a>
+            <a href="/index.php?showtopic=1&st=30">3</a>
+            <a href="/index.php?showtopic=1&st=45">4</a>
+        </div>
+        </html>
+        """
+        max_st, offsets = parse_thread_pagination(html)
+        assert max_st == 45
+        assert offsets == [15, 30, 45]
 
 
 class TestParseProfilePage:

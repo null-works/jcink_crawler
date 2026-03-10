@@ -159,7 +159,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             return None
 
         # Check for multi-page threads — get last page (needed for quotes)
-        max_st = parse_thread_pagination(thread_html)
+        max_st, page_offsets = parse_thread_pagination(thread_html)
         last_page_html = None
         if max_st > 0:
             sep = "&" if "?" in thread.url else "?"
@@ -212,7 +212,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         all_pages = [thread_html]
         if max_st > 0:
             remaining_urls = []
-            for st in range(25, max_st + 1, 25):
+            for st in page_offsets:
                 if st == max_st and last_page_html:
                     all_pages.append(last_page_html)
                 else:
@@ -432,7 +432,7 @@ async def crawl_single_thread(
             return {"error": "Board message (cooldown)"}
 
     # Get last page for last poster
-    max_st = parse_thread_pagination(thread_html)
+    max_st, page_offsets = parse_thread_pagination(thread_html)
     last_page_html = None
     if max_st > 0:
         last_page_url = f"{thread_url}&st={max_st}"
@@ -500,7 +500,7 @@ async def crawl_single_thread(
     all_pages = [thread_html]
     if max_st > 0:
         remaining_urls = []
-        for st in range(25, max_st + 1, 25):
+        for st in page_offsets:
             if st == max_st and last_page_html:
                 all_pages.append(last_page_html)
             else:
@@ -1220,12 +1220,12 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
             log_debug(f"Quote scrape: skipped thread {tid} (fetch failed or board message)", level="error")
             continue
 
-        max_st = parse_thread_pagination(thread_html)
+        max_st, page_offsets = parse_thread_pagination(thread_html)
         all_pages = [thread_html]
 
         if max_st > 0:
             page_urls = []
-            for st in range(25, max_st + 1, 25):
+            for st in page_offsets:
                 sep = "&" if "?" in thread_url else "?"
                 page_urls.append(f"{thread_url}{sep}st={st}")
             if page_urls:
@@ -1355,14 +1355,14 @@ async def crawl_recent_threads(db_path: str) -> dict:
         if not thread_html:
             return None
 
-        max_st = parse_thread_pagination(thread_html)
+        max_st, page_offsets = parse_thread_pagination(thread_html)
         all_pages = [thread_html]
 
         if max_st > 0:
             remaining_urls = []
             last_page_html = await fetch_page_with_delay(f"{url}&st={max_st}")
 
-            for st in range(25, max_st + 1, 25):
+            for st in page_offsets:
                 if st == max_st and last_page_html:
                     all_pages.append(last_page_html)
                 else:
