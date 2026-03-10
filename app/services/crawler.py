@@ -107,7 +107,11 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
                     all_threads.append(t)
                     seen_ids.add(t.thread_id)
 
-    log_debug(f"Total threads found: {len(all_threads)}")
+    search_poster_count = sum(1 for t in all_threads if t.last_poster_id)
+    log_debug(
+        f"Total threads found: {len(all_threads)} "
+        f"({search_poster_count} with last poster from search results)"
+    )
 
     # Pre-load character info and quote scrape status in bulk
     async with aiosqlite.connect(db_path) as db:
@@ -154,20 +158,24 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         if not thread_html:
             return None
 
-        # Check for multi-page threads — get last page
-        max_st = parse_thread_pagination(thread_html)
+        # Check for multi-page threads — get last page (needed for quotes)
+        max_st, page_offsets = parse_thread_pagination(thread_html)
         last_page_html = None
         if max_st > 0:
             sep = "&" if "?" in thread.url else "?"
             last_page_url = f"{thread.url}{sep}st={max_st}"
             last_page_html = await fetch_page_with_delay(last_page_url)
 
+        # ── Last poster: always parse from the actual thread page ──
+        # JCink's "posts by user" search shows the user's own last post
+        # in the "Last Post" column, NOT the thread's actual last poster.
+        # So search-result data is unreliable for is_user_last_poster;
+        # we must check the real last page of the thread.
         thread_html_for_poster = last_page_html or thread_html
-
-        # Extract last poster and their post excerpt from the last page
         last_poster = parse_last_poster(thread_html_for_poster)
-        last_poster_name = last_poster.name if last_poster else None
-        last_poster_id = last_poster.user_id if last_poster else None
+        last_poster_name = last_poster.name if last_poster else thread.last_poster_name
+        last_poster_id = last_poster.user_id if last_poster else thread.last_poster_id
+
         is_user_last = (
             last_poster_id == character_id
             if last_poster_id
@@ -204,7 +212,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         all_pages = [thread_html]
         if max_st > 0:
             remaining_urls = []
-            for st in range(25, max_st + 1, 25):
+            for st in page_offsets:
                 if st == max_st and last_page_html:
                     all_pages.append(last_page_html)
                 else:
@@ -424,7 +432,7 @@ async def crawl_single_thread(
             return {"error": "Board message (cooldown)"}
 
     # Get last page for last poster
-    max_st = parse_thread_pagination(thread_html)
+    max_st, page_offsets = parse_thread_pagination(thread_html)
     last_page_html = None
     if max_st > 0:
         last_page_url = f"{thread_url}&st={max_st}"
@@ -492,7 +500,7 @@ async def crawl_single_thread(
     all_pages = [thread_html]
     if max_st > 0:
         remaining_urls = []
-        for st in range(25, max_st + 1, 25):
+        for st in page_offsets:
             if st == max_st and last_page_html:
                 all_pages.append(last_page_html)
             else:
@@ -1091,6 +1099,23 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                         )
                     posts_stored += len(relevant_posts)
 
+            # Update last_thread_crawl for every character touched during this sync.
+            # Without this, the dashboard "Last Crawl" / "Recent Activity" timestamps
+            # never update in ACP mode (they were only set by the HTML crawl path).
+            touched_char_ids = set()
+            for tid in relevant_thread_ids:
+                for cid in chars_in_thread.get(tid, set()):
+                    if cid in tracked_chars:
+                        touched_char_ids.add(cid)
+
+            if touched_char_ids:
+                placeholders = ",".join("?" * len(touched_char_ids))
+                await db.execute(
+                    f"UPDATE characters SET last_thread_crawl = CURRENT_TIMESTAMP, "
+                    f"updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
+                    list(touched_char_ids),
+                )
+
             await db.commit()
 
         # Record last sync time
@@ -1195,12 +1220,12 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
             log_debug(f"Quote scrape: skipped thread {tid} (fetch failed or board message)", level="error")
             continue
 
-        max_st = parse_thread_pagination(thread_html)
+        max_st, page_offsets = parse_thread_pagination(thread_html)
         all_pages = [thread_html]
 
         if max_st > 0:
             page_urls = []
-            for st in range(25, max_st + 1, 25):
+            for st in page_offsets:
                 sep = "&" if "?" in thread_url else "?"
                 page_urls.append(f"{thread_url}{sep}st={st}")
             if page_urls:
@@ -1330,14 +1355,14 @@ async def crawl_recent_threads(db_path: str) -> dict:
         if not thread_html:
             return None
 
-        max_st = parse_thread_pagination(thread_html)
+        max_st, page_offsets = parse_thread_pagination(thread_html)
         all_pages = [thread_html]
 
         if max_st > 0:
             remaining_urls = []
             last_page_html = await fetch_page_with_delay(f"{url}&st={max_st}")
 
-            for st in range(25, max_st + 1, 25):
+            for st in page_offsets:
                 if st == max_st and last_page_html:
                     all_pages.append(last_page_html)
                 else:

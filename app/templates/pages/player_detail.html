@@ -21,7 +21,7 @@
                 </div>
                 <div class="count-item">
                     <div class="num text-green">{{ player.total_threads }}</div>
-                    <div class="label">Threads</div>
+                    <div class="label">Topics</div>
                 </div>
                 <div class="count-item">
                     <div class="num text-cyan">{{ player.total_posts }}</div>
@@ -41,7 +41,7 @@
                 </div>
             </div>
 
-            <div class="activity-bar-track" style="width: 200px;" title="{{ total_ongoing }} ongoing threads">
+            <div class="activity-bar-track" style="width: 200px;" title="{{ total_ongoing }} ongoing topics">
                 <div class="activity-bar-fill {{ al.color }}" style="width: {{ [total_ongoing * 10, 100]|min }}%"></div>
             </div>
         </div>
@@ -141,7 +141,7 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Thread</th>
+                <th>Topic</th>
                 <th>Character</th>
                 <th>Last Poster</th>
             </tr>

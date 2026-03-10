@@ -30,9 +30,18 @@ from app.services import (
     crawl_character_profile,
     register_character,
 )
+from app.models.operations import get_crawl_status, set_crawl_status
 from app.services.crawler import crawl_single_thread, sync_posts_from_acp, crawl_quotes_only
 from app.services.scheduler import _crawl_all_characters, _crawl_all_profiles
 from app.services.activity import get_activity
+
+# Default crawl intervals (minutes)
+SCHEDULE_DEFAULTS = {
+    "sync_interval": 30,
+    "quote_interval": 30,
+    "profile_interval": 120,
+    "discovery_interval": 1440,
+}
 
 router = APIRouter()
 
@@ -209,22 +218,22 @@ async def webhook_activity(
         return {"status": "accepted", "action": "profile_recrawl", "user_id": data.user_id}
 
     if data.event in ("new_post", "new_topic"):
-        if data.thread_id:
-            # Targeted: crawl just this one thread
+        if data.user_id:
+            # Full character crawl — refreshes entire thread tracker
+            # (last poster, avatars, excerpts) instead of targeting one thread.
+            background_tasks.add_task(
+                crawl_character_threads, data.user_id, settings.database_path
+            )
+            return {"status": "accepted", "action": "character_recrawl", "user_id": data.user_id}
+        elif data.thread_id:
+            # Fallback: crawl just this thread if no user_id provided
             background_tasks.add_task(
                 crawl_single_thread,
                 data.thread_id,
                 settings.database_path,
-                user_id=data.user_id,
                 forum_id=data.forum_id,
             )
             return {"status": "accepted", "action": "thread_recrawl", "thread_id": data.thread_id}
-        elif data.user_id:
-            # Fallback: full thread crawl if no thread_id provided
-            background_tasks.add_task(
-                crawl_character_threads, data.user_id, settings.database_path
-            )
-            return {"status": "accepted", "action": "thread_recrawl", "user_id": data.user_id}
 
     log_debug(
         f"Webhook dropped: event={data.event} — no actionable data",
@@ -276,6 +285,31 @@ async def trigger_crawl(
         "character_id": data.character_id,
         "crawl_type": data.crawl_type,
     }
+
+
+@router.get("/crawl/schedule")
+async def get_crawl_schedule(db: aiosqlite.Connection = Depends(get_db)):
+    """Get current crawl schedule intervals (in minutes)."""
+    result = {}
+    for key, default in SCHEDULE_DEFAULTS.items():
+        val = await get_crawl_status(db, f"schedule_{key}")
+        result[key] = int(val) if val else default
+    return result
+
+
+@router.post("/crawl/schedule")
+async def set_crawl_schedule(
+    data: dict,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Set crawl schedule intervals (in minutes)."""
+    updated = {}
+    for key in SCHEDULE_DEFAULTS:
+        if key in data:
+            val = max(1, int(data[key]))  # minimum 1 minute
+            await set_crawl_status(db, f"schedule_{key}", str(val))
+            updated[key] = val
+    return {"status": "ok", "updated": updated}
 
 
 @router.get("/status", response_model=CrawlStatusResponse)

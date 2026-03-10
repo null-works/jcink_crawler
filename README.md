@@ -129,6 +129,12 @@ Configure these in `docker-compose.yml` (Docker) or export them in your shell (l
 | `BOT_PASSWORD` | JCink bot account password | *(empty = guest)* |
 | `DATABASE_PATH` | Path to SQLite database file | `/app/data/crawler.db` |
 
+## Version Bumping
+
+**Every change that touches application code must bump `APP_VERSION` in `app/config.py`.**
+
+The version follows `MAJOR.MINOR.PATCH` (e.g. `3.9.13`). Increment the patch digit for bug fixes and small changes, the minor digit for new features, and the major digit for breaking changes. A pre-commit hook will warn you if you forget.
+
 ## Running Tests
 
 ```bash

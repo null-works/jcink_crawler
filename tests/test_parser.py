@@ -302,12 +302,104 @@ class TestParseSearchResults:
         assert threads[0].url == "https://therewasanidea.jcink.net/index.php?showtopic=100"
 
 
+    def test_table_format_extracts_last_poster(self):
+        """JCink search results table (Fizzy-style) should extract last poster info."""
+        html = """
+        <html>
+        <div id="search-topics">
+        <div class="tablebasic">
+        <table><tbody>
+            <tr><th>Icon</th><th>CB</th><th>Title</th><th>Forum</th><th>R</th><th>V</th><th>Starter</th><th>Last</th></tr>
+            <tr>
+                <td><img src="icon.gif"></td>
+                <td></td>
+                <td><a href="/index.php?showtopic=100">Rumors</a></td>
+                <td><a href="/index.php?showforum=20">New York</a></td>
+                <td>5</td>
+                <td>50</td>
+                <td>Someone</td>
+                <td>Mar 4 2026, 10:30 AM<br><a href="/index.php?showuser=42">Sen Wu</a></td>
+            </tr>
+            <tr>
+                <td><img src="icon.gif"></td>
+                <td></td>
+                <td><a href="/index.php?showtopic=200">This Christmas</a></td>
+                <td><a href="/index.php?showforum=20">New York</a></td>
+                <td>3</td>
+                <td>30</td>
+                <td>Someone</td>
+                <td>Feb 13 2026, 03:15 PM<br><a href="/index.php?showuser=55">America Chavez</a></td>
+            </tr>
+        </tbody></table>
+        </div>
+        </div>
+        </html>
+        """
+        threads, _ = parse_search_results(html)
+        assert len(threads) == 2
+        assert threads[0].thread_id == "100"
+        assert threads[0].title == "Rumors"
+        assert threads[0].last_poster_name == "Sen Wu"
+        assert threads[0].last_poster_id == "42"
+        assert threads[0].last_post_date == "Mar 4 2026, 10:30 AM"
+        assert threads[1].last_poster_name == "America Chavez"
+        assert threads[1].last_poster_id == "55"
+
+    def test_table_format_skips_excluded_forums(self):
+        """Table-format parsing should still skip excluded forums."""
+        html = """
+        <html>
+        <div id="search-topics">
+        <div class="tablebasic">
+        <table><tbody>
+            <tr><th>H</th><th>H</th><th>H</th><th>H</th></tr>
+            <tr>
+                <td></td>
+                <td></td>
+                <td><a href="/index.php?showtopic=100">Skip Me</a></td>
+                <td><a href="/index.php?showforum=4">Excluded</a></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td></td>
+                <td><a href="/index.php?showtopic=200">Keep Me</a></td>
+                <td><a href="/index.php?showforum=20">Good Forum</a></td>
+            </tr>
+        </tbody></table>
+        </div>
+        </div>
+        </html>
+        """
+        threads, _ = parse_search_results(html)
+        assert len(threads) == 1
+        assert threads[0].thread_id == "200"
+
+    def test_fallback_tableborder_still_works(self):
+        """When no search table exists, tableborder fallback should still parse threads."""
+        html = """
+        <html>
+        <div class="tableborder">
+            <a href="/index.php?showtopic=100">Thread Alpha</a>
+            <a href="/index.php?showforum=20">RP Forum</a>
+            <a href="/index.php?showuser=42">Sen Wu</a>
+        </div>
+        </html>
+        """
+        threads, _ = parse_search_results(html)
+        assert len(threads) == 1
+        assert threads[0].thread_id == "100"
+        assert threads[0].last_poster_name == "Sen Wu"
+        assert threads[0].last_poster_id == "42"
+
+
 class TestParseThreadPagination:
     def test_single_page_returns_zero(self):
         html = "<html><body>No pagination</body></html>"
-        assert parse_thread_pagination(html) == 0
+        max_st, offsets = parse_thread_pagination(html)
+        assert max_st == 0
+        assert offsets == []
 
-    def test_finds_max_st(self):
+    def test_finds_max_st_and_all_offsets(self):
         html = """
         <html>
         <div class="pagination">
@@ -317,7 +409,9 @@ class TestParseThreadPagination:
         </div>
         </html>
         """
-        assert parse_thread_pagination(html) == 50
+        max_st, offsets = parse_thread_pagination(html)
+        assert max_st == 50
+        assert offsets == [25, 50]
 
     def test_handles_single_pagination_link(self):
         html = """
@@ -327,7 +421,24 @@ class TestParseThreadPagination:
         </div>
         </html>
         """
-        assert parse_thread_pagination(html) == 25
+        max_st, offsets = parse_thread_pagination(html)
+        assert max_st == 25
+        assert offsets == [25]
+
+    def test_15_post_pagination(self):
+        html = """
+        <html>
+        <div class="pagination">
+            <a href="/index.php?showtopic=1&st=0">1</a>
+            <a href="/index.php?showtopic=1&st=15">2</a>
+            <a href="/index.php?showtopic=1&st=30">3</a>
+            <a href="/index.php?showtopic=1&st=45">4</a>
+        </div>
+        </html>
+        """
+        max_st, offsets = parse_thread_pagination(html)
+        assert max_st == 45
+        assert offsets == [15, 30, 45]
 
 
 class TestParseProfilePage:
