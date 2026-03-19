@@ -407,9 +407,15 @@ async def activity_check_page(
     data = await get_activity_check_data(db, month_start, month_end)
     activity = get_activity()
 
-    # Apply status filter if provided
+    # Apply status filter — filter at the character level, then drop empty players
     if filter and filter in ("safe", "warning", "danger", "pending"):
-        data["players"] = [p for p in data["players"] if p["status"] == filter]
+        filtered_players = []
+        for p in data["players"]:
+            chars = [c for c in p["characters"] if c["ac_status"] == filter]
+            if chars:
+                p = {**p, "characters": chars}
+                filtered_players.append(p)
+        data["players"] = filtered_players
 
     return templates.TemplateResponse(request, "pages/activity_check.html", {
         "data": data,
