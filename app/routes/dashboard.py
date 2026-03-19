@@ -25,6 +25,7 @@ from app.models import (
     get_player_detail,
     get_dashboard_stats,
     get_dashboard_chart_data,
+    get_activity_check_data,
 )
 from app.models.operations import set_crawl_status, get_crawl_status
 from app.services import crawl_character_threads, crawl_character_profile, register_character
@@ -361,6 +362,47 @@ async def quotes_page(
         "dir": dir,
         "page": page,
         "per_page": 25,
+    })
+
+
+@router.get("/activity-check", response_class=HTMLResponse)
+async def activity_check_page(
+    request: Request,
+    month: str | None = None,
+    filter: str | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    # Parse month filter (format: "YYYY-MM")
+    month_start = None
+    month_end = None
+    if month:
+        try:
+            from datetime import datetime
+            dt = datetime.strptime(month, "%Y-%m")
+            month_start = dt.strftime("%Y-%m-01")
+            if dt.month == 12:
+                month_end = f"{dt.year + 1}-01-01"
+            else:
+                month_end = f"{dt.year}-{dt.month + 1:02d}-01"
+        except ValueError:
+            pass
+
+    data = await get_activity_check_data(db, month_start, month_end)
+    activity = get_activity()
+
+    # Apply status filter if provided
+    if filter and filter in ("safe", "warning", "danger", "pending"):
+        data["players"] = [p for p in data["players"] if p["status"] == filter]
+
+    return templates.TemplateResponse(request, "pages/activity_check.html", {
+        "data": data,
+        "activity": activity,
+        "month": month,
+        "filter": filter,
     })
 
 

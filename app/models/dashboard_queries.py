@@ -492,6 +492,126 @@ async def get_player_detail(
     }
 
 
+async def get_activity_check_data(
+    db: aiosqlite.Connection,
+    month_start: str | None = None,
+    month_end: str | None = None,
+) -> dict:
+    """Get activity check overview for ALL players/characters in a single view.
+
+    Returns summary stats, per-player breakdowns with AC status per character.
+    """
+    from datetime import datetime, timezone
+
+    excluded = settings.excluded_name_set
+
+    # Default to current calendar month
+    if not month_start or not month_end:
+        now = datetime.now(timezone.utc)
+        month_start = now.strftime("%Y-%m-01")
+        if now.month == 12:
+            month_end = f"{now.year + 1}-01-01"
+        else:
+            month_end = f"{now.year}-{now.month + 1:02d}-01"
+
+    # Get all characters with their player name and affiliation
+    cursor = await db.execute(
+        """SELECT c.id, c.name, c.avatar_url, c.group_name,
+                  pf_player.field_value AS player_name,
+                  pf_aff.field_value AS affiliation
+           FROM characters c
+           LEFT JOIN profile_fields pf_player
+             ON pf_player.character_id = c.id AND pf_player.field_key = ?
+           LEFT JOIN profile_fields pf_aff
+             ON pf_aff.character_id = c.id AND pf_aff.field_key = ?
+           WHERE pf_player.field_value IS NOT NULL AND pf_player.field_value != ''
+           ORDER BY pf_player.field_value, c.name""",
+        (settings.player_field_key, settings.affiliation_field_key),
+    )
+    rows = await cursor.fetchall()
+
+    players: dict[str, dict] = {}
+    totals = {"safe": 0, "warning": 0, "danger": 0, "pending": 0, "total": 0}
+
+    for r in rows:
+        char = dict(r)
+        if char["name"].lower() in excluded:
+            continue
+
+        cid = char["id"]
+        player_name = char["player_name"]
+
+        # Monthly post count
+        mc = await db.execute(
+            "SELECT COUNT(*) as cnt FROM posts WHERE character_id = ? AND post_date >= ? AND post_date < ?",
+            (cid, month_start, month_end),
+        )
+        mc_row = await mc.fetchone()
+        char["monthly_posts"] = mc_row["cnt"] if mc_row else 0
+
+        # Check if we have any post data at all
+        any_posts = await db.execute(
+            "SELECT 1 FROM posts WHERE character_id = ? LIMIT 1", (cid,),
+        )
+        char["has_post_data"] = await any_posts.fetchone() is not None
+
+        # Determine AC status
+        if not char["has_post_data"]:
+            char["ac_status"] = "pending"
+        elif char["monthly_posts"] >= 2:
+            char["ac_status"] = "safe"
+        elif char["monthly_posts"] == 1:
+            char["ac_status"] = "warning"
+        else:
+            char["ac_status"] = "danger"
+
+        totals[char["ac_status"]] += 1
+        totals["total"] += 1
+
+        # Group into players
+        if player_name not in players:
+            players[player_name] = {
+                "player_name": player_name,
+                "characters": [],
+                "safe": 0,
+                "warning": 0,
+                "danger": 0,
+                "pending": 0,
+                "total": 0,
+                "all_safe": True,
+            }
+        p = players[player_name]
+        p["characters"].append(char)
+        p[char["ac_status"]] += 1
+        p["total"] += 1
+        if char["ac_status"] not in ("safe",):
+            p["all_safe"] = False
+
+    # Determine player-level status
+    for p in players.values():
+        if p["danger"] > 0:
+            p["status"] = "danger"
+        elif p["warning"] > 0:
+            p["status"] = "warning"
+        elif p["pending"] > 0 and p["safe"] == 0:
+            p["status"] = "pending"
+        else:
+            p["status"] = "safe"
+
+    # Sort: danger first, then warning, then pending, then safe
+    status_order = {"danger": 0, "warning": 1, "pending": 2, "safe": 3}
+    sorted_players = sorted(
+        players.values(), key=lambda p: (status_order.get(p["status"], 4), p["player_name"].lower())
+    )
+
+    return {
+        "players": sorted_players,
+        "totals": totals,
+        "month_start": month_start,
+        "month_end": month_end,
+    }
+
+
 async def get_dashboard_stats(db: aiosqlite.Connection) -> dict:
     """Get aggregate stats for the dashboard."""
     excluded = settings.excluded_name_set

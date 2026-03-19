@@ -1076,6 +1076,184 @@ select.form-input {
     border: 1px solid rgba(255, 85, 85, 0.5);
 }
 
+/* === Activity Check Overview Page === */
+.ac-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.ac-summary-card {
+    background: var(--bg-dark);
+    border: 1px solid var(--current);
+    border-radius: 8px;
+    padding: 1.25rem;
+    text-align: center;
+    transition: border-color 0.2s;
+}
+
+.ac-summary-num {
+    font-size: 2rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    line-height: 1.2;
+}
+
+.ac-summary-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 0.25rem;
+}
+
+.ac-summary-safe { border-color: rgba(80, 250, 123, 0.4); }
+.ac-summary-safe .ac-summary-num { color: var(--green); }
+.ac-summary-safe .ac-summary-label { color: var(--green); }
+
+.ac-summary-warning { border-color: rgba(255, 183, 77, 0.4); }
+.ac-summary-warning .ac-summary-num { color: var(--orange); }
+.ac-summary-warning .ac-summary-label { color: var(--orange); }
+
+.ac-summary-danger { border-color: rgba(255, 85, 85, 0.4); }
+.ac-summary-danger .ac-summary-num { color: var(--red); }
+.ac-summary-danger .ac-summary-label { color: var(--red); }
+
+.ac-summary-pending { border-color: rgba(98, 114, 164, 0.4); }
+.ac-summary-pending .ac-summary-num { color: var(--comment); }
+.ac-summary-pending .ac-summary-label { color: var(--comment); }
+
+.ac-progress-bar {
+    display: flex;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg-darker);
+}
+
+.ac-progress-segment {
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.ac-seg-safe { background: var(--green); }
+.ac-seg-warning { background: var(--orange); }
+.ac-seg-danger { background: var(--red); }
+.ac-seg-pending { background: var(--comment); }
+
+.ac-player-card {
+    border-left: 3px solid var(--current);
+}
+
+.ac-player-card.ac-player-safe { border-left-color: var(--green); }
+.ac-player-card.ac-player-warning { border-left-color: var(--orange); }
+.ac-player-card.ac-player-danger { border-left-color: var(--red); }
+.ac-player-card.ac-player-pending { border-left-color: var(--comment); }
+
+.ac-player-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.ac-player-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.ac-player-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--purple);
+    text-decoration: none;
+}
+
+.ac-player-name:hover {
+    color: var(--pink);
+    text-decoration: underline;
+}
+
+.ac-player-counts {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.ac-char-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.75rem;
+}
+
+.ac-char-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    background: var(--bg-darker);
+    border: 1px solid var(--current);
+    text-decoration: none;
+    color: var(--fg);
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.ac-char-card:hover {
+    background: var(--bg-dark);
+    border-color: var(--purple);
+}
+
+.ac-char-card.ac-char-safe { border-left: 3px solid var(--green); }
+.ac-char-card.ac-char-warning { border-left: 3px solid var(--orange); }
+.ac-char-card.ac-char-danger { border-left: 3px solid var(--red); }
+.ac-char-card.ac-char-pending { border-left: 3px solid var(--comment); }
+
+.ac-char-avatar {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+}
+
+.ac-char-avatar img {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.ac-char-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.ac-char-name {
+    font-weight: 600;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ac-char-detail {
+    font-size: 0.7rem;
+}
+
+.ac-char-status {
+    flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+    .ac-summary-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .ac-char-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* === Profile Two-Column Layout === */
 .profile-columns {
     display: grid;
