@@ -1273,6 +1273,28 @@ select.form-input {
     gap: 1rem;
 }
 
+.ac-search-wrap {
+    position: relative;
+    flex-shrink: 0;
+    width: 220px;
+}
+
+.ac-search-icon {
+    position: absolute;
+    left: 0.6rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    color: var(--comment);
+    pointer-events: none;
+}
+
+.ac-search-input {
+    padding-left: 2rem !important;
+    width: 100% !important;
+}
+
 .ac-month-toggles {
     display: flex;
     gap: 0.4rem;
