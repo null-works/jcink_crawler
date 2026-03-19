@@ -7,24 +7,29 @@
     <p class="subtitle">Characters need 2+ posts per month to be safe</p>
 </div>
 
-{# Summary cards #}
+{# Summary cards — clickable as filters #}
+{% set mo = month or current_month %}
 <div class="ac-summary-grid">
-    <div class="ac-summary-card ac-summary-safe">
+    <a href="/activity-check?month={{ mo }}{% if filter != 'safe' %}&filter=safe{% endif %}"
+       class="ac-summary-card ac-summary-safe {{ 'ac-summary-active' if filter == 'safe' }}">
         <div class="ac-summary-num">{{ data.totals.safe }}</div>
         <div class="ac-summary-label">Safe</div>
-    </div>
-    <div class="ac-summary-card ac-summary-warning">
+    </a>
+    <a href="/activity-check?month={{ mo }}{% if filter != 'warning' %}&filter=warning{% endif %}"
+       class="ac-summary-card ac-summary-warning {{ 'ac-summary-active' if filter == 'warning' }}">
         <div class="ac-summary-num">{{ data.totals.warning }}</div>
         <div class="ac-summary-label">Warning</div>
-    </div>
-    <div class="ac-summary-card ac-summary-danger">
+    </a>
+    <a href="/activity-check?month={{ mo }}{% if filter != 'danger' %}&filter=danger{% endif %}"
+       class="ac-summary-card ac-summary-danger {{ 'ac-summary-active' if filter == 'danger' }}">
         <div class="ac-summary-num">{{ data.totals.danger }}</div>
         <div class="ac-summary-label">Danger</div>
-    </div>
-    <div class="ac-summary-card ac-summary-pending">
+    </a>
+    <a href="/activity-check?month={{ mo }}{% if filter != 'pending' %}&filter=pending{% endif %}"
+       class="ac-summary-card ac-summary-pending {{ 'ac-summary-active' if filter == 'pending' }}">
         <div class="ac-summary-num">{{ data.totals.pending }}</div>
         <div class="ac-summary-label">Pending</div>
-    </div>
+    </a>
 </div>
 
 {# Progress bar #}
@@ -54,20 +59,11 @@
     <div class="ac-month-toggles">
         {% for m in months %}
         <a href="/activity-check?month={{ m.value }}{% if filter %}&filter={{ filter }}{% endif %}"
-           class="ac-month-pill {{ 'ac-month-active' if m.value == (month or current_month) }}">
+           class="ac-month-pill {{ 'ac-month-active' if m.value == mo }}">
             {{ m.label }}
         </a>
         {% endfor %}
     </div>
-</div>
-
-{# Status filter #}
-<div class="ac-status-filter">
-    <a href="/activity-check?month={{ month or current_month }}" class="ac-filter-pill {{ 'ac-filter-active' if not filter }}">All</a>
-    <a href="/activity-check?month={{ month or current_month }}&filter=danger" class="ac-filter-pill ac-filter-danger {{ 'ac-filter-active' if filter == 'danger' }}">Danger</a>
-    <a href="/activity-check?month={{ month or current_month }}&filter=warning" class="ac-filter-pill ac-filter-warning {{ 'ac-filter-active' if filter == 'warning' }}">Warning</a>
-    <a href="/activity-check?month={{ month or current_month }}&filter=safe" class="ac-filter-pill ac-filter-safe {{ 'ac-filter-active' if filter == 'safe' }}">Safe</a>
-    <a href="/activity-check?month={{ month or current_month }}&filter=pending" class="ac-filter-pill ac-filter-pending {{ 'ac-filter-active' if filter == 'pending' }}">Pending</a>
 </div>
 
 {# Player cards #}
