@@ -11,9 +11,9 @@
         <li><a href="/dashboard" class="{{ 'active' if request.url.path == '/dashboard' }}">Dashboard</a></li>
         <li><a href="/characters" class="{{ 'active' if request.url.path == '/characters' }}">Characters</a></li>
         <li><a href="/players" class="{{ 'active' if request.url.path.startswith('/player') }}">Players</a></li>
+        <li><a href="/activity-check" class="{{ 'active' if request.url.path in ('/activity-check', '/ac-results') }}">Activity</a></li>
         <li><a href="/threads" class="{{ 'active' if request.url.path == '/threads' }}">Topics</a></li>
         <li><a href="/quotes" class="{{ 'active' if request.url.path == '/quotes' }}">Quotes</a></li>
-        <li><a href="/activity-check" class="{{ 'active' if request.url.path in ('/activity-check', '/ac-results') }}">Activity</a></li>
         <li><a href="/games" class="{{ 'active' if request.url.path.startswith('/games') }}">Games</a></li>
         <li><a href="/admin" class="{{ 'active' if request.url.path == '/admin' }}">Admin</a></li>
     </ul>
