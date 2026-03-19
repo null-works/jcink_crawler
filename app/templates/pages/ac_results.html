@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}AC Results - The Watcher{% endblock %}
+{% block title %}Results - The Watcher{% endblock %}
 {% block content %}
 
 <div class="page-header">
@@ -9,7 +9,7 @@
 
 <div class="ac-subtabs">
     <a href="/activity-check" class="ac-subtab">Overview</a>
-    <a href="/ac-results" class="ac-subtab ac-subtab-active">AC Results</a>
+    <a href="/ac-results" class="ac-subtab ac-subtab-active">Results</a>
 </div>
 
 {# Period toggle buttons #}
@@ -18,11 +18,11 @@
         <div class="ac-results-toggles">
             <a href="/ac-results?period=last{% if q %}&q={{ q }}{% endif %}"
                class="btn {{ 'btn-primary' if period == 'last' else 'btn-ghost' }}">
-                Last AC Results
+                Last Results
             </a>
             <a href="/ac-results?period=current{% if q %}&q={{ q }}{% endif %}"
                class="btn {{ 'btn-primary' if period == 'current' else 'btn-ghost' }}">
-                Current AC Results
+                Current Results
             </a>
         </div>
         <div class="ac-search-wrap">
