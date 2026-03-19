@@ -92,6 +92,12 @@
                     hx-vals='{"character_id": "{{ character.id }}", "crawl_type": "profile"}'
                     hx-target="#crawl-result"
                     hx-swap="innerHTML">Crawl Profile</button>
+            <span id="hide-toggle">
+                <button class="btn btn-ghost btn-sm{% if is_hidden %} btn-hidden-active{% endif %}"
+                        hx-post="/htmx/character/{{ character.id }}/toggle-hidden"
+                        hx-target="#hide-toggle"
+                        hx-swap="innerHTML">{{ 'Hidden' if is_hidden else 'Hide' }}</button>
+            </span>
             <div id="crawl-result" style="font-size: 0.8rem;"></div>
         </div>
     </div>

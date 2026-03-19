@@ -30,7 +30,7 @@ async def search_characters(
           ON pf_player.character_id = c.id AND pf_player.field_key = ?
     """
     params: list = [settings.affiliation_field_key, settings.player_field_key]
-    wheres: list[str] = []
+    wheres: list[str] = ["COALESCE(c.hidden, 0) = 0"]
 
     if query:
         wheres.append("c.name LIKE ?")
@@ -120,7 +120,7 @@ async def search_threads_global(
         JOIN characters c ON c.id = ct.character_id
     """
     params: list = []
-    wheres: list[str] = []
+    wheres: list[str] = ["COALESCE(c.hidden, 0) = 0"]
 
     if player_name:
         base += " JOIN profile_fields pf_player ON pf_player.character_id = c.id AND pf_player.field_key = ?"
@@ -196,7 +196,7 @@ async def search_quotes_global(
         JOIN characters c ON c.id = q.character_id
     """
     params: list = []
-    wheres: list[str] = []
+    wheres: list[str] = ["COALESCE(c.hidden, 0) = 0"]
 
     if query:
         wheres.append("q.quote_text LIKE ?")
@@ -276,6 +276,7 @@ async def search_players(
         WHERE pf_player.field_key = ?
           AND pf_player.field_value IS NOT NULL
           AND pf_player.field_value != ''
+          AND COALESCE(c.hidden, 0) = 0
     """
     params: list = [settings.player_field_key]
 
@@ -385,7 +386,7 @@ async def get_player_detail(
            FROM characters c
            JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
            LEFT JOIN profile_fields pf_aff ON pf_aff.character_id = c.id AND pf_aff.field_key = ?
-           WHERE pf.field_value = ?""",
+           WHERE pf.field_value = ? AND COALESCE(c.hidden, 0) = 0""",
         (settings.player_field_key, settings.affiliation_field_key, player_name),
     )
     rows = await cursor.fetchall()
@@ -529,6 +530,7 @@ async def get_activity_check_data(
            LEFT JOIN profile_fields pf_aff
              ON pf_aff.character_id = c.id AND pf_aff.field_key = ?
            WHERE pf_player.field_value IS NOT NULL AND pf_player.field_value != ''
+             AND COALESCE(c.hidden, 0) = 0
            ORDER BY pf_player.field_value, c.name""",
         (settings.player_field_key, settings.affiliation_field_key),
     )
@@ -623,13 +625,13 @@ async def get_dashboard_stats(db: aiosqlite.Connection) -> dict:
     excluded = settings.excluded_name_set
     excluded_ids = settings.excluded_id_set
 
-    cursor = await db.execute("SELECT COUNT(*) as cnt FROM characters")
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM characters WHERE COALESCE(hidden, 0) = 0")
     total_chars = (await cursor.fetchone())["cnt"]
     # Subtract excluded by name
     if excluded:
         placeholders = ",".join("?" for _ in excluded)
         cursor = await db.execute(
-            f"SELECT COUNT(*) as cnt FROM characters WHERE LOWER(name) IN ({placeholders})",
+            f"SELECT COUNT(*) as cnt FROM characters WHERE COALESCE(hidden, 0) = 0 AND LOWER(name) IN ({placeholders})",
             list(excluded),
         )
         total_chars -= (await cursor.fetchone())["cnt"]
@@ -637,7 +639,7 @@ async def get_dashboard_stats(db: aiosqlite.Connection) -> dict:
     if excluded_ids:
         id_placeholders = ",".join("?" for _ in excluded_ids)
         cursor = await db.execute(
-            f"SELECT COUNT(*) as cnt FROM characters WHERE id IN ({id_placeholders}) AND LOWER(name) NOT IN ({','.join('?' for _ in excluded)})",
+            f"SELECT COUNT(*) as cnt FROM characters WHERE COALESCE(hidden, 0) = 0 AND id IN ({id_placeholders}) AND LOWER(name) NOT IN ({','.join('?' for _ in excluded)})",
             list(excluded_ids) + list(excluded),
         )
         total_chars -= (await cursor.fetchone())["cnt"]
@@ -726,6 +728,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
            FROM characters c
            JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
            WHERE pf.field_value IS NOT NULL AND pf.field_value != ''
+             AND COALESCE(c.hidden, 0) = 0
            GROUP BY pf.field_value
            ORDER BY cnt DESC""",
         (settings.affiliation_field_key,),
@@ -742,6 +745,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
         """SELECT c.id, c.name, COUNT(ct.thread_id) AS cnt
            FROM characters c
            JOIN character_threads ct ON ct.character_id = c.id
+           WHERE COALESCE(c.hidden, 0) = 0
            GROUP BY c.id
            ORDER BY cnt DESC
            LIMIT 10"""
@@ -758,6 +762,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
         """SELECT c.id, c.name, COUNT(q.id) AS cnt
            FROM characters c
            JOIN quotes q ON q.character_id = c.id
+           WHERE COALESCE(c.hidden, 0) = 0
            GROUP BY c.id
            ORDER BY cnt DESC
            LIMIT 10"""
@@ -774,7 +779,9 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
         """SELECT pf.field_value AS player, COUNT(DISTINCT ct.thread_id) AS cnt
            FROM profile_fields pf
            JOIN character_threads ct ON ct.character_id = pf.character_id
+           JOIN characters c ON c.id = pf.character_id
            WHERE pf.field_key = ? AND pf.field_value IS NOT NULL AND pf.field_value != ''
+             AND COALESCE(c.hidden, 0) = 0
            GROUP BY pf.field_value
            ORDER BY cnt DESC
            LIMIT 10""",
@@ -792,7 +799,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
                   pf.field_value AS affiliation
            FROM characters c
            LEFT JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
-           WHERE c.last_thread_crawl IS NOT NULL
+           WHERE c.last_thread_crawl IS NOT NULL AND COALESCE(c.hidden, 0) = 0
            ORDER BY c.last_thread_crawl DESC
            LIMIT 10""",
         (settings.affiliation_field_key,),

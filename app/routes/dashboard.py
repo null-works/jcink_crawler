@@ -27,7 +27,7 @@ from app.models import (
     get_dashboard_chart_data,
     get_activity_check_data,
 )
-from app.models.operations import set_crawl_status, get_crawl_status
+from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden
 from app.services import crawl_character_threads, crawl_character_profile, register_character
 from app.services.crawler import sync_posts_from_acp, crawl_quotes_only
 from app.services.scheduler import _crawl_all_characters
@@ -248,6 +248,11 @@ async def character_detail_page(
     quotes = await get_all_quotes(db, character_id)
     activity = get_activity()
 
+    # Check hidden state
+    cursor = await db.execute("SELECT hidden FROM characters WHERE id = ?", (character_id,))
+    row = await cursor.fetchone()
+    is_hidden = bool(row["hidden"]) if row else False
+
     total_quotes = len(quotes)
     return templates.TemplateResponse(request, "pages/character_detail.html", {
         "character": char,
@@ -262,6 +267,7 @@ async def character_detail_page(
         "q": None,
         "character_id": character_id,
         "category": None,
+        "is_hidden": is_hidden,
     })
 
 
@@ -818,6 +824,36 @@ async def htmx_character_quotes(
         "per_page": per_page,
         "character_id": character_id,
     })
+
+
+@router.post("/htmx/character/{character_id}/toggle-hidden", response_class=HTMLResponse)
+async def htmx_toggle_hidden(
+    request: Request,
+    character_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    new_state = await toggle_character_hidden(db, character_id)
+    if new_state is None:
+        return HTMLResponse(status_code=404, content="Character not found")
+
+    if new_state:
+        return HTMLResponse(
+            '<button class="btn btn-ghost btn-sm btn-hidden-active" '
+            f'hx-post="/htmx/character/{character_id}/toggle-hidden" '
+            'hx-target="#hide-toggle" hx-swap="innerHTML">'
+            'Hidden</button>'
+        )
+    else:
+        return HTMLResponse(
+            '<button class="btn btn-ghost btn-sm" '
+            f'hx-post="/htmx/character/{character_id}/toggle-hidden" '
+            'hx-target="#hide-toggle" hx-swap="innerHTML">'
+            'Hide</button>'
+        )
 
 
 @router.post("/htmx/register", response_class=HTMLResponse)

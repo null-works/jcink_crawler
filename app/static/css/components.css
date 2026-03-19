@@ -378,6 +378,16 @@ select.form-input {
     color: var(--fg);
 }
 
+.btn-hidden-active {
+    border-color: var(--red);
+    color: var(--red);
+}
+.btn-hidden-active:hover {
+    border-color: var(--red);
+    color: var(--fg);
+    background: rgba(255, 85, 85, 0.15);
+}
+
 .btn-sm {
     padding: 0.3rem 0.6rem;
     font-size: 0.8rem;

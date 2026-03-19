@@ -61,6 +61,7 @@ async def get_all_characters(db: aiosqlite.Connection) -> list[CharacterSummary]
            FROM characters c
            LEFT JOIN profile_fields pf
              ON pf.character_id = c.id AND pf.field_key = ?
+           WHERE COALESCE(c.hidden, 0) = 0
            ORDER BY c.name""",
         (settings.affiliation_field_key,),
     )
@@ -105,6 +106,26 @@ async def upsert_character(
             updated_at = CURRENT_TIMESTAMP
     """, (character_id, name, profile_url, group_name, avatar_url))
     await db.commit()
+
+
+async def toggle_character_hidden(
+    db: aiosqlite.Connection,
+    character_id: str,
+) -> bool | None:
+    """Toggle the hidden flag for a character. Returns new hidden state, or None if not found."""
+    cursor = await db.execute(
+        "SELECT hidden FROM characters WHERE id = ?", (character_id,)
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return None
+    new_val = 0 if row["hidden"] else 1
+    await db.execute(
+        "UPDATE characters SET hidden = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (new_val, character_id),
+    )
+    await db.commit()
+    return bool(new_val)
 
 
 async def update_character_crawl_time(
@@ -431,7 +452,7 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
 
     # 1. All characters
     cursor = await db.execute(
-        "SELECT id, name, profile_url, group_name, avatar_url FROM characters ORDER BY name"
+        "SELECT id, name, profile_url, group_name, avatar_url FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
     )
     char_rows = await cursor.fetchall()
 
