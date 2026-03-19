@@ -9,23 +9,24 @@
 
 {# Summary cards — clickable as filters #}
 {% set mo = month or current_month %}
+{% set qp = '&q=' ~ q if q else '' %}
 <div class="ac-summary-grid">
-    <a href="/activity-check?month={{ mo }}{% if filter != 'safe' %}&filter=safe{% endif %}"
+    <a href="/activity-check?month={{ mo }}{% if filter != 'safe' %}&filter=safe{% endif %}{{ qp }}"
        class="ac-summary-card ac-summary-safe {{ 'ac-summary-active' if filter == 'safe' }}">
         <div class="ac-summary-num">{{ data.totals.safe }}</div>
         <div class="ac-summary-label">Safe</div>
     </a>
-    <a href="/activity-check?month={{ mo }}{% if filter != 'warning' %}&filter=warning{% endif %}"
+    <a href="/activity-check?month={{ mo }}{% if filter != 'warning' %}&filter=warning{% endif %}{{ qp }}"
        class="ac-summary-card ac-summary-warning {{ 'ac-summary-active' if filter == 'warning' }}">
         <div class="ac-summary-num">{{ data.totals.warning }}</div>
         <div class="ac-summary-label">Warning</div>
     </a>
-    <a href="/activity-check?month={{ mo }}{% if filter != 'danger' %}&filter=danger{% endif %}"
+    <a href="/activity-check?month={{ mo }}{% if filter != 'danger' %}&filter=danger{% endif %}{{ qp }}"
        class="ac-summary-card ac-summary-danger {{ 'ac-summary-active' if filter == 'danger' }}">
         <div class="ac-summary-num">{{ data.totals.danger }}</div>
         <div class="ac-summary-label">Danger</div>
     </a>
-    <a href="/activity-check?month={{ mo }}{% if filter != 'pending' %}&filter=pending{% endif %}"
+    <a href="/activity-check?month={{ mo }}{% if filter != 'pending' %}&filter=pending{% endif %}{{ qp }}"
        class="ac-summary-card ac-summary-pending {{ 'ac-summary-active' if filter == 'pending' }}">
         <div class="ac-summary-num">{{ data.totals.pending }}</div>
         <div class="ac-summary-label">Pending</div>
@@ -59,7 +60,7 @@
     <div class="ac-toolbar">
         <div class="ac-month-toggles">
             {% for m in months %}
-            <a href="/activity-check?month={{ m.value }}{% if filter %}&filter={{ filter }}{% endif %}"
+            <a href="/activity-check?month={{ m.value }}{% if filter %}&filter={{ filter }}{% endif %}{{ qp }}"
                class="ac-month-pill {{ 'ac-month-active' if m.value == mo }}">
                 {{ m.label }}
             </a>
@@ -67,7 +68,7 @@
         </div>
         <div class="ac-search-wrap">
             <svg class="ac-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="ac-search" class="form-input ac-search-input" placeholder="Search player or character...">
+            <input type="text" id="ac-search" class="form-input ac-search-input" placeholder="Search player or character..." value="{{ q }}">
         </div>
     </div>
 </div>
@@ -138,13 +139,28 @@
 {% endif %}
 
 <script>
-document.getElementById('ac-search').addEventListener('input', function() {
-    const q = this.value.toLowerCase().trim();
-    document.querySelectorAll('.ac-player-card').forEach(function(card) {
-        const player = card.dataset.player || '';
-        const chars = card.dataset.characters || '';
-        card.style.display = (!q || player.includes(q) || chars.includes(q)) ? '' : 'none';
-    });
-});
+(function() {
+    var searchEl = document.getElementById('ac-search');
+
+    function applySearch() {
+        var q = searchEl.value.toLowerCase().trim();
+        document.querySelectorAll('.ac-player-card').forEach(function(card) {
+            var player = card.dataset.player || '';
+            var chars = card.dataset.characters || '';
+            card.style.display = (!q || player.includes(q) || chars.includes(q)) ? '' : 'none';
+        });
+        // Keep q param in all navigation links so it survives page transitions
+        document.querySelectorAll('.ac-summary-card, .ac-month-pill').forEach(function(a) {
+            var url = new URL(a.href);
+            if (q) { url.searchParams.set('q', searchEl.value.trim()); }
+            else { url.searchParams.delete('q'); }
+            a.href = url.toString();
+        });
+    }
+
+    searchEl.addEventListener('input', applySearch);
+    // Apply on load when q is pre-filled from URL
+    if (searchEl.value.trim()) { applySearch(); }
+})();
 </script>
 {% endblock %}

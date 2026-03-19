@@ -370,6 +370,7 @@ async def activity_check_page(
     request: Request,
     month: str | None = None,
     filter: str | None = None,
+    q: str | None = None,
     db: aiosqlite.Connection = Depends(get_db),
 ):
     redirect = _require_auth(request)
@@ -424,6 +425,7 @@ async def activity_check_page(
         "current_month": current_month,
         "months": months,
         "filter": filter,
+        "q": q or "",
     })
 
 
