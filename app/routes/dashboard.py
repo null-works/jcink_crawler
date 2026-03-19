@@ -376,20 +376,33 @@ async def activity_check_page(
     if redirect:
         return redirect
 
-    # Parse month filter (format: "YYYY-MM")
-    month_start = None
-    month_end = None
-    if month:
-        try:
-            from datetime import datetime
-            dt = datetime.strptime(month, "%Y-%m")
-            month_start = dt.strftime("%Y-%m-01")
-            if dt.month == 12:
-                month_end = f"{dt.year + 1}-01-01"
-            else:
-                month_end = f"{dt.year}-{dt.month + 1:02d}-01"
-        except ValueError:
-            pass
+    now = datetime.now(timezone.utc)
+    current_month = now.strftime("%Y-%m")
+
+    # Build last 12 months for toggle pills
+    months = []
+    for i in range(11, -1, -1):
+        y = now.year
+        m = now.month - i
+        while m <= 0:
+            m += 12
+            y -= 1
+        val = f"{y}-{m:02d}"
+        label = datetime(y, m, 1).strftime("%b %Y")
+        months.append({"value": val, "label": label})
+
+    # Parse selected month (format: "YYYY-MM"), default to current
+    selected = month or current_month
+    try:
+        dt = datetime.strptime(selected, "%Y-%m")
+        month_start = dt.strftime("%Y-%m-01")
+        if dt.month == 12:
+            month_end = f"{dt.year + 1}-01-01"
+        else:
+            month_end = f"{dt.year}-{dt.month + 1:02d}-01"
+    except ValueError:
+        month_start = None
+        month_end = None
 
     data = await get_activity_check_data(db, month_start, month_end)
     activity = get_activity()
@@ -402,6 +415,8 @@ async def activity_check_page(
         "data": data,
         "activity": activity,
         "month": month,
+        "current_month": current_month,
+        "months": months,
         "filter": filter,
     })
 

@@ -49,27 +49,25 @@
     </div>
 </div>
 
-{# Filters #}
-<div class="card" style="padding: 1rem 1.5rem;">
-    <form method="get" action="/activity-check" style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-        <label class="text-comment" style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">Period</label>
-        <input type="month" name="month" value="{{ month or '' }}" class="form-input" style="width: auto;">
-        <label class="text-comment" style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">Status</label>
-        <select name="filter" class="form-input" style="width: auto;">
-            <option value="">All</option>
-            <option value="danger" {{ 'selected' if filter == 'danger' }}>Danger</option>
-            <option value="warning" {{ 'selected' if filter == 'warning' }}>Warning</option>
-            <option value="safe" {{ 'selected' if filter == 'safe' }}>Safe</option>
-            <option value="pending" {{ 'selected' if filter == 'pending' }}>Pending</option>
-        </select>
-        <button type="submit" class="btn btn-purple btn-sm">Filter</button>
-        {% if month or filter %}
-        <a href="/activity-check" class="btn btn-ghost btn-sm">Reset</a>
-        {% endif %}
-        <span class="text-comment" style="font-size: 0.8rem;">
-            {{ data.month_start }} to {{ data.month_end }}
-        </span>
-    </form>
+{# Month toggles #}
+<div class="card" style="padding: 0.75rem 1.25rem;">
+    <div class="ac-month-toggles">
+        {% for m in months %}
+        <a href="/activity-check?month={{ m.value }}{% if filter %}&filter={{ filter }}{% endif %}"
+           class="ac-month-pill {{ 'ac-month-active' if m.value == (month or current_month) }}">
+            {{ m.label }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+
+{# Status filter #}
+<div class="ac-status-filter">
+    <a href="/activity-check?month={{ month or current_month }}" class="ac-filter-pill {{ 'ac-filter-active' if not filter }}">All</a>
+    <a href="/activity-check?month={{ month or current_month }}&filter=danger" class="ac-filter-pill ac-filter-danger {{ 'ac-filter-active' if filter == 'danger' }}">Danger</a>
+    <a href="/activity-check?month={{ month or current_month }}&filter=warning" class="ac-filter-pill ac-filter-warning {{ 'ac-filter-active' if filter == 'warning' }}">Warning</a>
+    <a href="/activity-check?month={{ month or current_month }}&filter=safe" class="ac-filter-pill ac-filter-safe {{ 'ac-filter-active' if filter == 'safe' }}">Safe</a>
+    <a href="/activity-check?month={{ month or current_month }}&filter=pending" class="ac-filter-pill ac-filter-pending {{ 'ac-filter-active' if filter == 'pending' }}">Pending</a>
 </div>
 
 {# Player cards #}

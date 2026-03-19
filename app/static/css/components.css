@@ -1245,6 +1245,73 @@ select.form-input {
     flex-shrink: 0;
 }
 
+.ac-month-toggles {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.ac-month-pill {
+    padding: 0.3rem 0.65rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--comment);
+    background: transparent;
+    border: 1px solid var(--current);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+.ac-month-pill:hover {
+    color: var(--fg);
+    border-color: var(--purple);
+}
+
+.ac-month-pill.ac-month-active {
+    background: var(--purple);
+    color: var(--bg);
+    border-color: var(--purple);
+}
+
+.ac-status-filter {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+}
+
+.ac-filter-pill {
+    padding: 0.3rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid var(--current);
+    color: var(--comment);
+    background: transparent;
+    transition: all 0.15s;
+}
+
+.ac-filter-pill:hover { color: var(--fg); border-color: var(--fg); }
+.ac-filter-pill.ac-filter-danger:hover { color: var(--red); border-color: var(--red); }
+.ac-filter-pill.ac-filter-warning:hover { color: var(--orange); border-color: var(--orange); }
+.ac-filter-pill.ac-filter-safe:hover { color: var(--green); border-color: var(--green); }
+.ac-filter-pill.ac-filter-pending:hover { color: var(--comment); border-color: var(--comment); }
+
+.ac-filter-pill.ac-filter-active {
+    color: var(--bg);
+    background: var(--purple);
+    border-color: var(--purple);
+}
+.ac-filter-pill.ac-filter-danger.ac-filter-active { background: var(--red); border-color: var(--red); }
+.ac-filter-pill.ac-filter-warning.ac-filter-active { background: var(--orange); border-color: var(--orange); }
+.ac-filter-pill.ac-filter-safe.ac-filter-active { background: var(--green); border-color: var(--green); }
+.ac-filter-pill.ac-filter-pending.ac-filter-active { background: var(--comment); border-color: var(--comment); }
+
 @media (max-width: 768px) {
     .ac-summary-grid {
         grid-template-columns: repeat(2, 1fr);
