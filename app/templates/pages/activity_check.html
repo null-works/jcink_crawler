@@ -54,21 +54,26 @@
     </div>
 </div>
 
-{# Month toggles #}
+{# Month toggles + search #}
 <div class="card" style="padding: 0.75rem 1.25rem;">
-    <div class="ac-month-toggles">
-        {% for m in months %}
-        <a href="/activity-check?month={{ m.value }}{% if filter %}&filter={{ filter }}{% endif %}"
-           class="ac-month-pill {{ 'ac-month-active' if m.value == mo }}">
-            {{ m.label }}
-        </a>
-        {% endfor %}
+    <div class="ac-toolbar">
+        <div class="ac-month-toggles">
+            {% for m in months %}
+            <a href="/activity-check?month={{ m.value }}{% if filter %}&filter={{ filter }}{% endif %}"
+               class="ac-month-pill {{ 'ac-month-active' if m.value == mo }}">
+                {{ m.label }}
+            </a>
+            {% endfor %}
+        </div>
+        <input type="text" id="ac-search" class="form-input" placeholder="Search player or character..." style="width: 220px; flex-shrink: 0;">
     </div>
 </div>
 
 {# Player cards #}
 {% for player in data.players %}
-<div class="card ac-player-card ac-player-{{ player.status }}">
+<div class="card ac-player-card ac-player-{{ player.status }}"
+     data-player="{{ player.player_name|lower }}"
+     data-characters="{{ player.characters|map(attribute='name')|join(',')|lower }}">
     <div class="ac-player-header">
         <div class="ac-player-info">
             <a href="/player/{{ player.player_name }}" class="ac-player-name">{{ player.player_name }}</a>
@@ -129,4 +134,14 @@
 </div>
 {% endif %}
 
+<script>
+document.getElementById('ac-search').addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    document.querySelectorAll('.ac-player-card').forEach(function(card) {
+        const player = card.dataset.player || '';
+        const chars = card.dataset.characters || '';
+        card.style.display = (!q || player.includes(q) || chars.includes(q)) ? '' : 'none';
+    });
+});
+</script>
 {% endblock %}

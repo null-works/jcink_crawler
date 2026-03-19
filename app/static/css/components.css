@@ -1267,10 +1267,17 @@ select.form-input {
     flex-shrink: 0;
 }
 
+.ac-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
 .ac-month-toggles {
     display: flex;
     gap: 0.4rem;
     flex-wrap: wrap;
+    flex: 1;
 }
 
 .ac-month-pill {
