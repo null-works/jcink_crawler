@@ -113,7 +113,7 @@
                 <div class="ac-char-name">{{ char.name }}</div>
                 <div class="ac-char-detail">
                     {% if char.affiliation %}<span class="text-cyan">{{ char.affiliation }}</span>{% endif %}
-                    {% if char.created_at %}<span class="text-comment"> &middot; {{ char.created_at[:10] }}</span>{% endif %}
+                    {% if char.approval_date %}<span class="text-comment"> &middot; {{ char.approval_date }}</span>{% endif %}
                 </div>
                 <div class="ac-char-posts">
                     <span class="text-comment">{{ char.total_posts }} total</span>

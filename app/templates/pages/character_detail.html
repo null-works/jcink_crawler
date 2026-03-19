@@ -100,16 +100,26 @@
             </span>
             <div id="crawl-result" style="font-size: 0.8rem;"></div>
         </div>
+
+        <div class="approval-date-row">
+            <label class="text-comment" style="font-size: 0.8rem;">Approved:</label>
+            <form hx-post="/htmx/character/{{ character.id }}/approval-date"
+                  hx-target="#approval-result" hx-swap="innerHTML"
+                  style="display: inline-flex; align-items: center; gap: 0.4rem;">
+                <input type="date" name="approval_date" value="{{ approval_date or '' }}"
+                       class="form-input" style="width: auto; padding: 0.2rem 0.4rem; font-size: 0.8rem;">
+                <button type="submit" class="btn btn-ghost btn-sm" style="padding: 0.2rem 0.5rem;">Save</button>
+            </form>
+            <span id="approval-result" style="font-size: 0.8rem;"></span>
+        </div>
     </div>
 
-    {% if character.last_thread_crawl or character.last_profile_crawl %}
     <div style="margin-top: 1rem; font-size: 0.8rem; color: var(--comment);">
         {% if character.last_thread_crawl %}Topics crawled {{ character.last_thread_crawl|format_time }}{% endif %}
         {% if character.last_thread_crawl and character.last_profile_crawl %} &middot; {% endif %}
         {% if character.last_profile_crawl %}Profile crawled {{ character.last_profile_crawl|format_time }}{% endif %}
         &middot; ID: <span class="mono">{{ character.id }}</span>
     </div>
-    {% endif %}
 </div>
 
 {# Profile: Graphics (left) + Fields (right) #}

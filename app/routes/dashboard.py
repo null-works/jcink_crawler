@@ -27,7 +27,7 @@ from app.models import (
     get_dashboard_chart_data,
     get_activity_check_data,
 )
-from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden
+from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden, set_approval_date, set_approval_dates
 from app.services import crawl_character_threads, crawl_character_profile, register_character
 from app.services.crawler import sync_posts_from_acp, crawl_quotes_only
 from app.services.scheduler import _crawl_all_characters
@@ -248,10 +248,11 @@ async def character_detail_page(
     quotes = await get_all_quotes(db, character_id)
     activity = get_activity()
 
-    # Check hidden state
-    cursor = await db.execute("SELECT hidden FROM characters WHERE id = ?", (character_id,))
+    # Check hidden state and approval date
+    cursor = await db.execute("SELECT hidden, approval_date FROM characters WHERE id = ?", (character_id,))
     row = await cursor.fetchone()
     is_hidden = bool(row["hidden"]) if row else False
+    approval_date = row["approval_date"] if row else None
 
     total_quotes = len(quotes)
     return templates.TemplateResponse(request, "pages/character_detail.html", {
@@ -268,6 +269,7 @@ async def character_detail_page(
         "character_id": character_id,
         "category": None,
         "is_hidden": is_hidden,
+        "approval_date": approval_date,
     })
 
 
@@ -854,6 +856,64 @@ async def htmx_toggle_hidden(
             'hx-target="#hide-toggle" hx-swap="innerHTML">'
             'Hide</button>'
         )
+
+
+@router.post("/htmx/character/{character_id}/approval-date", response_class=HTMLResponse)
+async def htmx_set_approval_date(
+    request: Request,
+    character_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    date_val = form.get("approval_date", "").strip() or None
+    found = await set_approval_date(db, character_id, date_val)
+    if not found:
+        return HTMLResponse(status_code=404, content="Character not found")
+
+    if date_val:
+        return HTMLResponse(f'<span class="text-green">Approved: {date_val}</span>')
+    else:
+        return HTMLResponse('<span class="text-comment">Approval date cleared</span>')
+
+
+@router.post("/htmx/bulk-approval-dates", response_class=HTMLResponse)
+async def htmx_bulk_approval_dates(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    raw = form.get("csv_data", "").strip()
+    if not raw:
+        return HTMLResponse('<span class="text-red">No data provided</span>')
+
+    entries = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Expect: "Character Name\tYYYY-MM-DD" or "Character Name,YYYY-MM-DD"
+        parts = line.split("\t") if "\t" in line else line.rsplit(",", 1)
+        if len(parts) >= 2:
+            entries.append({"name": parts[-2].strip(), "approval_date": parts[-1].strip()})
+
+    if not entries:
+        return HTMLResponse('<span class="text-red">No valid entries found</span>')
+
+    result = await set_approval_dates(db, entries)
+    unmatched_msg = ""
+    if result["unmatched"]:
+        unmatched_msg = f'<br><span class="text-yellow">Unmatched: {", ".join(result["unmatched"])}</span>'
+    return HTMLResponse(
+        f'<span class="text-green">Updated {result["matched"]} characters</span>{unmatched_msg}'
+    )
 
 
 @router.post("/htmx/register", response_class=HTMLResponse)

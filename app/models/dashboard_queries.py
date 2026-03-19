@@ -521,7 +521,7 @@ async def get_activity_check_data(
 
     # Get all characters with their player name and affiliation
     cursor = await db.execute(
-        """SELECT c.id, c.name, c.avatar_url, c.group_name, c.created_at,
+        """SELECT c.id, c.name, c.avatar_url, c.group_name, c.approval_date,
                   pf_player.field_value AS player_name,
                   pf_aff.field_value AS affiliation
            FROM characters c

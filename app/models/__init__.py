@@ -18,6 +18,8 @@ from app.models.operations import (
     get_all_claims,
     upsert_character,
     toggle_character_hidden,
+    set_approval_date,
+    set_approval_dates,
     update_character_crawl_time,
     upsert_thread,
     link_character_thread,

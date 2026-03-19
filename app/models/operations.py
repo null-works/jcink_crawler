@@ -628,6 +628,46 @@ async def replace_thread_posts(
         )
 
 
+async def set_approval_date(
+    db: aiosqlite.Connection,
+    character_id: str,
+    approval_date: str | None,
+) -> bool:
+    """Set the approval date for a single character. Returns True if found."""
+    cursor = await db.execute(
+        "UPDATE characters SET approval_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (approval_date, character_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def set_approval_dates(
+    db: aiosqlite.Connection,
+    entries: list[dict],
+) -> dict:
+    """Bulk-set approval dates by matching character name.
+
+    Each entry: {'name': str, 'approval_date': str (YYYY-MM-DD)}.
+    Returns {'matched': int, 'unmatched': list[str]}.
+    """
+    matched = 0
+    unmatched = []
+    for entry in entries:
+        name = entry["name"].strip()
+        date = entry["approval_date"].strip()
+        cursor = await db.execute(
+            "UPDATE characters SET approval_date = ? WHERE LOWER(name) = LOWER(?)",
+            (date, name),
+        )
+        if cursor.rowcount > 0:
+            matched += cursor.rowcount
+        else:
+            unmatched.append(name)
+    await db.commit()
+    return {"matched": matched, "unmatched": unmatched}
+
+
 async def delete_character(db: aiosqlite.Connection, character_id: str) -> dict:
     """Delete a character and all associated data.
 

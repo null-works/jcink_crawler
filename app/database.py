@@ -183,6 +183,12 @@ async def init_db():
         except Exception:
             pass  # Column already exists
 
+        # Add approval_date to characters if it doesn't exist
+        try:
+            await db.execute("ALTER TABLE characters ADD COLUMN approval_date TEXT")
+        except Exception:
+            pass  # Column already exists
+
         # Clean up posts with NULL dates — these are stale records from before
         # the date parser fix. Deleting them forces the next crawl to re-populate
         # with proper dates, which is needed for activity check queries.
