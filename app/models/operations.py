@@ -53,8 +53,9 @@ async def get_character(db: aiosqlite.Connection, character_id: str) -> Characte
 
 
 async def get_all_characters(db: aiosqlite.Connection) -> list[CharacterSummary]:
-    """Get all tracked characters, excluding filtered names."""
+    """Get all tracked characters, excluding filtered names and IDs."""
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
     cursor = await db.execute(
         """SELECT c.*, pf.field_value AS affiliation
            FROM characters c
@@ -67,7 +68,7 @@ async def get_all_characters(db: aiosqlite.Connection) -> list[CharacterSummary]
     results = []
     for row in rows:
         char = dict(row)
-        if char["name"].lower() in excluded:
+        if char["name"].lower() in excluded or char["id"] in excluded_ids:
             continue
         counts = await get_thread_counts(db, char["id"])
         results.append(CharacterSummary(
@@ -426,6 +427,7 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     profile fields and thread counts to avoid N+1 queries.
     """
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
     # 1. All characters
     cursor = await db.execute(
@@ -436,7 +438,7 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     if not char_rows:
         return []
 
-    char_ids = [row["id"] for row in char_rows if row["name"].lower() not in excluded]
+    char_ids = [row["id"] for row in char_rows if row["name"].lower() not in excluded and row["id"] not in excluded_ids]
     if not char_ids:
         return []
 
@@ -476,7 +478,7 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     results = []
     for row in char_rows:
         char = dict(row)
-        if char["name"].lower() in excluded:
+        if char["name"].lower() in excluded or char["id"] in excluded_ids:
             continue
 
         cid = char["id"]

@@ -20,6 +20,7 @@ async def search_characters(
 ) -> tuple[list[dict], int]:
     """Search/filter characters with pagination. Returns (rows, total_count)."""
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
     base = """
         FROM characters c
@@ -84,7 +85,7 @@ async def search_characters(
     results = []
     for r in rows:
         d = dict(r)
-        if d["name"].lower() in excluded:
+        if d["name"].lower() in excluded or d["id"] in excluded_ids:
             continue
         # Get thread counts inline
         tc = await db.execute(
@@ -267,6 +268,7 @@ async def search_players(
 ) -> tuple[list[dict], int]:
     """Get players with character counts, thread counts, and activity. Returns (rows, total_count)."""
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
     base = """
         FROM profile_fields pf_player
@@ -340,7 +342,7 @@ async def search_players(
             (settings.player_field_key, d["player_name"]),
         )
         chars = await chars_cursor.fetchall()
-        char_list = [dict(ch) for ch in chars if ch["name"].lower() not in excluded]
+        char_list = [dict(ch) for ch in chars if ch["name"].lower() not in excluded and ch["id"] not in excluded_ids]
         if not char_list:
             continue
         d["characters"] = char_list
@@ -365,6 +367,7 @@ async def get_player_detail(
     from datetime import datetime, timezone
 
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
     # Default to current calendar month if no range provided
     if not month_start or not month_end:
@@ -386,7 +389,7 @@ async def get_player_detail(
         (settings.player_field_key, settings.affiliation_field_key, player_name),
     )
     rows = await cursor.fetchall()
-    characters = [dict(r) for r in rows if r["name"].lower() not in excluded]
+    characters = [dict(r) for r in rows if r["name"].lower() not in excluded and r["id"] not in excluded_ids]
 
     if not characters:
         return None
@@ -504,6 +507,7 @@ async def get_activity_check_data(
     from datetime import datetime, timezone
 
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
     # Default to current calendar month
     if not month_start or not month_end:
@@ -535,7 +539,7 @@ async def get_activity_check_data(
 
     for r in rows:
         char = dict(r)
-        if char["name"].lower() in excluded:
+        if char["name"].lower() in excluded or char["id"] in excluded_ids:
             continue
 
         cid = char["id"]
@@ -617,18 +621,26 @@ async def get_activity_check_data(
 async def get_dashboard_stats(db: aiosqlite.Connection) -> dict:
     """Get aggregate stats for the dashboard."""
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
     cursor = await db.execute("SELECT COUNT(*) as cnt FROM characters")
     total_chars = (await cursor.fetchone())["cnt"]
-    # Subtract excluded
+    # Subtract excluded by name
     if excluded:
         placeholders = ",".join("?" for _ in excluded)
         cursor = await db.execute(
             f"SELECT COUNT(*) as cnt FROM characters WHERE LOWER(name) IN ({placeholders})",
             list(excluded),
         )
-        excluded_count = (await cursor.fetchone())["cnt"]
-        total_chars -= excluded_count
+        total_chars -= (await cursor.fetchone())["cnt"]
+    # Subtract excluded by ID
+    if excluded_ids:
+        id_placeholders = ",".join("?" for _ in excluded_ids)
+        cursor = await db.execute(
+            f"SELECT COUNT(*) as cnt FROM characters WHERE id IN ({id_placeholders}) AND LOWER(name) NOT IN ({','.join('?' for _ in excluded)})",
+            list(excluded_ids) + list(excluded),
+        )
+        total_chars -= (await cursor.fetchone())["cnt"]
 
     cursor = await db.execute("SELECT COUNT(*) as cnt FROM threads")
     total_threads = (await cursor.fetchone())["cnt"]
@@ -669,6 +681,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     from zoneinfo import ZoneInfo
 
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
     # Use US/Eastern as "today" so the chart never shows a future date for users
     eastern_now = datetime.now(ZoneInfo("America/New_York"))
     today_eastern = eastern_now.strftime("%Y-%m-%d")
@@ -726,7 +739,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
 
     # Top 10 characters by thread count
     cursor = await db.execute(
-        """SELECT c.name, COUNT(ct.thread_id) AS cnt
+        """SELECT c.id, c.name, COUNT(ct.thread_id) AS cnt
            FROM characters c
            JOIN character_threads ct ON ct.character_id = c.id
            GROUP BY c.id
@@ -737,12 +750,12 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     top_characters = [
         {"label": r["name"], "count": r["cnt"]}
         for r in rows
-        if r["name"].lower() not in excluded
+        if r["name"].lower() not in excluded and r["id"] not in excluded_ids
     ]
 
     # Top 10 characters by quote count
     cursor = await db.execute(
-        """SELECT c.name, COUNT(q.id) AS cnt
+        """SELECT c.id, c.name, COUNT(q.id) AS cnt
            FROM characters c
            JOIN quotes q ON q.character_id = c.id
            GROUP BY c.id
@@ -753,7 +766,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     top_quoters = [
         {"label": r["name"], "count": r["cnt"]}
         for r in rows
-        if r["name"].lower() not in excluded
+        if r["name"].lower() not in excluded and r["id"] not in excluded_ids
     ]
 
     # Threads per player
@@ -787,7 +800,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     rows = await cursor.fetchall()
     recent_crawls = [
         dict(r) for r in rows
-        if r["name"].lower() not in excluded
+        if r["name"].lower() not in excluded and r["id"] not in excluded_ids
     ]
 
     return {

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "3.10.5"
+APP_VERSION = "3.10.6"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     affiliation_field_key: str = "affiliation"
     player_field_key: str = "player"
     excluded_names: str = "Watcher,Null,Spider,Kat,RandomPrecision"
+    excluded_character_ids: str = "327"
     dashboard_password_b64: str = ""
     dashboard_secret_key: str = "change-me-in-production"
 
@@ -49,6 +50,10 @@ class Settings(BaseSettings):
     @property
     def excluded_name_set(self) -> set[str]:
         return {n.strip().lower() for n in self.excluded_names.split(",") if n.strip()}
+
+    @property
+    def excluded_id_set(self) -> set[int]:
+        return {int(i.strip()) for i in self.excluded_character_ids.split(",") if i.strip()}
 
 
 settings = Settings()
