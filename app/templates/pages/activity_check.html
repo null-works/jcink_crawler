@@ -86,7 +86,7 @@
 
     <div class="ac-char-grid">
         {% for char in player.characters %}
-        <a href="/character/{{ char.id }}" class="ac-char-card ac-char-{{ char.ac_status }}" title="{{ char.name }}: {{ char.monthly_posts }} posts this period">
+        <a href="/character/{{ char.id }}" class="ac-char-card ac-char-{{ char.ac_status }}">
             <div class="ac-char-avatar">
                 {% if char.avatar_url %}
                 <img src="{{ char.avatar_url }}" alt="" loading="lazy">
@@ -98,17 +98,23 @@
                 <div class="ac-char-name">{{ char.name }}</div>
                 <div class="ac-char-detail">
                     {% if char.affiliation %}<span class="text-cyan">{{ char.affiliation }}</span>{% endif %}
+                    {% if char.created_at %}<span class="text-comment"> &middot; {{ char.created_at[:10] }}</span>{% endif %}
+                </div>
+                <div class="ac-char-posts">
+                    <span class="text-comment">{{ char.total_posts }} total</span>
+                    <span class="text-comment">&middot;</span>
+                    <span class="{% if char.monthly_posts >= 2 %}text-green{% elif char.monthly_posts == 1 %}text-orange{% else %}text-red{% endif %}">{{ char.monthly_posts }} this month</span>
                 </div>
             </div>
             <div class="ac-char-status">
                 {% if char.ac_status == 'pending' %}
                 <span class="ac-badge ac-pending">PENDING</span>
                 {% elif char.ac_status == 'safe' %}
-                <span class="ac-badge ac-safe">{{ char.monthly_posts }} posts</span>
+                <span class="ac-badge ac-safe">SAFE</span>
                 {% elif char.ac_status == 'warning' %}
-                <span class="ac-badge ac-warning">1 post</span>
+                <span class="ac-badge ac-warning">WARNING</span>
                 {% else %}
-                <span class="ac-badge ac-unsafe">0 posts</span>
+                <span class="ac-badge ac-unsafe">DANGER</span>
                 {% endif %}
             </div>
         </a>

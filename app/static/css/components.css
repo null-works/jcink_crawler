@@ -1256,6 +1256,13 @@ select.form-input {
     font-size: 0.7rem;
 }
 
+.ac-char-posts {
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    display: flex;
+    gap: 0.3rem;
+}
+
 .ac-char-status {
     flex-shrink: 0;
 }

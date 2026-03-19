@@ -516,7 +516,7 @@ async def get_activity_check_data(
 
     # Get all characters with their player name and affiliation
     cursor = await db.execute(
-        """SELECT c.id, c.name, c.avatar_url, c.group_name,
+        """SELECT c.id, c.name, c.avatar_url, c.group_name, c.created_at,
                   pf_player.field_value AS player_name,
                   pf_aff.field_value AS affiliation
            FROM characters c
@@ -549,11 +549,13 @@ async def get_activity_check_data(
         mc_row = await mc.fetchone()
         char["monthly_posts"] = mc_row["cnt"] if mc_row else 0
 
-        # Check if we have any post data at all
-        any_posts = await db.execute(
-            "SELECT 1 FROM posts WHERE character_id = ? LIMIT 1", (cid,),
+        # Total post count (all time)
+        tc = await db.execute(
+            "SELECT COUNT(*) as cnt FROM posts WHERE character_id = ?", (cid,),
         )
-        char["has_post_data"] = await any_posts.fetchone() is not None
+        tc_row = await tc.fetchone()
+        char["total_posts"] = tc_row["cnt"] if tc_row else 0
+        char["has_post_data"] = char["total_posts"] > 0
 
         # Determine AC status
         if not char["has_post_data"]:
