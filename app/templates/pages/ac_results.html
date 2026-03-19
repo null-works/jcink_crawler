@@ -47,6 +47,7 @@
 </div>
 
 {# Player cards — only characters that failed #}
+<div class="ac-player-grid">
 {% for player in data.players %}
 <div class="card ac-player-card ac-player-danger"
      data-player="{{ player.player_name|lower }}"
@@ -97,6 +98,7 @@
     </div>
 </div>
 {% endfor %}
+</div>
 
 {% if not data.players %}
 <div class="card" style="text-align: center; padding: 3rem;">
