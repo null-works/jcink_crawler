@@ -7,6 +7,11 @@
     <p class="subtitle">Characters need 2+ posts per month to be safe</p>
 </div>
 
+<div class="ac-subtabs">
+    <a href="/activity-check" class="ac-subtab ac-subtab-active">Overview</a>
+    <a href="/ac-results" class="ac-subtab">AC Results</a>
+</div>
+
 {# Summary cards — clickable as filters #}
 {% set mo = month or current_month %}
 {% set qp = '&q=' ~ q if q else '' %}
