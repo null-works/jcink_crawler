@@ -1290,6 +1290,11 @@ select.form-input {
     pointer-events: none;
 }
 
+.ac-results-toggles {
+    display: flex;
+    gap: 0.5rem;
+}
+
 .ac-search-input {
     padding-left: 2rem !important;
     width: 100% !important;

@@ -429,6 +429,66 @@ async def activity_check_page(
     })
 
 
+@router.get("/ac-results", response_class=HTMLResponse)
+async def ac_results_page(
+    request: Request,
+    period: str | None = None,
+    q: str | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    now = datetime.now(timezone.utc)
+    current_month = now.strftime("%Y-%m")
+
+    # Previous month
+    if now.month == 1:
+        prev_y, prev_m = now.year - 1, 12
+    else:
+        prev_y, prev_m = now.year, now.month - 1
+    prev_month = f"{prev_y}-{prev_m:02d}"
+
+    # Default to previous month ("last")
+    if period == "current":
+        selected = current_month
+    else:
+        period = "last"
+        selected = prev_month
+
+    dt = datetime.strptime(selected, "%Y-%m")
+    month_start = dt.strftime("%Y-%m-01")
+    if dt.month == 12:
+        month_end = f"{dt.year + 1}-01-01"
+    else:
+        month_end = f"{dt.year}-{dt.month + 1:02d}-01"
+
+    data = await get_activity_check_data(db, month_start, month_end)
+    activity = get_activity()
+
+    # Filter to only danger + warning characters (missed AC)
+    filtered_players = []
+    failed_total = 0
+    for p in data["players"]:
+        chars = [c for c in p["characters"] if c["ac_status"] in ("danger", "warning")]
+        if chars:
+            failed_total += len(chars)
+            filtered_players.append({**p, "characters": chars})
+    data["players"] = filtered_players
+
+    period_label = datetime.strptime(selected, "%Y-%m").strftime("%B %Y")
+
+    return templates.TemplateResponse(request, "pages/ac_results.html", {
+        "data": data,
+        "activity": activity,
+        "period": period,
+        "period_label": period_label,
+        "failed_total": failed_total,
+        "q": q or "",
+    })
+
+
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_page(
     request: Request,
