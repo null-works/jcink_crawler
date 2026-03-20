@@ -380,6 +380,8 @@ async def activity_check_page(
     month: str | None = None,
     filter: str | None = None,
     q: str | None = None,
+    sort: str | None = None,
+    dir: str = "desc",
     db: aiosqlite.Connection = Depends(get_db),
 ):
     redirect = _require_auth(request)
@@ -427,6 +429,12 @@ async def activity_check_page(
                 filtered_players.append(p)
         data["players"] = filtered_players
 
+    # Apply sorting
+    if sort in ("monthly_posts", "total_posts"):
+        key = "total_monthly_posts" if sort == "monthly_posts" else "total_posts"
+        reverse = dir != "asc"
+        data["players"] = sorted(data["players"], key=lambda p: p[key], reverse=reverse)
+
     return templates.TemplateResponse(request, "pages/activity_check.html", {
         "data": data,
         "activity": activity,
@@ -435,6 +443,8 @@ async def activity_check_page(
         "months": months,
         "filter": filter,
         "q": q or "",
+        "sort": sort or "",
+        "dir": dir,
     })
 
 

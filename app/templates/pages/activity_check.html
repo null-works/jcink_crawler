@@ -60,20 +60,57 @@
     </div>
 </div>
 
-{# Month toggles + search #}
+{# Top 10 posters this month #}
+{% if data.top_posters %}
+<div class="card" style="padding: 1rem 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+        <span style="font-size: 0.85rem; font-weight: 600; color: var(--purple); text-transform: uppercase; letter-spacing: 0.04em;">Top 10 Posters</span>
+    </div>
+    <div class="ac-leaderboard">
+        {% for c in data.top_posters %}
+        <a href="/character/{{ c.id }}" class="ac-lb-row" style="text-decoration: none;">
+            <span class="ac-lb-rank {% if loop.index <= 3 %}ac-lb-top3{% endif %}">{{ loop.index }}</span>
+            <span class="ac-lb-avatar">
+                {% if c.avatar_url %}<img src="{{ c.avatar_url }}" alt="" loading="lazy">{% else %}<span class="avatar-placeholder" style="font-size: 0.6rem;">?</span>{% endif %}
+            </span>
+            <span class="ac-lb-name">{{ c.name }}</span>
+            <span class="text-comment" style="font-size: 0.75rem;">{{ c.player_name }}</span>
+            <span class="ac-lb-count text-green">{{ c.monthly_posts }}</span>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{# Month toggles + search + sort #}
 <div class="card" style="padding: 0.75rem 1.25rem;">
     <div class="ac-toolbar">
         <div class="ac-month-toggles">
             {% for m in months %}
-            <a href="/activity-check?month={{ m.value }}{% if filter %}&filter={{ filter }}{% endif %}{{ qp }}"
+            <a href="/activity-check?month={{ m.value }}{% if filter %}&filter={{ filter }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}{{ qp }}"
                class="ac-month-pill {{ 'ac-month-active' if m.value == mo }}">
                 {{ m.label }}
             </a>
             {% endfor %}
         </div>
-        <div class="ac-search-wrap">
-            <svg class="ac-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" id="ac-search" class="form-input ac-search-input" placeholder="Search player or character..." value="{{ q }}">
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+            <div class="ac-sort-wrap">
+                {% set sp = '&filter=' ~ filter if filter else '' %}
+                <a href="/activity-check?month={{ mo }}{{ sp }}{% if sort == 'monthly_posts' and dir == 'desc' %}&sort=monthly_posts&dir=asc{% else %}&sort=monthly_posts&dir=desc{% endif %}{{ qp }}"
+                   class="ac-sort-pill {{ 'ac-sort-active' if sort == 'monthly_posts' }}">
+                    Monthly Posts
+                    {% if sort == 'monthly_posts' %}{{ '▲' if dir == 'asc' else '▼' }}{% endif %}
+                </a>
+                <a href="/activity-check?month={{ mo }}{{ sp }}{% if sort == 'total_posts' and dir == 'desc' %}&sort=total_posts&dir=asc{% else %}&sort=total_posts&dir=desc{% endif %}{{ qp }}"
+                   class="ac-sort-pill {{ 'ac-sort-active' if sort == 'total_posts' }}">
+                    Total Posts
+                    {% if sort == 'total_posts' %}{{ '▲' if dir == 'asc' else '▼' }}{% endif %}
+                </a>
+            </div>
+            <div class="ac-search-wrap">
+                <svg class="ac-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="ac-search" class="form-input ac-search-input" placeholder="Search player or character..." value="{{ q }}">
+            </div>
         </div>
     </div>
 </div>

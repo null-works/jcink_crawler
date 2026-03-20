@@ -1387,6 +1387,106 @@ select.form-input {
     border-color: var(--purple);
 }
 
+/* Leaderboard */
+.ac-leaderboard {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.ac-lb-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+
+.ac-lb-row:hover {
+    background: var(--current);
+}
+
+.ac-lb-rank {
+    width: 1.4rem;
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: var(--comment);
+}
+
+.ac-lb-rank.ac-lb-top3 {
+    color: var(--orange);
+}
+
+.ac-lb-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: var(--current);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ac-lb-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ac-lb-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--foreground);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ac-lb-count {
+    font-size: 0.85rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    margin-left: auto;
+}
+
+/* Sort pills */
+.ac-sort-wrap {
+    display: flex;
+    gap: 0.3rem;
+}
+
+.ac-sort-pill {
+    padding: 0.25rem 0.55rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--comment);
+    background: transparent;
+    border: 1px solid var(--current);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+.ac-sort-pill:hover {
+    color: var(--fg);
+    border-color: var(--cyan);
+}
+
+.ac-sort-pill.ac-sort-active {
+    background: var(--cyan);
+    color: var(--bg);
+    border-color: var(--cyan);
+}
+
 @media (max-width: 768px) {
     .ac-summary-grid {
         grid-template-columns: repeat(2, 1fr);

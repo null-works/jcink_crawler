@@ -618,11 +618,25 @@ async def get_activity_check_data(
         players.values(), key=lambda p: (status_order.get(p["status"], 4), p["player_name"].lower())
     )
 
+    # Top 10 characters by monthly posts
+    all_chars = []
+    for p in players.values():
+        for c in p["characters"]:
+            all_chars.append({
+                "name": c["name"],
+                "player_name": p["player_name"],
+                "monthly_posts": c["monthly_posts"],
+                "avatar_url": c.get("avatar_url"),
+                "id": c["id"],
+            })
+    top_posters = sorted(all_chars, key=lambda c: c["monthly_posts"], reverse=True)[:10]
+
     return {
         "players": sorted_players,
         "totals": totals,
         "month_start": month_start,
         "month_end": month_end,
+        "top_posters": top_posters,
     }
 
 
