@@ -60,25 +60,46 @@
     </div>
 </div>
 
-{# Top 10 posters this month #}
-{% if data.top_posters %}
-<div class="card" style="padding: 1rem 1.5rem;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-        <span style="font-size: 0.85rem; font-weight: 600; color: var(--purple); text-transform: uppercase; letter-spacing: 0.04em;">Top 10 Posters</span>
+{# Top 10 leaderboards — two columns #}
+{% if data.top_posters or data.top_players %}
+<div class="ac-lb-grid">
+    {% if data.top_posters %}
+    <div class="card" style="padding: 1rem 1.5rem;">
+        <div style="margin-bottom: 0.75rem;">
+            <span style="font-size: 0.85rem; font-weight: 600; color: var(--purple); text-transform: uppercase; letter-spacing: 0.04em;">Top 10 Characters</span>
+        </div>
+        <div class="ac-leaderboard">
+            {% for c in data.top_posters %}
+            <a href="/character/{{ c.id }}" class="ac-lb-row" style="text-decoration: none;">
+                <span class="ac-lb-rank {% if loop.index <= 3 %}ac-lb-top3{% endif %}">{{ loop.index }}</span>
+                <span class="ac-lb-avatar">
+                    {% if c.avatar_url %}<img src="{{ c.avatar_url }}" alt="" loading="lazy">{% else %}<span class="avatar-placeholder" style="font-size: 0.6rem;">?</span>{% endif %}
+                </span>
+                <span class="ac-lb-name">{{ c.name }}</span>
+                <span class="text-comment" style="font-size: 0.75rem;">{{ c.player_name }}</span>
+                <span class="ac-lb-count text-green">{{ c.monthly_posts }}</span>
+            </a>
+            {% endfor %}
+        </div>
     </div>
-    <div class="ac-leaderboard">
-        {% for c in data.top_posters %}
-        <a href="/character/{{ c.id }}" class="ac-lb-row" style="text-decoration: none;">
-            <span class="ac-lb-rank {% if loop.index <= 3 %}ac-lb-top3{% endif %}">{{ loop.index }}</span>
-            <span class="ac-lb-avatar">
-                {% if c.avatar_url %}<img src="{{ c.avatar_url }}" alt="" loading="lazy">{% else %}<span class="avatar-placeholder" style="font-size: 0.6rem;">?</span>{% endif %}
-            </span>
-            <span class="ac-lb-name">{{ c.name }}</span>
-            <span class="text-comment" style="font-size: 0.75rem;">{{ c.player_name }}</span>
-            <span class="ac-lb-count text-green">{{ c.monthly_posts }}</span>
-        </a>
-        {% endfor %}
+    {% endif %}
+    {% if data.top_players %}
+    <div class="card" style="padding: 1rem 1.5rem;">
+        <div style="margin-bottom: 0.75rem;">
+            <span style="font-size: 0.85rem; font-weight: 600; color: var(--cyan); text-transform: uppercase; letter-spacing: 0.04em;">Top 10 Players</span>
+        </div>
+        <div class="ac-leaderboard">
+            {% for p in data.top_players %}
+            <a href="/player/{{ p.player_name }}" class="ac-lb-row" style="text-decoration: none;">
+                <span class="ac-lb-rank {% if loop.index <= 3 %}ac-lb-top3{% endif %}">{{ loop.index }}</span>
+                <span class="ac-lb-name">{{ p.player_name }}</span>
+                <span class="text-comment" style="font-size: 0.75rem;">{{ p.character_count }} chars</span>
+                <span class="ac-lb-count text-cyan">{{ p.monthly_posts }}</span>
+            </a>
+            {% endfor %}
+        </div>
     </div>
+    {% endif %}
 </div>
 {% endif %}
 

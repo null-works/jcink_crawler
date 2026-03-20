@@ -631,12 +631,27 @@ async def get_activity_check_data(
             })
     top_posters = sorted(all_chars, key=lambda c: c["monthly_posts"], reverse=True)[:10]
 
+    # Top 10 players by monthly posts
+    top_players = sorted(
+        players.values(), key=lambda p: p["total_monthly_posts"], reverse=True
+    )[:10]
+    top_players = [
+        {
+            "player_name": p["player_name"],
+            "monthly_posts": p["total_monthly_posts"],
+            "total_posts": p["total_posts"],
+            "character_count": p["total"],
+        }
+        for p in top_players
+    ]
+
     return {
         "players": sorted_players,
         "totals": totals,
         "month_start": month_start,
         "month_end": month_end,
         "top_posters": top_posters,
+        "top_players": top_players,
     }
 
 

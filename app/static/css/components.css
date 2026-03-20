@@ -1387,6 +1387,17 @@ select.form-input {
     border-color: var(--purple);
 }
 
+/* Leaderboard grid */
+.ac-lb-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+@media (max-width: 768px) {
+    .ac-lb-grid { grid-template-columns: 1fr; }
+}
+
 /* Leaderboard */
 .ac-leaderboard {
     display: flex;
