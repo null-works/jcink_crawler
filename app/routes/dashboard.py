@@ -1,5 +1,6 @@
 import pathlib
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -385,7 +386,7 @@ async def activity_check_page(
     if redirect:
         return redirect
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(ZoneInfo(settings.activity_timezone))
     current_month = now.strftime("%Y-%m")
 
     # Build last 12 months for toggle pills
@@ -448,7 +449,7 @@ async def ac_results_page(
     if redirect:
         return redirect
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(ZoneInfo(settings.activity_timezone))
     current_month = now.strftime("%Y-%m")
 
     # Previous month

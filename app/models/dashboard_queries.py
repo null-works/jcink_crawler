@@ -365,14 +365,15 @@ async def get_player_detail(
         month_start: ISO date string for activity period start (e.g. "2026-02-01").
         month_end: ISO date string for activity period end (e.g. "2026-03-01").
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     excluded = settings.excluded_name_set
     excluded_ids = settings.excluded_id_set
 
     # Default to current calendar month if no range provided
     if not month_start or not month_end:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(ZoneInfo(settings.activity_timezone))
         month_start = now.strftime("%Y-%m-01")
         # First day of next month
         if now.month == 12:
@@ -505,14 +506,15 @@ async def get_activity_check_data(
 
     Returns summary stats, per-player breakdowns with AC status per character.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     excluded = settings.excluded_name_set
     excluded_ids = settings.excluded_id_set
 
     # Default to current calendar month
     if not month_start or not month_end:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(ZoneInfo(settings.activity_timezone))
         month_start = now.strftime("%Y-%m-01")
         if now.month == 12:
             month_end = f"{now.year + 1}-01-01"

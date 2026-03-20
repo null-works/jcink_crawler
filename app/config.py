@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "3.12.1"
+APP_VERSION = "3.12.2"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     excluded_character_ids: str = "327"
     dashboard_password_b64: str = ""
     dashboard_secret_key: str = "change-me-in-production"
+    activity_timezone: str = "America/New_York"
 
     @property
     def dashboard_password(self) -> str:
