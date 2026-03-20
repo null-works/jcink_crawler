@@ -586,12 +586,16 @@ async def get_activity_check_data(
                 "danger": 0,
                 "pending": 0,
                 "total": 0,
+                "total_posts": 0,
+                "total_monthly_posts": 0,
                 "all_safe": True,
             }
         p = players[player_name]
         p["characters"].append(char)
         p[char["ac_status"]] += 1
         p["total"] += 1
+        p["total_posts"] += char["total_posts"]
+        p["total_monthly_posts"] += char["monthly_posts"]
         if char["ac_status"] not in ("safe",):
             p["all_safe"] = False
 

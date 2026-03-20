@@ -92,6 +92,7 @@
                 {% if player.warning > 0 %}<span class="ac-badge ac-warning">{{ player.warning }} warning</span>{% endif %}
                 {% if player.danger > 0 %}<span class="ac-badge ac-unsafe">{{ player.danger }} danger</span>{% endif %}
                 {% if player.pending > 0 %}<span class="ac-badge ac-pending">{{ player.pending }} pending</span>{% endif %}
+                <span class="text-comment" style="font-size: 0.75rem; margin-left: 0.25rem;">{{ player.total_posts }} posts &middot; {{ player.total_monthly_posts }} this month</span>
             </div>
         </div>
         {% if player.all_safe %}
