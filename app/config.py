@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "3.12.4"
+APP_VERSION = "3.12.5"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
@@ -53,8 +53,8 @@ class Settings(BaseSettings):
         return {n.strip().lower() for n in self.excluded_names.split(",") if n.strip()}
 
     @property
-    def excluded_id_set(self) -> set[int]:
-        return {int(i.strip()) for i in self.excluded_character_ids.split(",") if i.strip()}
+    def excluded_id_set(self) -> set[str]:
+        return {i.strip() for i in self.excluded_character_ids.split(",") if i.strip()}
 
 
 settings = Settings()

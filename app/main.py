@@ -28,8 +28,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="The Watcher", version=APP_VERSION, lifespan=lifespan)
 
-# CORS for JCink embeds — scoped to the forum domain
+# CORS for JCink embeds — allow both http and https origins for the forum
 _cors_origins = [settings.forum_base_url]
+# Also allow http:// variant in case forum is accessed without TLS
+if settings.forum_base_url.startswith("https://"):
+    _cors_origins.append(settings.forum_base_url.replace("https://", "http://", 1))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
