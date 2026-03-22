@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Response
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request, Response
 import aiosqlite
 
 from app.database import get_db
@@ -197,7 +199,7 @@ async def get_character_quote_count(
 
 @router.post("/webhook/activity", status_code=202)
 async def webhook_activity(
-    data: WebhookActivity,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: aiosqlite.Connection = Depends(get_db),
 ):
@@ -205,7 +207,20 @@ async def webhook_activity(
 
     Accepts new_post, new_topic, and profile_edit events.
     Acknowledges immediately (202) and processes asynchronously.
+
+    Parses the body as JSON regardless of Content-Type so that
+    theme JS using text/plain (e.g. navigator.sendBeacon) still works.
     """
+    body = await request.body()
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    try:
+        data = WebhookActivity(**payload)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid webhook payload")
+
     log_debug(
         f"Webhook received: event={data.event} thread_id={data.thread_id} "
         f"forum_id={data.forum_id} user_id={data.user_id}",
