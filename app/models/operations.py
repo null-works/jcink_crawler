@@ -780,6 +780,8 @@ async def get_recent_users(
         (f"-{hours} hours",),
     )
     rows = await cursor.fetchall()
+    excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
     base = settings.forum_base_url
     return [
         {
@@ -790,4 +792,5 @@ async def get_recent_users(
             "source": row["source"],
         }
         for row in rows
+        if row["user_name"].lower() not in excluded and row["user_id"] not in excluded_ids
     ]
