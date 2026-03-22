@@ -437,8 +437,8 @@ async def get_service_status(db: aiosqlite.Connection = Depends(get_db)):
 
 # --- Banner Album Endpoint ---
 
-BANNER_ALBUM_URL = "https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
-_banner_cache: dict = {"urls": [], "fetched_at": 0.0}
+BANNER_ALBUM_URL_DEFAULT = "https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+_banner_cache: dict = {"urls": [], "fetched_at": 0.0, "album_url": ""}
 BANNER_CACHE_TTL = 600  # 10 minutes
 
 
@@ -481,11 +481,11 @@ async def _scrape_album_page(client: httpx.AsyncClient, url: str) -> tuple[list[
     return images, next_url
 
 
-async def _fetch_all_banners() -> list[str]:
+async def _fetch_all_banners(album_url: str) -> list[str]:
     """Scrape all pages of the banner album and return full-size image URLs."""
     all_urls: list[str] = []
     async with httpx.AsyncClient(timeout=15.0) as client:
-        url: str | None = BANNER_ALBUM_URL
+        url: str | None = album_url
         seen_pages = 0
         while url and seen_pages < 10:  # safety cap
             images, next_url = await _scrape_album_page(client, url)
@@ -496,17 +496,23 @@ async def _fetch_all_banners() -> list[str]:
 
 
 @router.get("/banners")
-async def get_banners():
+async def get_banners(db: aiosqlite.Connection = Depends(get_db)):
     """Return the list of banner image URLs from the ImageHut album.
 
     Results are cached for 10 minutes to avoid hammering ImageHut.
     """
+    album_url = await get_crawl_status(db, "banner_album_url") or BANNER_ALBUM_URL_DEFAULT
+
     now = time.time()
-    if _banner_cache["urls"] and (now - _banner_cache["fetched_at"]) < BANNER_CACHE_TTL:
+    if (
+        _banner_cache["urls"]
+        and _banner_cache["album_url"] == album_url
+        and (now - _banner_cache["fetched_at"]) < BANNER_CACHE_TTL
+    ):
         return {"images": _banner_cache["urls"], "count": len(_banner_cache["urls"]), "cached": True}
 
     try:
-        urls = await _fetch_all_banners()
+        urls = await _fetch_all_banners(album_url)
     except httpx.HTTPError as e:
         log_debug(f"Banner album fetch failed: {e}", level="error")
         # Return stale cache if available, otherwise error
@@ -515,5 +521,6 @@ async def get_banners():
         raise HTTPException(status_code=502, detail="Failed to fetch banner album")
 
     _banner_cache["urls"] = urls
+    _banner_cache["album_url"] = album_url
     _banner_cache["fetched_at"] = now
     return {"images": urls, "count": len(urls), "cached": False}

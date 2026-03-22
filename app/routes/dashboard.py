@@ -527,6 +527,12 @@ async def admin_page(
     acp_configured = bool(acp_username and acp_password)
     acp_last_sync = await get_crawl_status(db, "acp_last_sync")
 
+    # Banner album
+    banner_album_url = await get_crawl_status(db, "banner_album_url") or "https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+    # Import cache state to show count
+    from app.routes.character import _banner_cache
+    banner_count = len(_banner_cache["urls"]) if _banner_cache["urls"] else 0
+
     # Crawl schedule
     schedule_defaults = {"sync_interval": 30, "quote_interval": 30, "profile_interval": 120, "discovery_interval": 1440}
     schedule = {}
@@ -542,6 +548,8 @@ async def admin_page(
         "acp_username": acp_username or "",
         "acp_last_sync": acp_last_sync,
         "schedule": schedule,
+        "banner_album_url": banner_album_url,
+        "banner_count": banner_count,
     })
 
 
@@ -1035,6 +1043,56 @@ async def htmx_save_crawl_schedule(
         return HTMLResponse('<span class="text-red">No values provided</span>')
 
     return HTMLResponse(f'<span class="text-green">Schedule saved — {", ".join(saved)}</span>')
+
+
+@router.post("/htmx/banner-album", response_class=HTMLResponse)
+async def htmx_save_banner_album(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    url = form.get("banner_album_url", "").strip()
+
+    if not url:
+        return HTMLResponse('<span class="text-red">Album URL is required</span>')
+
+    await set_crawl_status(db, "banner_album_url", url)
+
+    # Invalidate cache so next /api/banners call fetches from new URL
+    from app.routes.character import _banner_cache
+    _banner_cache["fetched_at"] = 0.0
+
+    return HTMLResponse(f'<span class="text-green">Banner album URL saved. Next API call will re-scrape.</span>')
+
+
+@router.post("/htmx/banner-refresh", response_class=HTMLResponse)
+async def htmx_refresh_banners(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    from app.routes.character import _banner_cache, _fetch_all_banners, BANNER_ALBUM_URL_DEFAULT
+    import httpx as _httpx
+
+    album_url = await get_crawl_status(db, "banner_album_url") or BANNER_ALBUM_URL_DEFAULT
+    try:
+        urls = await _fetch_all_banners(album_url)
+    except _httpx.HTTPError as e:
+        return HTMLResponse(f'<span class="text-red">Fetch failed: {e}</span>')
+
+    import time
+    _banner_cache["urls"] = urls
+    _banner_cache["album_url"] = album_url
+    _banner_cache["fetched_at"] = time.time()
+
+    return HTMLResponse(f'<span class="text-green">Cache refreshed — {len(urls)} banner images loaded.</span>')
 
 
 @router.post("/htmx/acp-sync", response_class=HTMLResponse)

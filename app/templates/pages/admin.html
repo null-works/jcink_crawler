@@ -183,6 +183,32 @@
     <div id="approval-result" class="result"></div>
 </div>
 
+{# Banner Album #}
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Banner Album</h3>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 1rem;">
+        ImageHut album URL to scrape for banner images. The API parses all pages and returns full-size image URLs
+        for the theme JS banner rotator.
+    </p>
+    <form hx-post="/htmx/banner-album" hx-target="#banner-result" hx-swap="innerHTML">
+        <input type="url" name="banner_album_url" class="form-input"
+               value="{{ banner_album_url }}"
+               placeholder="https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+               style="width: 100%; margin-bottom: 0.75rem;">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button type="submit" class="btn btn-purple">Save URL</button>
+            <button type="button" class="btn btn-ghost"
+                    hx-post="/htmx/banner-refresh"
+                    hx-target="#banner-result"
+                    hx-swap="innerHTML">Refresh Cache</button>
+            {% if banner_count %}
+            <span class="text-comment" style="font-size: 0.8rem;">{{ banner_count }} images loaded</span>
+            {% endif %}
+        </div>
+    </form>
+    <div id="banner-result" class="result"></div>
+</div>
+
 {# Purge & re-crawl #}
 <div class="card" style="margin-top: 1.5rem;">
     <h3 class="card-title" style="margin-bottom: 0.5rem;">Purge &amp; Re-crawl</h3>
