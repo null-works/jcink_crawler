@@ -361,3 +361,69 @@ class TestCrawlTriggerAllProfiles:
             })
         assert response.status_code == 200
         assert response.json()["crawl_type"] == "all-profiles"
+
+
+class TestOnlineRecentEndpoint:
+    async def test_empty_initially(self, client):
+        response = await client.get("/api/online/recent")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    async def test_returns_recently_active_user(self, client):
+        """Webhook with user_id records activity, which shows up in /online/recent."""
+        # Seed a character so the webhook can resolve the name
+        from app.models.operations import upsert_character
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(db, "42", "Tony Stark", "https://x.jcink.net/index.php?showuser=42")
+
+        with patch("app.routes.character.crawl_character_profile", new_callable=AsyncMock):
+            await client.post("/api/webhook/activity", json={
+                "event": "profile_edit",
+                "user_id": "42",
+            })
+
+        response = await client.get("/api/online/recent")
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["id"] == "42"
+        assert data[0]["name"] == "Tony Stark"
+        assert data[0]["source"] == "webhook"
+        assert "profile_url" in data[0]
+        assert "last_seen" in data[0]
+
+    async def test_hours_param_validation(self, client):
+        """hours must be between 1 and 48."""
+        response = await client.get("/api/online/recent?hours=0")
+        assert response.status_code == 422
+
+        response = await client.get("/api/online/recent?hours=49")
+        assert response.status_code == 422
+
+    async def test_custom_hours_param(self, client):
+        response = await client.get("/api/online/recent?hours=24")
+        assert response.status_code == 200
+
+    async def test_webhook_without_user_id_does_not_record(self, client):
+        """Webhook without user_id should not create activity record."""
+        with patch("app.routes.character.crawl_single_thread", new_callable=AsyncMock):
+            await client.post("/api/webhook/activity", json={
+                "event": "new_post",
+                "thread_id": "123",
+            })
+
+        response = await client.get("/api/online/recent")
+        assert response.json() == []
+
+    async def test_unknown_user_gets_placeholder_name(self, client):
+        """Webhook for untracked user records with placeholder name."""
+        with patch("app.routes.character.crawl_character_profile", new_callable=AsyncMock):
+            await client.post("/api/webhook/activity", json={
+                "event": "profile_edit",
+                "user_id": "999",
+            })
+
+        response = await client.get("/api/online/recent")
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "User 999"

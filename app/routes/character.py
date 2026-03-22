@@ -30,7 +30,7 @@ from app.services import (
     crawl_character_profile,
     register_character,
 )
-from app.models.operations import get_crawl_status, set_crawl_status
+from app.models.operations import get_crawl_status, set_crawl_status, record_user_activity, get_recent_users
 from app.services.crawler import crawl_single_thread, sync_posts_from_acp, crawl_quotes_only
 from app.services.scheduler import _crawl_all_characters, _crawl_all_profiles
 from app.services.activity import get_activity
@@ -199,6 +199,7 @@ async def get_character_quote_count(
 async def webhook_activity(
     data: WebhookActivity,
     background_tasks: BackgroundTasks,
+    db: aiosqlite.Connection = Depends(get_db),
 ):
     """Receive activity webhooks from the theme for targeted re-crawls.
 
@@ -210,6 +211,15 @@ async def webhook_activity(
         f"forum_id={data.forum_id} user_id={data.user_id}",
         level="webhook",
     )
+
+    # Record user activity for the "online recently" feature
+    if data.user_id:
+        cursor = await db.execute(
+            "SELECT name FROM characters WHERE id = ?", (data.user_id,)
+        )
+        row = await cursor.fetchone()
+        user_name = row["name"] if row else f"User {data.user_id}"
+        await record_user_activity(db, data.user_id, user_name, source="webhook")
 
     if data.event == "profile_edit" and data.user_id:
         background_tasks.add_task(
@@ -240,6 +250,17 @@ async def webhook_activity(
         level="warn",
     )
     return {"status": "accepted", "action": "none"}
+
+
+# --- Online/Recent Endpoint ---
+
+@router.get("/online/recent")
+async def get_online_recent(
+    hours: int = Query(default=6, ge=1, le=48, description="How far back to look (max 48)"),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Return users active within a rolling window, most recent first."""
+    return await get_recent_users(db, hours)
 
 
 # --- Admin/Crawl Endpoints ---

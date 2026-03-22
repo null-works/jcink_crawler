@@ -37,6 +37,8 @@ from app.models.operations import (
     set_crawl_status,
     get_crawl_status,
     replace_thread_posts,
+    record_user_activity,
+    get_recent_users,
 )
 from app.models.dashboard_queries import (
     search_characters,

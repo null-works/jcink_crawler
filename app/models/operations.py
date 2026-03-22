@@ -744,3 +744,50 @@ async def delete_character(db: aiosqlite.Connection, character_id: str) -> dict:
     counts["characters"] = cursor.rowcount
     await db.commit()
     return counts
+
+
+# --- User Activity Operations ---
+
+async def record_user_activity(
+    db: aiosqlite.Connection,
+    user_id: str,
+    user_name: str,
+    source: str = "webhook",
+) -> None:
+    """Record or update a user's last-seen timestamp. Auto-commits."""
+    await db.execute(
+        """INSERT INTO user_activity (user_id, user_name, last_seen, source)
+           VALUES (?, ?, datetime('now'), ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+               user_name = excluded.user_name,
+               last_seen = excluded.last_seen,
+               source = excluded.source""",
+        (user_id, user_name, source),
+    )
+    await db.commit()
+
+
+async def get_recent_users(
+    db: aiosqlite.Connection,
+    hours: int = 6,
+) -> list[dict]:
+    """Return users active within the last `hours` hours, most recent first."""
+    cursor = await db.execute(
+        """SELECT user_id, user_name, last_seen, source
+           FROM user_activity
+           WHERE last_seen >= datetime('now', ?)
+           ORDER BY last_seen DESC""",
+        (f"-{hours} hours",),
+    )
+    rows = await cursor.fetchall()
+    base = settings.forum_base_url
+    return [
+        {
+            "id": row["user_id"],
+            "name": row["user_name"],
+            "last_seen": row["last_seen"],
+            "profile_url": f"{base}/index.php?showuser={row['user_id']}",
+            "source": row["source"],
+        }
+        for row in rows
+    ]

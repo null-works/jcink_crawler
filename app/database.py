@@ -132,6 +132,17 @@ async def init_db():
             )
         """)
 
+        # User activity - tracks when users were last seen for "online recently"
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_activity (
+                user_id TEXT NOT NULL,
+                user_name TEXT NOT NULL,
+                last_seen TIMESTAMP NOT NULL,
+                source TEXT NOT NULL DEFAULT 'webhook',
+                PRIMARY KEY (user_id)
+            )
+        """)
+
         # Crawl status - track overall crawl state
         await db.execute("""
             CREATE TABLE IF NOT EXISTS crawl_status (
@@ -169,6 +180,11 @@ async def init_db():
         await db.execute("""
             CREATE INDEX IF NOT EXISTS idx_posts_thread
             ON posts(thread_id)
+        """)
+
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_activity_last_seen
+            ON user_activity(last_seen)
         """)
 
         # Add post_count to character_threads if it doesn't exist
