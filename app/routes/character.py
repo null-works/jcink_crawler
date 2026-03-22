@@ -263,6 +263,33 @@ async def get_online_recent(
     return await get_recent_users(db, hours)
 
 
+# --- Diagnostic Endpoints ---
+
+@router.get("/debug/webhook-test")
+async def debug_webhook_test(
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Simulate a webhook recording to prove the DB write path works.
+    Hit this in a browser, then check /api/online/recent?hours=1."""
+    await record_user_activity(db, "0", "Diagnostic Test", source="debug")
+    return {"status": "ok", "message": "Wrote test activity. Check /api/online/recent?hours=1"}
+
+
+@router.get("/debug/activity-dump")
+async def debug_activity_dump(
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Dump raw user_activity table contents for debugging."""
+    cursor = await db.execute(
+        "SELECT user_id, user_name, last_seen, source FROM user_activity ORDER BY last_seen DESC LIMIT 20"
+    )
+    rows = await cursor.fetchall()
+    return {
+        "count": len(rows),
+        "rows": [dict(r) for r in rows],
+    }
+
+
 # --- Admin/Crawl Endpoints ---
 
 @router.post("/crawl/trigger", response_model=dict)
