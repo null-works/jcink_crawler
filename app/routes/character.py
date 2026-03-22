@@ -1,5 +1,9 @@
 import json
+import re
+import time
 
+import httpx
+from bs4 import BeautifulSoup
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request, Response
 import aiosqlite
 
@@ -429,3 +433,87 @@ async def get_service_status(db: aiosqlite.Connection = Depends(get_db)):
         last_profile_crawl=last_profile,
         current_activity=activity if activity["active"] else None,
     )
+
+
+# --- Banner Album Endpoint ---
+
+BANNER_ALBUM_URL = "https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+_banner_cache: dict = {"urls": [], "fetched_at": 0.0}
+BANNER_CACHE_TTL = 600  # 10 minutes
+
+
+async def _scrape_album_page(client: httpx.AsyncClient, url: str) -> tuple[list[str], str | None]:
+    """Scrape a single album page. Returns (image_urls, next_page_url)."""
+    resp = await client.get(url, follow_redirects=True)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    images = []
+    for a_tag in soup.select("a[href*='/image/']"):
+        img = a_tag.find("img")
+        if img and img.get("src"):
+            # Convert thumbnail (.md.png) to full-size (.png)
+            full_url = img["src"].replace(".md.png", ".png").replace(".md.jpg", ".jpg")
+            images.append(full_url)
+
+    # Find next page link
+    next_url = None
+    for link in soup.select("a[href*='page=']"):
+        href = link.get("href", "")
+        if "page=" in href:
+            # Extract page number from this link
+            page_match = re.search(r"page=(\d+)", href)
+            if page_match:
+                page_num = int(page_match.group(1))
+                # Check if this is a forward page (not page 1 / back link)
+                current_match = re.search(r"page=(\d+)", url)
+                current_page = int(current_match.group(1)) if current_match else 1
+                if page_num > current_page:
+                    # Make absolute URL if relative
+                    if href.startswith("/"):
+                        next_url = f"https://imagehut.ch{href}"
+                    elif not href.startswith("http"):
+                        next_url = f"https://imagehut.ch/{href}"
+                    else:
+                        next_url = href
+                    break
+
+    return images, next_url
+
+
+async def _fetch_all_banners() -> list[str]:
+    """Scrape all pages of the banner album and return full-size image URLs."""
+    all_urls: list[str] = []
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        url: str | None = BANNER_ALBUM_URL
+        seen_pages = 0
+        while url and seen_pages < 10:  # safety cap
+            images, next_url = await _scrape_album_page(client, url)
+            all_urls.extend(images)
+            url = next_url
+            seen_pages += 1
+    return all_urls
+
+
+@router.get("/banners")
+async def get_banners():
+    """Return the list of banner image URLs from the ImageHut album.
+
+    Results are cached for 10 minutes to avoid hammering ImageHut.
+    """
+    now = time.time()
+    if _banner_cache["urls"] and (now - _banner_cache["fetched_at"]) < BANNER_CACHE_TTL:
+        return {"images": _banner_cache["urls"], "count": len(_banner_cache["urls"]), "cached": True}
+
+    try:
+        urls = await _fetch_all_banners()
+    except httpx.HTTPError as e:
+        log_debug(f"Banner album fetch failed: {e}", level="error")
+        # Return stale cache if available, otherwise error
+        if _banner_cache["urls"]:
+            return {"images": _banner_cache["urls"], "count": len(_banner_cache["urls"]), "cached": True, "stale": True}
+        raise HTTPException(status_code=502, detail="Failed to fetch banner album")
+
+    _banner_cache["urls"] = urls
+    _banner_cache["fetched_at"] = now
+    return {"images": urls, "count": len(urls), "cached": False}
