@@ -867,7 +867,6 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
         # find 0 relevant threads. Fix this by registering members from
         # the dump itself before matching threads.
         members = extract_member_records(raw, schema=schema)
-        excluded_names = settings.excluded_name_set
         base_url = settings.forum_base_url
 
         if members:
@@ -881,8 +880,6 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                     mid = m["member_id"]
                     mname = m["name"]
                     if mid in existing_ids:
-                        continue
-                    if mname.lower() in excluded_names:
                         continue
                     if mname == "Unknown" or not mname:
                         continue
@@ -1459,13 +1456,8 @@ async def discover_characters(db_path: str) -> dict:
         if not members:
             continue
 
-        excluded = settings.excluded_name_set
         for member in members:
             uid = member["user_id"]
-
-            if member["name"].lower() in excluded:
-                skipped_count += 1
-                continue
 
             if uid in existing_ids:
                 existing_count += 1

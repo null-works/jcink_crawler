@@ -88,9 +88,9 @@ class TestCrawlAllCharacters:
             # 5 misses + 1 valid + 100 misses = 106 checks
             assert mock_check.await_count == 106
 
-    async def test_skips_excluded_names(self):
-        """Excluded names should be skipped without crawling."""
-        # ID 1 = excluded, ID 2 = valid, then 20 misses
+    async def test_crawls_excluded_names(self):
+        """Excluded names should still be crawled (filtering is display-side only)."""
+        # ID 1 = admin account, ID 2 = regular, then misses
         side_effects = ["Watcher", "Alpha"] + [None] * 100
 
         with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects), \
@@ -98,9 +98,9 @@ class TestCrawlAllCharacters:
              patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
              patch("asyncio.sleep", new_callable=AsyncMock):
             await _crawl_all_characters()
-            # Only Alpha should be crawled, Watcher is excluded
-            assert mock_profile.await_count == 1
-            assert mock_threads.await_count == 1
+            # Both should be crawled — exclusion is display-side only
+            assert mock_profile.await_count == 2
+            assert mock_threads.await_count == 2
 
     async def test_continues_on_crawl_error(self):
         """If one character's crawl errors, should still continue to next."""

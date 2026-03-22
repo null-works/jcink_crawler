@@ -196,7 +196,6 @@ async def _discover_and_crawl_profiles():
     handled by _acp_sync_cycle when ACP is available, or by
     _crawl_all_characters_html as fallback.
     """
-    excluded = settings.excluded_name_set
     consecutive_misses = 0
     processed = 0
     user_id = 0
@@ -221,11 +220,6 @@ async def _discover_and_crawl_profiles():
 
         # Valid profile — reset miss counter
         consecutive_misses = 0
-
-        if name.lower() in excluded:
-            log_debug(f"ID {sid}: {name} (excluded)")
-            continue
-
         processed += 1
 
         # Full profile crawl (Playwright for power grid)
@@ -260,7 +254,6 @@ async def _crawl_all_characters():
     When ACP is configured, _acp_sync_cycle handles threads/posts and
     _discover_and_crawl_profiles handles profile discovery.
     """
-    excluded = settings.excluded_name_set
     consecutive_misses = 0
     processed = 0
     user_id = 0
@@ -285,11 +278,6 @@ async def _crawl_all_characters():
 
         # Valid profile — reset miss counter
         consecutive_misses = 0
-
-        if name.lower() in excluded:
-            log_debug(f"ID {sid}: {name} (excluded)")
-            continue
-
         processed += 1
 
         # ── Full profile crawl (Playwright for power grid) ──
