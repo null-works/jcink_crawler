@@ -323,6 +323,11 @@ _GROUP_MAP = {
     "15": "Neutral",
 }
 
+# Group names the theme's client-side filter recognizes for color mapping.
+# JCink built-in groups like "Pending", "Validating", "Members" are NOT
+# recognized and would cause the character card to be hidden in the widget.
+_RECOGNIZED_GROUPS = {v.lower() for v in _GROUP_MAP.values()}
+
 
 def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     """Extract profile data from a JCink profile page (proper TWAI theme).
@@ -359,13 +364,17 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         for cls in profile_app.get("class", []):
             match = re.match(r"group-(\d+)", cls)
             if match:
-                group_name = _GROUP_MAP.get(match.group(1), cls)
+                group_name = _GROUP_MAP.get(match.group(1))
                 break
     # Method 2: div.mp-b in pf-x (TWAI static skin)
     if not group_name:
         group_el = soup.select_one("div.pf-x div.mp-b")
         if group_el:
-            group_name = group_el.get_text(strip=True)
+            raw = group_el.get_text(strip=True)
+            # Only accept recognized color names; ignore JCink built-in
+            # group labels like "Pending", "Validating", "Members", etc.
+            if raw.lower() in _RECOGNIZED_GROUPS:
+                group_name = raw
 
     # Get avatar from background-image styles
     avatar_url = None
