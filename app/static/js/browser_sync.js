@@ -244,9 +244,32 @@
 
     // ── Main Sync Orchestrator ──
 
+    async function testCorsConnectivity() {
+        log('info', '── CORS connectivity test ──', serverBase + '/health');
+        try {
+            const resp = await fetch(serverBase + '/health', { mode: 'cors' });
+            const body = await resp.text();
+            log('ok', 'CORS test passed', 'status=' + resp.status + ' body=' + body.substring(0, 100));
+            return true;
+        } catch (e) {
+            log('err', 'CORS test FAILED', e.message + ' — the server may not allow requests from ' + window.location.origin);
+            log('err', 'Check that CORS allows origin: ' + window.location.origin);
+            return false;
+        }
+    }
+
     async function runSync(config) {
         const summary = { acp: null, profiles: null, errors: [] };
         log('info', 'runSync started', 'server=' + serverBase + ' acp=' + !!config.acp_username + ' profiles=' + (config.character_ids || []).length);
+        log('info', 'Bridge origin', window.location.origin);
+
+        // Test CORS before doing real work
+        const corsOk = await testCorsConnectivity();
+        if (!corsOk) {
+            summary.errors.push('Cannot reach server from JCink (CORS blocked). Server must allow origin: ' + window.location.origin);
+            sendError('CORS blocked — server at ' + serverBase + ' does not allow requests from ' + window.location.origin);
+            return;
+        }
 
         try {
             // Phase 1: ACP dump (if credentials provided)
