@@ -110,8 +110,7 @@
             </p>
             {% endif %}
             <div id="bs-status" class="result"></div>
-            <iframe id="bs-iframe" style="display:none; width:0; height:0; border:none;"
-                    sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+            <iframe id="bs-iframe" style="width:100%; height:60px; border:1px solid var(--current); margin-top:0.5rem; border-radius:4px; background:#111;"></iframe>
         </div>
 
         {# Server-side sync (fallback when server has connectivity) #}
@@ -213,12 +212,25 @@ function startBrowserSync() {
     // Load the iframe
     iframe.src = BS_IFRAME_URL;
 
+    // Timeout if bridge never responds
+    const bridgeTimeout = setTimeout(function() {
+        if (bsSyncRunning && statusEl.innerHTML.includes('Loading sync bridge')) {
+            statusEl.innerHTML = '<span class="text-red">Bridge did not load. Check that the board page exists at:<br>' +
+                '<a href="' + BS_IFRAME_URL + '" target="_blank" style="color:var(--purple);">' + BS_IFRAME_URL + '</a><br>' +
+                'The iframe should be visible below — check for errors.</span>';
+            btn.disabled = false;
+            btn.textContent = 'Browser Sync';
+            bsSyncRunning = false;
+        }
+    }, 15000);
+
     // Wait for iframe ready signal, then start sync
     const onMessage = function(event) {
         const data = event.data;
         if (!data || !data.type) return;
 
         if (data.type === 'watcher-sync-ready') {
+            clearTimeout(bridgeTimeout);
             // Iframe loaded — get character IDs then start sync
             statusEl.innerHTML = '<span class="text-yellow">Bridge loaded. Starting sync...</span>';
 
