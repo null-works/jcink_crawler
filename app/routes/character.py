@@ -363,33 +363,49 @@ async def upload_acp_dump(
     request: Request,
     background_tasks: BackgroundTasks,
 ):
-    """Accept a raw SQL dump uploaded from the browser.
+    """Accept ACP data from the browser — either raw SQL or pre-parsed JSON.
 
-    The admin's browser fetches the ACP database dump directly from
-    JCink (using the browser's own IP) and POSTs the SQL text here.
-    The server parses it identically to sync_posts_from_acp but never
-    connects to JCink itself.
+    Two formats supported:
 
-    Accepts:
-        Body: raw SQL text (Content-Type: text/plain) or JSON {"sql": "..."}
+    1. Raw SQL text (Content-Type: text/plain):
+       Body is the raw .sql file from a JCink ACP database dump.
+
+    2. Pre-parsed JSON (Content-Type: application/json):
+       Body is the rawArray from fizzy's databaseParser.js, e.g.:
+       {"posts": [[col0, col1, ...], ...], "topics": [...], ...}
+       Keys are table names, values are arrays of row arrays.
     """
+    from app.services.crawler import process_acp_raw_data
+
     content_type = request.headers.get("content-type", "")
+
     if "application/json" in content_type:
         body = await request.json()
+
+        # Check if this is pre-parsed table data (rawArray from databaseParser.js)
+        if any(k in body for k in ("posts", "topics", "members", "forums")):
+            row_counts = {k: len(v) for k, v in body.items() if isinstance(v, list)}
+            background_tasks.add_task(process_acp_raw_data, body, settings.database_path)
+            return {
+                "status": "processing",
+                "tables": row_counts,
+                "message": "Parsed data received — processing in background.",
+            }
+
+        # Otherwise expect {"sql": "..."} format
         sql_text = body.get("sql", "")
     else:
-        raw = await request.body()
-        sql_text = raw.decode("utf-8", errors="replace")
+        raw_bytes = await request.body()
+        sql_text = raw_bytes.decode("utf-8", errors="replace")
 
     if not sql_text or len(sql_text) < 100:
         raise HTTPException(status_code=400, detail="No SQL data received (or too small)")
 
-    # Process in background so the browser gets an immediate response
     background_tasks.add_task(process_acp_sql_dump, sql_text, settings.database_path)
     return {
         "status": "processing",
         "size_bytes": len(sql_text),
-        "message": "SQL dump received — processing in background. Check activity indicator for progress.",
+        "message": "SQL dump received — processing in background.",
     }
 
 

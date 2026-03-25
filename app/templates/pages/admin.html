@@ -121,17 +121,32 @@
             <div id="acp-sync-result" class="result"></div>
         </div>
 
-        {# Browser-side sync (uses YOUR browser to fetch from JCink, bypasses server IP blocks) #}
+        {# Browser-side sync: fizzy's Activity Tracker integration #}
         <div style="flex: 1;">
             <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--text-secondary);">Browser-Side Sync</h4>
-            <p class="text-comment" style="font-size: 0.8rem; margin-bottom: 0.5rem;">
-                Fetches the ACP dump using <strong>your browser's IP</strong>, then uploads it to the server for processing.
-                Use this when the server's IP is blocked by JCink.
+            <p class="text-comment" style="font-size: 0.8rem; margin-bottom: 0.75rem;">
+                Use when the server's IP is blocked by JCink. Add this snippet to your Activity Tracker page
+                to send ACP data to the Watcher after each dump:
+            </p>
+            <pre class="text-comment" style="font-size: 0.7rem; background: var(--bg-secondary); padding: 0.5rem; overflow-x: auto; margin-bottom: 0.75rem; border: 1px solid var(--current); user-select: all;">&lt;script&gt;
+document.getElementById('build-table').addEventListener('click', function() {
+  setTimeout(function() {
+    if (typeof rawArray !== 'undefined' &amp;&amp; rawArray.posts) {
+      fetch('{{ request.base_url }}api/acp/upload-dump', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(rawArray)
+      }).then(r =&gt; r.json()).then(d =&gt; console.log('Watcher sync:', d));
+    }
+  }, 2000);
+});
+&lt;/script&gt;</pre>
+            <p class="text-comment" style="font-size: 0.75rem; margin-bottom: 0.75rem;">
+                Or upload an SQL dump file directly:
             </p>
             <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                <input type="text" id="browser-acp-user" class="form-input" placeholder="Admin username" value="{{ acp_username }}">
-                <input type="password" id="browser-acp-pass" class="form-input" placeholder="Admin password">
-                <button class="btn btn-green" id="browser-sync-btn" onclick="browserAcpSync()">Browser ACP Sync</button>
+                <input type="file" id="sql-upload" class="form-input" accept=".sql,.txt" style="padding: 0.4rem;">
+                <button class="btn btn-green" id="upload-btn" onclick="uploadSqlDump()">Upload SQL Dump</button>
             </div>
             <div id="browser-sync-result" class="result"></div>
         </div>
@@ -139,137 +154,43 @@
 </div>
 
 <script>
-async function browserAcpSync() {
-    const user = document.getElementById('browser-acp-user').value.trim();
-    const pass = document.getElementById('browser-acp-pass').value.trim();
+async function uploadSqlDump() {
+    const fileInput = document.getElementById('sql-upload');
     const result = document.getElementById('browser-sync-result');
-    const btn = document.getElementById('browser-sync-btn');
+    const btn = document.getElementById('upload-btn');
 
-    if (!user || !pass) {
-        result.innerHTML = '<span class="text-red">Enter ACP username and password</span>';
+    if (!fileInput.files.length) {
+        result.innerHTML = '<span class="text-red">Select an SQL dump file first</span>';
         return;
     }
 
+    const file = fileInput.files[0];
     btn.disabled = true;
-    btn.textContent = 'Logging in...';
-    result.innerHTML = '<span class="text-yellow">Connecting to JCink ACP...</span>';
-
-    const forumBase = '{{ forum_base_url }}';
-    const forumMatch = forumBase.match(/https?:\/\/(\w+)\.jcink\.net/);
-    if (!forumMatch) {
-        result.innerHTML = '<span class="text-red">Could not determine forum name from URL</span>';
-        btn.disabled = false;
-        btn.textContent = 'Browser ACP Sync';
-        return;
-    }
-    const forumName = forumMatch[1];
+    btn.textContent = 'Uploading...';
+    result.innerHTML = '<span class="text-yellow">Uploading ' + (file.size / 1024).toFixed(0) + ' KB...</span>';
 
     try {
-        // Step 1: Login to ACP
-        const loginUrl = forumBase + '/admin.php?login=yes&username=' +
-            encodeURIComponent(user) + '&password=' + encodeURIComponent(pass);
-
-        const loginResp = await fetch(loginUrl, { credentials: 'include' });
-        const loginHtml = await loginResp.text();
-
-        // Extract adsess token
-        const adsessMatch = loginHtml.match(/adsess=([a-f0-9]+)/);
-        if (!adsessMatch) {
-            result.innerHTML = '<span class="text-red">ACP login failed — check credentials</span>';
-            btn.disabled = false;
-            btn.textContent = 'Browser ACP Sync';
-            return;
-        }
-        const adsess = adsessMatch[1];
-        result.innerHTML = '<span class="text-green">Logged in.</span> <span class="text-yellow">Starting database dump...</span>';
-
-        // Step 2: Clear previous backup
-        await fetch(forumBase + '/admin.php?act=mysql&code=backup&erase=1&adsess=' + adsess,
-            { credentials: 'include' });
-        await new Promise(r => setTimeout(r, 1000));
-
-        // Step 3: Start dump and follow pagination
-        let html = '';
-        const initResp = await fetch(
-            forumBase + '/admin.php?act=mysql&code=dump&step1=1&adsess=' + adsess,
-            { credentials: 'include' });
-        html = await initResp.text();
-
-        const nextLinkRe = /admin\.php\?(?=[^'"]*\bact=mysql\b)(?=[^'"]*\bcode=dump\b)(?=[^'"]*\bline=(\d+))(?=[^'"]*\bpart=(\d+))(?=[^'"]*\badsess=([a-f0-9]+))/gi;
-        let totalPages = 1;
-        let match = nextLinkRe.exec(html);
-
-        while (match && totalPages < 2000) {
-            const line = match[1];
-            const part = match[2];
-            const url = forumBase + '/admin.php?act=mysql&adsess=' + adsess +
-                '&code=dump&line=' + line + '&part=' + part;
-            const resp = await fetch(url, { credentials: 'include' });
-            html = await resp.text();
-            totalPages++;
-            if (totalPages % 10 === 0) {
-                btn.textContent = 'Dumping... (' + totalPages + ' pages)';
-            }
-            nextLinkRe.lastIndex = 0;
-            match = nextLinkRe.exec(html);
-        }
-
-        result.innerHTML = '<span class="text-green">Dump complete (' + totalPages + ' pages).</span> <span class="text-yellow">Fetching SQL file...</span>';
-        btn.textContent = 'Fetching SQL...';
-
-        // Step 4: Fetch SQL file
-        const sqlUrl = forumBase + '/sqls/' + adsess + '-' + forumName + '_.sql';
-        let sqlContent = null;
-
-        for (const waitSecs of [2, 5, 10, 15, 30]) {
-            await new Promise(r => setTimeout(r, waitSecs * 1000));
-            btn.textContent = 'Waiting for SQL... (' + waitSecs + 's)';
-            try {
-                const sqlResp = await fetch(sqlUrl, { credentials: 'include' });
-                if (sqlResp.ok) {
-                    const text = await sqlResp.text();
-                    if (text.length > 100) {
-                        sqlContent = text;
-                        break;
-                    }
-                }
-            } catch (e) { /* retry */ }
-        }
-
-        if (!sqlContent) {
-            result.innerHTML = '<span class="text-red">SQL file not generated — dump may have failed</span>';
-            btn.disabled = false;
-            btn.textContent = 'Browser ACP Sync';
-            return;
-        }
-
-        result.innerHTML = '<span class="text-green">SQL file retrieved (' +
-            (sqlContent.length / 1024).toFixed(0) + ' KB).</span> <span class="text-yellow">Uploading to server...</span>';
-        btn.textContent = 'Uploading...';
-
-        // Step 5: Upload to server
-        const uploadResp = await fetch('/api/acp/upload-dump', {
+        const text = await file.text();
+        const resp = await fetch('/api/acp/upload-dump', {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain' },
-            body: sqlContent,
+            body: text,
         });
-        const uploadResult = await uploadResp.json();
+        const data = await resp.json();
 
-        if (uploadResp.ok) {
+        if (resp.ok) {
             result.innerHTML = '<span class="text-green">Upload complete — ' +
-                (uploadResult.size_bytes / 1024).toFixed(0) +
-                ' KB sent to server. Processing in background.</span>';
+                (data.size_bytes / 1024).toFixed(0) +
+                ' KB sent. Processing in background.</span>';
         } else {
-            result.innerHTML = '<span class="text-red">Upload failed: ' +
-                (uploadResult.detail || 'Unknown error') + '</span>';
+            result.innerHTML = '<span class="text-red">' + (data.detail || 'Upload failed') + '</span>';
         }
-
     } catch (e) {
         result.innerHTML = '<span class="text-red">Error: ' + e.message + '</span>';
     }
 
     btn.disabled = false;
-    btn.textContent = 'Browser ACP Sync';
+    btn.textContent = 'Upload SQL Dump';
 }
 </script>
 

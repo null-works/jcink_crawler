@@ -836,7 +836,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             clear_activity()
             return {"error": "No data retrieved from ACP"}
 
-        return await _process_acp_raw_data(raw, db_path)
+        return await process_acp_raw_data(raw, db_path)
 
     finally:
         await client.close()
@@ -864,10 +864,10 @@ async def process_acp_sql_dump(sql_text: str, db_path: str) -> dict:
     row_counts = {k: len(v) for k, v in raw.items()}
     log_debug(f"Uploaded dump tables: {row_counts}")
 
-    return await _process_acp_raw_data(raw, db_path)
+    return await process_acp_raw_data(raw, db_path)
 
 
-async def _process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict:
+async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict:
     """Shared processing pipeline for ACP data (server-fetched or browser-uploaded)."""
     from app.services.acp_client import detect_schema, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records, extract_member_records
     from app.services.parser import categorize_thread
