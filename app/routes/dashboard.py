@@ -526,6 +526,7 @@ async def admin_page(
     acp_password = await get_crawl_status(db, "acp_password") or settings.admin_password
     acp_configured = bool(acp_username and acp_password)
     acp_last_sync = await get_crawl_status(db, "acp_last_sync")
+    browser_sync_url = await get_crawl_status(db, "browser_sync_url") or ""
 
     # Banner album
     banner_album_url = await get_crawl_status(db, "banner_album_url") or "https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
@@ -541,6 +542,7 @@ async def admin_page(
         "acp_username": acp_username or "",
         "acp_last_sync": acp_last_sync,
         "forum_base_url": settings.forum_base_url,
+        "browser_sync_url": browser_sync_url,
         "banner_album_url": banner_album_url,
         "banner_count": banner_count,
     })
@@ -1006,6 +1008,22 @@ async def htmx_save_acp_credentials(
     await set_crawl_status(db, "acp_password", password)
 
     return HTMLResponse(f'<span class="text-green">ACP credentials saved for {username}.</span>')
+
+
+@router.post("/htmx/banner-album", response_class=HTMLResponse)
+@router.post("/htmx/save-sync-url", response_class=HTMLResponse)
+async def htmx_save_sync_url(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    url = form.get("browser_sync_url", "").strip()
+    await set_crawl_status(db, "browser_sync_url", url)
+    return HTMLResponse(f'<span class="text-green">Saved</span>')
 
 
 @router.post("/htmx/banner-album", response_class=HTMLResponse)

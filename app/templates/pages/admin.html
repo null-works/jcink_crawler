@@ -90,6 +90,12 @@
                 (<a href="#browser-sync-setup" style="color: var(--purple);" onclick="document.getElementById('browser-sync-setup').style.display='block'">setup instructions</a>).
             </p>
             <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem;">
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <input type="text" id="bs-page-url" class="form-input" style="flex: 1;"
+                           placeholder="Board page URL (e.g. https://therewasanidea.jcink.net/index.php?act=Pages&pid=13)"
+                           value="{{ browser_sync_url }}">
+                    <button class="btn btn-purple" style="white-space: nowrap; font-size: 0.75rem;" onclick="saveSyncUrl()">Save</button>
+                </div>
                 <input type="text" id="bs-username" class="form-input"
                        placeholder="ACP username" value="{{ acp_username }}">
                 <input type="password" id="bs-password" class="form-input"
@@ -153,10 +159,9 @@
         One-time setup: create a board page on your JCink forum that the Watcher uses as a bridge.
     </p>
     <ol class="text-comment" style="font-size: 0.85rem; padding-left: 1.5rem; margin-bottom: 1rem; line-height: 1.8;">
-        <li>Go to your <strong>JCink ACP</strong> &rarr; <strong>Skins &amp; Templates</strong> &rarr; <strong>Board Page HTML</strong></li>
-        <li>Click <strong>Create New Page</strong></li>
-        <li>Set the page key to: <code style="background: var(--bg-secondary); padding: 0.1rem 0.4rem;">watcher-sync</code></li>
-        <li>Paste this into the HTML content (replace <code>WATCHER_URL</code> with your server address):</li>
+        <li>Go to your <strong>JCink ACP</strong> &rarr; <strong>Skins &amp; Templates</strong> &rarr; <strong>Manage Board Pages</strong></li>
+        <li>Click <strong>Create New Page</strong>, give it any name (e.g. "Watcher Sync")</li>
+        <li>Paste this into the HTML content:</li>
     </ol>
     <pre id="board-page-snippet" class="text-comment" style="font-size: 0.75rem; background: var(--bg-secondary); padding: 0.75rem; overflow-x: auto; margin-bottom: 0.5rem; border: 1px solid var(--current); user-select: all; line-height: 1.4;"></pre>
     <p class="text-comment" style="font-size: 0.8rem; margin-bottom: 1rem;">
@@ -170,23 +175,36 @@
             '</div>\n' +
             '<script src="' + window.location.origin + '/static/js/browser_sync.js"><\/script>';
     </script>
-    <ol class="text-comment" start="5" style="font-size: 0.85rem; padding-left: 1.5rem; margin-bottom: 1rem; line-height: 1.8;">
+    <ol class="text-comment" start="4" style="font-size: 0.85rem; padding-left: 1.5rem; margin-bottom: 1rem; line-height: 1.8;">
         <li>Save the page</li>
-        <li>Verify it loads: <a href="{{ forum_base_url }}/index.php?act=boardpage&page=watcher-sync"
-            target="_blank" style="color: var(--purple);">{{ forum_base_url }}/index.php?act=boardpage&page=watcher-sync</a></li>
-        <li>Done! The Browser Sync button above will now work.</li>
+        <li>Open the page in your browser — note the URL (it will look like <code>...?act=Pages&amp;pid=XX</code>)</li>
+        <li>Paste that URL into the <strong>Board page URL</strong> field above and click <strong>Save</strong></li>
+        <li>Done! The Browser Sync button will now work.</li>
     </ol>
     <button class="btn btn-ghost" onclick="this.parentElement.style.display='none'">Close</button>
 </div>
 
 <script>
-const BS_IFRAME_URL = '{{ forum_base_url }}/index.php?act=boardpage&page=watcher-sync';
 const BS_SERVER_BASE = window.location.origin;
 let bsSyncRunning = false;
+
+function saveSyncUrl() {
+    const url = document.getElementById('bs-page-url').value.trim();
+    fetch('/htmx/save-sync-url', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'browser_sync_url=' + encodeURIComponent(url)
+    }).then(r => r.text()).then(html => {
+        const el = document.getElementById('bs-status');
+        el.innerHTML = url ? '<span class="text-green">Board page URL saved</span>'
+                           : '<span class="text-yellow">Board page URL cleared</span>';
+    });
+}
 
 function startBrowserSync() {
     if (bsSyncRunning) return;
 
+    const pageUrl = document.getElementById('bs-page-url').value.trim();
     const username = document.getElementById('bs-username').value.trim();
     const password = document.getElementById('bs-password').value.trim();
     const doAcp = document.getElementById('bs-do-acp').checked;
@@ -195,6 +213,10 @@ function startBrowserSync() {
     const btn = document.getElementById('bs-start');
     const iframe = document.getElementById('bs-iframe');
 
+    if (!pageUrl) {
+        statusEl.innerHTML = '<span class="text-red">Enter the board page URL first. <a href="#browser-sync-setup" style="color:var(--purple);" onclick="document.getElementById(\'browser-sync-setup\').style.display=\'block\'">Setup instructions</a></span>';
+        return;
+    }
     if (doAcp && (!username || !password)) {
         statusEl.innerHTML = '<span class="text-red">Enter ACP credentials for ACP dump</span>';
         return;
@@ -210,13 +232,13 @@ function startBrowserSync() {
     statusEl.innerHTML = '<span class="text-yellow">Loading sync bridge...</span>';
 
     // Load the iframe
-    iframe.src = BS_IFRAME_URL;
+    iframe.src = pageUrl;
 
     // Timeout if bridge never responds
     const bridgeTimeout = setTimeout(function() {
         if (bsSyncRunning && statusEl.innerHTML.includes('Loading sync bridge')) {
             statusEl.innerHTML = '<span class="text-red">Bridge did not load. Check that the board page exists at:<br>' +
-                '<a href="' + BS_IFRAME_URL + '" target="_blank" style="color:var(--purple);">' + BS_IFRAME_URL + '</a><br>' +
+                '<a href="' + pageUrl + '" target="_blank" style="color:var(--purple);">' + pageUrl + '</a><br>' +
                 'The iframe should be visible below — check for errors.</span>';
             btn.disabled = false;
             btn.textContent = 'Browser Sync';
@@ -274,13 +296,14 @@ function startBrowserSync() {
     };
 
     function sendSyncCommand(iframe, username, password, doAcp, charIds) {
+        const targetOrigin = new URL(pageUrl).origin;
         iframe.contentWindow.postMessage({
             type: 'watcher-sync-start',
             server_base: BS_SERVER_BASE,
             acp_username: doAcp ? username : '',
             acp_password: doAcp ? password : '',
             character_ids: charIds,
-        }, '{{ forum_base_url }}');
+        }, targetOrigin);
     }
 
     function cleanup() {
