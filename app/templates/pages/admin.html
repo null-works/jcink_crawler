@@ -338,13 +338,13 @@ function startBrowserSync() {
 
             bsLog('ok', 'Sync complete', parts.join(' | '));
             statusEl.innerHTML = '<span class="text-green">Sync complete. ' + parts.join(' | ') + '</span>';
-            cleanup();
+            cleanup('sync-complete');
         }
 
         if (data.type === 'watcher-sync-error') {
             bsLog('err', 'Sync error', data.message);
             statusEl.innerHTML = '<span class="text-red">Error: ' + data.message + '</span>';
-            cleanup();
+            cleanup('sync-error: ' + data.message);
         }
 
         // Bridge verbose logs → dashboard log panel
@@ -370,8 +370,8 @@ function startBrowserSync() {
         }
     }
 
-    function cleanup() {
-        bsLog('info', 'Cleanup — sync session ended');
+    function cleanup(reason) {
+        bsLog('info', 'Cleanup — sync session ended', 'reason=' + (reason || 'unknown'));
         bsSyncRunning = false;
         btn.disabled = false;
         btn.textContent = 'Browser Sync';
@@ -386,7 +386,7 @@ function startBrowserSync() {
     setTimeout(function() {
         if (bsSyncRunning) {
             statusEl.innerHTML = '<span class="text-red">Sync timed out after 10 minutes</span>';
-            cleanup();
+            cleanup('timeout');
         }
     }, 600000);
 }

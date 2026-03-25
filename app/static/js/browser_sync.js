@@ -150,27 +150,36 @@
         const forumBase = window.location.origin;
         const results = [];
         const total = characterIds.length;
-        log('info', 'Starting profile fetch', total + ' characters from ' + forumBase);
+        const concurrency = 5;
+        log('info', 'Starting profile fetch', total + ' characters from ' + forumBase + ' (concurrency=' + concurrency + ')');
 
-        for (let i = 0; i < total; i++) {
-            const cid = characterIds[i];
-            sendStatus('profiles', 'Fetching profile ' + (i + 1) + '/' + total, cid);
+        for (let i = 0; i < total; i += concurrency) {
+            const batch = characterIds.slice(i, i + concurrency);
+            sendStatus('profiles', 'Fetching profiles ' + (i + 1) + '-' + Math.min(i + concurrency, total) + '/' + total);
 
-            try {
+            const promises = batch.map(function(cid) {
                 const url = forumBase + '/index.php?showuser=' + cid;
                 log('info', 'Fetching profile', url);
-                const resp = await fetch(url);
-                log('info', 'Profile response', 'id=' + cid + ' status=' + resp.status);
-                const html = await resp.text();
-                log('info', 'Profile fetched', 'id=' + cid + ' size=' + html.length + ' bytes');
-                results.push({ character_id: cid, html: html });
-            } catch (e) {
-                log('err', 'Profile fetch failed', 'id=' + cid + ' error=' + e.message);
-                sendStatus('profiles', 'Failed to fetch profile ' + cid, e.message);
+                return fetch(url).then(function(resp) {
+                    log('info', 'Profile response', 'id=' + cid + ' status=' + resp.status);
+                    return resp.text().then(function(html) {
+                        log('info', 'Profile fetched', 'id=' + cid + ' size=' + html.length + ' bytes');
+                        return { character_id: cid, html: html };
+                    });
+                }).catch(function(e) {
+                    log('err', 'Profile fetch failed', 'id=' + cid + ' error=' + e.message);
+                    sendStatus('profiles', 'Failed to fetch profile ' + cid, e.message);
+                    return null;
+                });
+            });
+
+            var batchResults = await Promise.all(promises);
+            for (var j = 0; j < batchResults.length; j++) {
+                if (batchResults[j]) results.push(batchResults[j]);
             }
 
-            // Polite delay between requests
-            if (i < total - 1) {
+            // Polite delay between batches
+            if (i + concurrency < total) {
                 await sleep(1500);
             }
         }
