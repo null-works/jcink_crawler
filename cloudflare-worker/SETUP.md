@@ -4,7 +4,7 @@ Routes all server-side JCink requests through Cloudflare so your server IP
 never touches JCink directly. Free tier (100,000 requests/day) is plenty.
 
 Everything below happens in your browser at [dash.cloudflare.com](https://dash.cloudflare.com/)
-and in your `.env` file. No CLI tools or commands needed.
+and in your `.env` file.
 
 ---
 
@@ -12,11 +12,14 @@ and in your `.env` file. No CLI tools or commands needed.
 
 - Log into [dash.cloudflare.com](https://dash.cloudflare.com/)
 - In the left sidebar, click **Workers & Pages**
-- Click **Create** → **Create Worker**
+- Click the **Create application** button (top right, blue)
+- Select **Worker** (not Pages)
 - Name it `jcink-proxy`
 - Click **Deploy**
 
 This creates a placeholder Worker. You'll replace the code next.
+
+Your Worker URL will be: `https://jcink-proxy.storycraftink-sys.workers.dev`
 
 ## 2. Add the proxy code
 
@@ -26,16 +29,13 @@ This creates a placeholder Worker. You'll replace the code next.
 - Paste it into the editor
 - Click **Save and Deploy**
 
-Note the URL shown at the top — it looks like:
-`https://jcink-proxy.<your-account>.workers.dev`
-
 ## 3. Add the secret key
 
 - Go back to your Worker's overview page
 - Click **Settings** → **Variables and Secrets**
 - Under Secrets, click **Add**
   - Name: `CF_PROXY_KEY`
-  - Value: any long random string (mash your keyboard, use a password manager, whatever)
+  - Value: any long random string (use a password manager or mash your keyboard)
 - Click **Save**
 
 Keep a copy of this value — you need it for the next step.
@@ -45,7 +45,7 @@ Keep a copy of this value — you need it for the next step.
 Add two lines to your `.env` file on the VPS:
 
 ```
-CF_WORKER_URL=https://jcink-proxy.<your-account>.workers.dev
+CF_WORKER_URL=https://jcink-proxy.storycraftink-sys.workers.dev
 CF_WORKER_KEY=<the-secret-from-step-3>
 ```
 
@@ -58,12 +58,12 @@ Restart the container. Done.
 In the container logs you should see:
 
 ```
-[Fetcher] Using Cloudflare Worker proxy: https://jcink-proxy.<your-account>.workers.dev
+[Fetcher] Using Cloudflare Worker proxy: https://jcink-proxy.storycraftink-sys.workers.dev
 ```
 
-You can also paste this into your browser to test (replace the key and URL):
+You can also paste this into your browser to test (replace YOUR_KEY):
 ```
-https://jcink-proxy.<you>.workers.dev/?key=YOUR_KEY&url=https://therewasanidea.jcink.net/index.php
+https://jcink-proxy.storycraftink-sys.workers.dev/?key=YOUR_KEY&url=https://therewasanidea.jcink.net/index.php
 ```
 
 If you see JCink HTML, it's working.
