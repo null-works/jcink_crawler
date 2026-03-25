@@ -37,7 +37,7 @@ from app.services import (
     register_character,
 )
 from app.models.operations import get_crawl_status, set_crawl_status, record_user_activity, get_recent_users
-from app.services.crawler import crawl_single_thread, sync_posts_from_acp, crawl_quotes_only, process_acp_sql_dump
+from app.services.crawler import crawl_single_thread, sync_posts_from_acp, crawl_quotes_only, process_acp_sql_dump, process_profile_html_batch
 from app.services.scheduler import _crawl_all_characters, _crawl_all_profiles
 from app.services.activity import get_activity
 
@@ -406,6 +406,32 @@ async def upload_acp_dump(
         "status": "processing",
         "size_bytes": len(sql_text),
         "message": "SQL dump received — processing in background.",
+    }
+
+
+@router.post("/profiles/upload-html")
+async def upload_profile_html(
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    """Accept pre-fetched profile HTML from the browser.
+
+    The browser fetches profile pages from JCink (using its own IP)
+    and sends the rendered HTML here for server-side parsing.
+
+    Accepts JSON: {"profiles": [{"character_id": "N", "html": "..."}, ...]}
+    """
+    body = await request.json()
+    profiles = body.get("profiles", [])
+
+    if not profiles:
+        raise HTTPException(status_code=400, detail="No profiles provided")
+
+    background_tasks.add_task(process_profile_html_batch, profiles, settings.database_path)
+    return {
+        "status": "processing",
+        "count": len(profiles),
+        "message": f"{len(profiles)} profiles received — processing in background.",
     }
 
 

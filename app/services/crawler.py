@@ -757,6 +757,91 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     }
 
 
+async def process_profile_html(character_id: str, html: str, db_path: str) -> dict:
+    """Process pre-fetched profile HTML (browser-side sync path).
+
+    The browser fetches the profile page from JCink (using its own IP)
+    and sends the rendered HTML here. The server parses it with the
+    existing BeautifulSoup pipeline and updates the database.
+
+    Since the browser renders JS, this gets the full rendered page
+    including power grid and other JS-built elements.
+    """
+    base_url = settings.forum_base_url
+    profile_url = f"{base_url}/index.php?showuser={character_id}"
+
+    if is_board_message(html):
+        log_debug(f"Profile {character_id} returned board message — removing character", level="error")
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            removed = await delete_character(db, character_id)
+        return {"removed": True, "character_id": character_id}
+
+    profile = parse_profile_page(html, character_id)
+
+    # Power grid: browser-rendered HTML should already have it, but check
+    _PG_KEYS = {"power grid - int", "power grid - str", "power grid - spd",
+                "power grid - dur", "power grid - pwr", "power grid - cmb"}
+    has_power_grid = bool(_PG_KEYS & set(profile.fields.keys()))
+
+    if profile.name:
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(
+                db,
+                character_id=character_id,
+                name=profile.name,
+                profile_url=profile_url,
+                group_name=profile.group_name,
+                avatar_url=profile.avatar_url,
+            )
+            for key, value in profile.fields.items():
+                await upsert_profile_field(db, character_id, key, value)
+            await update_character_crawl_time(db, character_id, "profile")
+            await db.commit()
+
+    return {
+        "character_id": character_id,
+        "name": profile.name,
+        "fields_count": len(profile.fields),
+        "group": profile.group_name,
+        "has_power_grid": has_power_grid,
+    }
+
+
+async def process_profile_html_batch(profiles: list[dict], db_path: str) -> dict:
+    """Process a batch of pre-fetched profile HTML pages.
+
+    Args:
+        profiles: List of {"character_id": "N", "html": "..."} dicts
+        db_path: Path to SQLite database
+
+    Returns:
+        Summary dict with counts
+    """
+    set_activity(f"Processing {len(profiles)} uploaded profiles")
+    log_debug(f"Processing {len(profiles)} browser-uploaded profiles")
+
+    processed = 0
+    errors = 0
+    for p in profiles:
+        cid = str(p.get("character_id", ""))
+        html = p.get("html", "")
+        if not cid or not html:
+            continue
+        try:
+            result = await process_profile_html(cid, html, db_path)
+            if "error" not in result:
+                processed += 1
+        except Exception as e:
+            errors += 1
+            log_debug(f"Error processing profile {cid}: {e}", level="error")
+
+    clear_activity()
+    log_debug(f"Browser profile sync: {processed} processed, {errors} errors", level="done")
+    return {"processed": processed, "errors": errors}
+
+
 async def register_character(user_id: str, db_path: str) -> dict:
     """Register a new character by fetching their profile.
 
