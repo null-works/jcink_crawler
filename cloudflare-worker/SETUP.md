@@ -10,35 +10,35 @@ and in your `.env` file.
 
 ## 1. Create the Worker
 
-- Log into [dash.cloudflare.com](https://dash.cloudflare.com/)
-- In the left sidebar, click **Workers & Pages**
-- Click the **Create application** button (top right, blue)
-- Select **Worker** (not Pages)
-- Name it `jcink-proxy`
-- Click **Deploy**
-
-This creates a placeholder Worker. You'll replace the code next.
+1. Log into [dash.cloudflare.com](https://dash.cloudflare.com/)
+2. In the left sidebar, click **Workers & Pages**
+3. Click **Create application** (blue button, top right)
+4. Click **Start with Hello World!** → **Get started**
+5. Name it `jcink-proxy`
+6. Click **Deploy**
+7. Click **Continue to project**
 
 Your Worker URL will be: `https://jcink-proxy.storycraftink-sys.workers.dev`
 
-## 2. Add the proxy code
+## 2. Replace the code with the proxy
 
-- After deploying, click **Edit Code**
-- Select all the default code and delete it
-- Open `cloudflare-worker/worker.js` from this repo and copy its entire contents
-- Paste it into the editor
-- Click **Save and Deploy**
+1. From your Worker's project page, click **Edit code**
+2. Select all the default Hello World code and delete it
+3. Open `cloudflare-worker/worker.js` from this repo, copy its entire contents
+4. Paste it into the editor
+5. Click the down arrow next to **Deploy** → click **Save and Deploy**
 
 ## 3. Add the secret key
 
-- Go back to your Worker's overview page
-- Click **Settings** → **Variables and Secrets**
-- Under Secrets, click **Add**
-  - Name: `CF_PROXY_KEY`
-  - Value: any long random string (use a password manager or mash your keyboard)
-- Click **Save**
+1. Go back to your Worker's project page (click the back arrow or navigate to Workers & Pages → jcink-proxy)
+2. Click **Settings**
+3. Under **Variables and Secrets**, click **Add**
+4. Change the type to **Secret**
+5. Variable name: `CF_PROXY_KEY`
+6. Value: any long random string (use a password manager or mash your keyboard — it won't be visible after saving)
+7. Click **Deploy**
 
-Keep a copy of this value — you need it for the next step.
+Keep a copy of the value you entered — you need it for the next step.
 
 ## 4. Configure your server
 
@@ -61,7 +61,7 @@ In the container logs you should see:
 [Fetcher] Using Cloudflare Worker proxy: https://jcink-proxy.storycraftink-sys.workers.dev
 ```
 
-You can also paste this into your browser to test (replace YOUR_KEY):
+You can also test by pasting this into your browser (replace YOUR_KEY):
 ```
 https://jcink-proxy.storycraftink-sys.workers.dev/?key=YOUR_KEY&url=https://therewasanidea.jcink.net/index.php
 ```
@@ -77,8 +77,8 @@ The server falls back to direct connections automatically.
 
 ## Updating the Worker code
 
-Open your Worker in the Cloudflare dashboard → **Edit Code** → paste the new
-version → **Save and Deploy**. No server restart needed.
+Workers & Pages → jcink-proxy → **Edit code** → paste the new version →
+**Save and Deploy**. No server restart needed.
 
 ## Free tier limits
 
@@ -87,3 +87,7 @@ version → **Save and Deploy**. No server restart needed.
 | Requests/day     | 100,000    | ~200-500       |
 | CPU per request  | 10ms       | ~1-2ms         |
 | Script size      | 1 MB       | ~2 KB          |
+
+---
+
+Sources: [Cloudflare Workers Dashboard Guide](https://developers.cloudflare.com/workers/get-started/dashboard/), [Workers Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
