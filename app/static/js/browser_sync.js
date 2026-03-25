@@ -200,7 +200,8 @@
             log('ok', 'ACP upload success', JSON.stringify(result).substring(0, 200));
             return result;
         } catch (e) {
-            log('err', 'ACP upload error', e.message);
+            log('err', 'ACP upload error', e.message + ' (payload was ' + Math.round(sqlContent.length/1024) + ' KB)');
+            log('err', 'If "Failed to fetch", likely nginx client_max_body_size exceeded or CORS preflight failed');
             throw e;
         }
     }
