@@ -656,6 +656,7 @@ class ACPClient:
         self._forum_name: str | None = None
         self._username = username or settings.admin_username
         self._password = password or settings.admin_password
+        self._last_error: str | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -668,11 +669,14 @@ class ACPClient:
             )
         return self._client
 
-    async def login(self) -> bool:
+    async def login(self, max_retries: int = 3) -> bool:
         """Login to ACP and obtain adsess token.
 
         JCink ACP login: GET /admin.php?login=yes&username=X&password=Y
         On success, redirects to a URL containing adsess=TOKEN.
+
+        Retries on connection errors with exponential backoff since
+        transient DNS/TCP failures are common from Docker containers.
         """
         if not self._username or not self._password:
             log_debug("ACP: no admin credentials configured", level="error")
@@ -686,8 +690,6 @@ class ACPClient:
             log_debug("ACP: could not extract forum name from base URL", level="error")
             return False
 
-        client = await self._get_client()
-
         login_url = (
             f"{settings.forum_base_url}/admin.php"
             f"?login=yes"
@@ -695,36 +697,68 @@ class ACPClient:
             f"&password={url_quote(self._password)}"
         )
 
-        try:
-            response = await client.get(login_url)
+        last_error = None
+        for attempt in range(max_retries):
+            # Fresh client on retry in case the previous one has stale state
+            if attempt > 0:
+                await self._close_and_reset_client()
+                delay = 2 ** attempt  # 2s, 4s
+                log_debug(f"ACP: retrying login in {delay}s (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(delay)
 
-            # Check redirect for adsess token
-            redirect_url = response.headers.get("location", "")
-            if not redirect_url:
-                redirect_url = str(response.url)
+            client = await self._get_client()
 
-            if "adsess=" in redirect_url:
-                idx = redirect_url.index("adsess=") + 7
-                end = redirect_url.find("&", idx)
-                self._token = redirect_url[idx:end] if end != -1 else redirect_url[idx:]
-                log_debug("ACP: login successful, token obtained")
-                return True
+            try:
+                response = await client.get(login_url)
 
-            # Maybe got a page with a redirect in the HTML
-            if response.status_code == 200:
-                text = response.text
-                adsess_match = re.search(r"adsess=([a-f0-9]+)", text)
-                if adsess_match:
-                    self._token = adsess_match.group(1)
-                    log_debug("ACP: login successful (from response body)")
+                # Check redirect for adsess token
+                redirect_url = response.headers.get("location", "")
+                if not redirect_url:
+                    redirect_url = str(response.url)
+
+                if "adsess=" in redirect_url:
+                    idx = redirect_url.index("adsess=") + 7
+                    end = redirect_url.find("&", idx)
+                    self._token = redirect_url[idx:end] if end != -1 else redirect_url[idx:]
+                    log_debug("ACP: login successful, token obtained")
                     return True
 
-            log_debug(f"ACP: login failed — status {response.status_code}, no adsess token found", level="error")
-            return False
+                # Maybe got a page with a redirect in the HTML
+                if response.status_code == 200:
+                    text = response.text
+                    adsess_match = re.search(r"adsess=([a-f0-9]+)", text)
+                    if adsess_match:
+                        self._token = adsess_match.group(1)
+                        log_debug("ACP: login successful (from response body)")
+                        return True
 
-        except Exception as e:
-            log_debug(f"ACP: login failed: {e}", level="error")
-            return False
+                # Auth failure (not a connection issue) — don't retry
+                self._last_error = f"ACP login rejected (HTTP {response.status_code}) — check credentials"
+                log_debug(f"ACP: {self._last_error}", level="error")
+                return False
+
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                last_error = e
+                log_debug(f"ACP: connection failed (attempt {attempt + 1}/{max_retries}): {e}", level="warn")
+                continue
+
+            except Exception as e:
+                self._last_error = f"ACP login error: {e}"
+                log_debug(f"ACP: {self._last_error}", level="error")
+                return False
+
+        self._last_error = (
+            f"Cannot reach jcink.net — server has no network connectivity to the forum "
+            f"(tried {max_retries} times). This is NOT a credentials issue."
+        )
+        log_debug(f"ACP: {self._last_error}", level="error")
+        return False
+
+    async def _close_and_reset_client(self):
+        """Close and discard the HTTP client so a fresh one is created."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
 
     async def _dump_database(self, table_parts: list[str] | None = None) -> str | None:
         """Trigger a full MySQL dump via ACP and return the SQL file contents.
@@ -798,11 +832,23 @@ class ACPClient:
             parts_seen.add(part)
 
             url = f"{base}/admin.php?act=mysql&adsess={self._token}&code=dump&line={line}&part={part}"
-            try:
-                resp = await client.get(url, follow_redirects=True)
-                html = resp.text
-            except Exception as e:
-                log_debug(f"ACP: dump page failed (part={part} line={line}): {e}", level="error")
+            page_ok = False
+            for retry in range(3):
+                try:
+                    resp = await client.get(url, follow_redirects=True)
+                    html = resp.text
+                    page_ok = True
+                    break
+                except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                    if retry < 2:
+                        log_debug(f"ACP: dump page retry {retry + 1} (part={part} line={line}): {e}", level="warn")
+                        await asyncio.sleep(2 ** retry)
+                    else:
+                        log_debug(f"ACP: dump page failed after retries (part={part} line={line}): {e}", level="error")
+                except Exception as e:
+                    log_debug(f"ACP: dump page failed (part={part} line={line}): {e}", level="error")
+                    break
+            if not page_ok:
                 break
 
             total_pages += 1
@@ -870,9 +916,11 @@ class ACPClient:
 
         Returns dict with keys like 'posts', 'topics', 'members', 'forums', etc.
         Each value is a list of row arrays.
+        On failure, returns a dict with an "error" key describing what went wrong.
         """
         if not await self.login():
-            return {}
+            reason = self._last_error or "login failed"
+            return {"error": reason}
 
         sql_content = await self._dump_database()
         if not sql_content:

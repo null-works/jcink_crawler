@@ -831,6 +831,9 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     client = ACPClient(username=username, password=password)
     try:
         raw = await client.fetch_all_data()
+        if "error" in raw:
+            clear_activity()
+            return {"error": raw["error"]}
         if not raw:
             clear_activity()
             return {"error": "No data retrieved from ACP"}
