@@ -14,17 +14,16 @@ and in your `.env` file.
 2. In the left sidebar, click **Workers & Pages**
 3. Click **Create application** (blue button, top right)
 4. Click **Connect to GitHub**
-5. Authorize Cloudflare to access your GitHub account (if not already)
-6. Select the `null-works/jcink_crawler` repository
-7. On the **Create a Worker** page:
-   - Root directory: change `/` to `cloudflare-worker`
-   - API token: leave as-is (let it create one automatically)
+5. Authorize Cloudflare if prompted, then select the `null-works/jcink_crawler` repository
+6. On the **Create a Worker** page, fill in:
+   - Change the root directory from `/` to `/cloudflare-worker`
+   - API token: leave as-is (a new token will be created automatically)
    - Variable name: `CF_PROXY_KEY`
-   - Variable value: any long random string (use a password manager or mash your keyboard)
-   - Check **Encrypt** to make it a secret
-8. Click **Deploy**
+   - Variable value: any long random string (use a password manager)
+   - Check the **Encrypt** checkbox
+7. Click **Deploy**
 
-Keep a copy of the variable value you entered — you need it for step 2.
+Keep a copy of the variable value — you need it for step 2.
 
 Your Worker URL will be shown after deploy, something like:
 `https://jcink-proxy.storycraftink-sys.workers.dev`
@@ -37,7 +36,7 @@ Add two lines to your `.env` file on the VPS:
 
 ```
 CF_WORKER_URL=https://jcink-proxy.storycraftink-sys.workers.dev
-CF_WORKER_KEY=<the-secret-from-step-1>
+CF_WORKER_KEY=<the-value-you-entered-above>
 ```
 
 Restart the container. Done.
@@ -81,4 +80,4 @@ Cloudflare picks them up automatically. No server restart needed.
 
 ---
 
-Sources: [Cloudflare Workers Dashboard Guide](https://developers.cloudflare.com/workers/get-started/dashboard/), [Workers Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
+Sources: [Cloudflare Workers Advanced Setups](https://developers.cloudflare.com/workers/ci-cd/builds/advanced-setups/), [Workers Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
