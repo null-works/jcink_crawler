@@ -13,8 +13,6 @@ class TestSettings:
         assert s.forum_complete_id == "49"
         assert s.forum_incomplete_id == "59"
         assert s.forum_comms_id == "31"
-        assert s.crawl_threads_interval_minutes == 60
-        assert s.crawl_profiles_interval_minutes == 1440
         assert s.crawl_quotes_batch_size == 0  # 0 = unlimited
         assert s.quote_min_words == 3
         assert s.request_delay_seconds == 2.0

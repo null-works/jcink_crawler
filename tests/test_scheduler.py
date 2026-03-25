@@ -1,4 +1,4 @@
-"""Tests for app/services/scheduler.py — APScheduler job management."""
+"""Tests for app/services/scheduler.py — manual crawl functions."""
 import os
 import pytest
 from unittest.mock import patch, AsyncMock
@@ -6,8 +6,6 @@ import aiosqlite
 
 from app.database import init_db, DATABASE_PATH
 from app.services.scheduler import (
-    start_scheduler,
-    stop_scheduler,
     _crawl_all_characters,
 )
 
@@ -21,33 +19,6 @@ async def fresh_db():
             os.unlink(DATABASE_PATH)
         except OSError:
             pass
-
-
-class TestStartStopScheduler:
-    async def test_start_creates_scheduler(self):
-        from app.services import scheduler
-        scheduler._scheduler = None
-        with patch("app.services.scheduler._crawl_all_characters", new_callable=AsyncMock):
-            await start_scheduler()
-        assert scheduler._scheduler is not None
-        stop_scheduler()
-        assert scheduler._scheduler is None
-
-    async def test_stop_when_not_started(self):
-        from app.services import scheduler
-        scheduler._scheduler = None
-        # Should not raise
-        stop_scheduler()
-
-    async def test_start_registers_jobs(self):
-        from app.services import scheduler
-        scheduler._scheduler = None
-        with patch("app.services.scheduler._crawl_all_characters", new_callable=AsyncMock):
-            await start_scheduler()
-        jobs = scheduler._scheduler.get_jobs()
-        job_ids = {j.id for j in jobs}
-        assert "crawl_all_characters" in job_ids
-        stop_scheduler()
 
 
 class TestCrawlAllCharacters:

@@ -41,14 +41,6 @@ from app.services.crawler import crawl_single_thread, sync_posts_from_acp, crawl
 from app.services.scheduler import _crawl_all_characters, _crawl_all_profiles
 from app.services.activity import get_activity
 
-# Default crawl intervals (minutes)
-SCHEDULE_DEFAULTS = {
-    "sync_interval": 30,
-    "quote_interval": 30,
-    "profile_interval": 120,
-    "discovery_interval": 1440,
-}
-
 router = APIRouter()
 
 
@@ -364,31 +356,6 @@ async def trigger_crawl(
         "character_id": data.character_id,
         "crawl_type": data.crawl_type,
     }
-
-
-@router.get("/crawl/schedule")
-async def get_crawl_schedule(db: aiosqlite.Connection = Depends(get_db)):
-    """Get current crawl schedule intervals (in minutes)."""
-    result = {}
-    for key, default in SCHEDULE_DEFAULTS.items():
-        val = await get_crawl_status(db, f"schedule_{key}")
-        result[key] = int(val) if val else default
-    return result
-
-
-@router.post("/crawl/schedule")
-async def set_crawl_schedule(
-    data: dict,
-    db: aiosqlite.Connection = Depends(get_db),
-):
-    """Set crawl schedule intervals (in minutes)."""
-    updated = {}
-    for key in SCHEDULE_DEFAULTS:
-        if key in data:
-            val = max(1, int(data[key]))  # minimum 1 minute
-            await set_crawl_status(db, f"schedule_{key}", str(val))
-            updated[key] = val
-    return {"status": "ok", "updated": updated}
 
 
 @router.get("/status", response_model=CrawlStatusResponse)

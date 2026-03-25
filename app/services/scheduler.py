@@ -1,6 +1,11 @@
+"""Crawl functions for manual triggering.
+
+All crawl operations are manual-only — triggered via dashboard buttons,
+API endpoints, or the external crawl.sh script. There is no automatic
+scheduling; the APScheduler dependency has been removed.
+"""
+
 import asyncio
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 import aiosqlite
 
 from app.config import settings
@@ -13,9 +18,6 @@ from app.services.crawler import (
 )
 from app.services.activity import set_activity, clear_activity, log_debug
 
-
-_scheduler: AsyncIOScheduler | None = None
-_startup_task: asyncio.Task | None = None
 
 MAX_CONSECUTIVE_MISSES = 100
 
@@ -148,15 +150,19 @@ async def _cleanup_orphaned_data():
         log_debug(f"Error during orphan cleanup: {e}", level="error")
 
 
+async def run_startup_tasks():
+    """Run one-time cleanup tasks on application startup."""
+    await _clear_quote_crawl_log()
+    await _cleanup_orphaned_data()
+    log_debug("Startup cleanup complete (no automatic scheduling — all crawls are manual)")
+
+
 async def _acp_sync_cycle():
     """Primary data sync using ACP SQL dump.
 
     This is MUCH faster than HTML scraping for post counting and thread
     tracking because it gets ALL data in a single database dump rather
     than fetching hundreds of individual pages.
-
-    Only dumps the specific tables we need (topics, posts, forums, members)
-    matching the approach in databaseParser.js.
 
     After the ACP sync, runs a quote-only HTML crawl pass for threads
     that haven't been quote-scraped yet.
@@ -192,9 +198,7 @@ async def _discover_and_crawl_profiles():
     """Discover new characters and crawl all profiles.
 
     Iterates user IDs 1, 2, 3... to find characters, then does a
-    Playwright profile crawl for each. Does NOT crawl threads — that's
-    handled by _acp_sync_cycle when ACP is available, or by
-    _crawl_all_characters_html as fallback.
+    Playwright profile crawl for each. Does NOT crawl threads.
     """
     consecutive_misses = 0
     processed = 0
@@ -249,10 +253,6 @@ async def _crawl_all_characters():
     lightweight httpx check first, then full Playwright profile crawl +
     thread/quote crawl for valid accounts.  Stops after 100 consecutive
     misses (deleted/banned profiles).
-
-    This is the FALLBACK path used when ACP credentials are not available.
-    When ACP is configured, _acp_sync_cycle handles threads/posts and
-    _discover_and_crawl_profiles handles profile discovery.
     """
     consecutive_misses = 0
     processed = 0
@@ -359,90 +359,3 @@ async def _crawl_all_profiles():
         f"Profile re-crawl complete: {processed} characters, {errors} errors",
         level="done",
     )
-
-
-async def start_scheduler():
-    """Start the APScheduler with configured intervals.
-
-    Two modes:
-    1. ACP mode (admin credentials configured): Uses targeted SQL dump for
-       thread/post data (fast, reliable), HTML only for profiles and quotes.
-    2. HTML-only mode (no admin credentials): Brute-force HTML crawl for
-       everything (slow, fragile, but works without ACP access).
-    """
-    global _scheduler, _startup_task
-    _scheduler = AsyncIOScheduler()
-
-    use_acp = await _has_acp_credentials()
-
-    if use_acp:
-        # ACP mode: fast targeted SQL dump for threads + posts
-        acp_interval = settings.acp_sync_interval_minutes or settings.crawl_threads_interval_minutes
-        _scheduler.add_job(
-            _acp_sync_cycle,
-            trigger=IntervalTrigger(minutes=acp_interval),
-            id="acp_sync_cycle",
-            name="ACP sync: threads + posts + quotes",
-            replace_existing=True,
-            next_run_time=None,
-        )
-
-        # Profile discovery + crawl on a separate schedule
-        _scheduler.add_job(
-            _discover_and_crawl_profiles,
-            trigger=IntervalTrigger(minutes=settings.crawl_discovery_interval_minutes),
-            id="discover_profiles",
-            name="Discover + crawl character profiles",
-            replace_existing=True,
-            next_run_time=None,
-        )
-
-        log_debug(
-            f"Scheduler started (ACP mode) — "
-            f"ACP sync every {acp_interval}min, "
-            f"profile discovery every {settings.crawl_discovery_interval_minutes}min"
-        )
-
-        async def _startup():
-            await _clear_quote_crawl_log()
-            await _cleanup_orphaned_data()
-            # ACP sync first (fast) — gets all thread/post data in one dump
-            await _acp_sync_cycle()
-            # Then discover + crawl profiles (slower, uses Playwright)
-            await _discover_and_crawl_profiles()
-
-    else:
-        # HTML-only fallback
-        _scheduler.add_job(
-            _crawl_all_characters,
-            trigger=IntervalTrigger(minutes=settings.crawl_threads_interval_minutes),
-            id="crawl_all_characters",
-            name="Full crawl: iterate all user IDs",
-            replace_existing=True,
-            next_run_time=None,
-        )
-
-        log_debug(
-            f"Scheduler started (HTML-only mode, no ACP credentials) — "
-            f"full crawl every {settings.crawl_threads_interval_minutes}min"
-        )
-
-        async def _startup():
-            await _clear_quote_crawl_log()
-            await _cleanup_orphaned_data()
-            await _crawl_all_characters()
-
-    _scheduler.start()
-    _startup_task = asyncio.get_running_loop().create_task(_startup())
-
-
-def stop_scheduler():
-    """Stop the scheduler."""
-    global _scheduler, _startup_task
-    if _startup_task and not _startup_task.done():
-        _startup_task.cancel()
-        _startup_task = None
-    if _scheduler:
-        _scheduler.shutdown()
-        _scheduler = None
-        log_debug("Scheduler stopped")
