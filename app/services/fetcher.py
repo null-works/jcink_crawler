@@ -22,13 +22,17 @@ async def get_client() -> httpx.AsyncClient:
     """Get or create the shared HTTP client."""
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(
-            timeout=30.0,
-            follow_redirects=True,
-            headers={
+        kwargs = {
+            "timeout": 30.0,
+            "follow_redirects": True,
+            "headers": {
                 "User-Agent": "Mozilla/5.0 (compatible; TWAICrawler/1.0)",
             },
-        )
+        }
+        if settings.proxy_url:
+            kwargs["proxy"] = settings.proxy_url
+            print(f"[Fetcher] Using proxy: {settings.proxy_url}")
+        _client = httpx.AsyncClient(**kwargs)
     return _client
 
 
