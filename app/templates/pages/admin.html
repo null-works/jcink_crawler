@@ -157,12 +157,20 @@
         <li>Go to your <strong>JCink ACP</strong> &rarr; <strong>Skins &amp; Templates</strong> &rarr; <strong>Board Page HTML</strong></li>
         <li>Click <strong>Create New Page</strong></li>
         <li>Set the page key to: <code style="background: var(--bg-secondary); padding: 0.1rem 0.4rem;">watcher-sync</code></li>
-        <li>Paste this into the HTML content:</li>
+        <li>Paste this into the HTML content (replace <code>WATCHER_URL</code> with your server address):</li>
     </ol>
-    <pre class="text-comment" style="font-size: 0.75rem; background: var(--bg-secondary); padding: 0.75rem; overflow-x: auto; margin-bottom: 1rem; border: 1px solid var(--current); user-select: all; line-height: 1.4;">&lt;div id="watcher-sync" style="padding:20px;font-family:monospace;color:#888;"&gt;
-  Watcher Browser Sync bridge. Do not close this page.
-&lt;/div&gt;
-&lt;script src="{{ request.base_url }}static/js/browser_sync.js"&gt;&lt;/script&gt;</pre>
+    <pre id="board-page-snippet" class="text-comment" style="font-size: 0.75rem; background: var(--bg-secondary); padding: 0.75rem; overflow-x: auto; margin-bottom: 0.5rem; border: 1px solid var(--current); user-select: all; line-height: 1.4;"></pre>
+    <p class="text-comment" style="font-size: 0.8rem; margin-bottom: 1rem;">
+        The template file is also in the repo at <code>app/static/browser_sync_board_page.html</code>
+    </p>
+    <script>
+        // Show the board page snippet with the actual server URL filled in
+        document.getElementById('board-page-snippet').textContent =
+            '<div id="watcher-sync" style="padding:20px;font-family:monospace;color:#888;">\n' +
+            '  Watcher Browser Sync bridge. Do not close this page.\n' +
+            '</div>\n' +
+            '<script src="' + window.location.origin + '/static/js/browser_sync.js"><\/script>';
+    </script>
     <ol class="text-comment" start="5" style="font-size: 0.85rem; padding-left: 1.5rem; margin-bottom: 1rem; line-height: 1.8;">
         <li>Save the page</li>
         <li>Verify it loads: <a href="{{ forum_base_url }}/index.php?act=boardpage&page=watcher-sync"
