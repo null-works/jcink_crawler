@@ -18,6 +18,20 @@
     let serverBase = '';
     let parentOrigin = '';
 
+    // ── Verbose logging (sent to parent as log messages) ──
+
+    function log(level, msg, detail) {
+        console.log('[BrowserSync]', level.toUpperCase(), msg, detail || '');
+        if (window.parent && parentOrigin) {
+            window.parent.postMessage({
+                type: 'watcher-sync-log',
+                level: level,
+                message: msg,
+                detail: detail || null
+            }, parentOrigin);
+        }
+    }
+
     // ── Communication with parent window ──
 
     function sendStatus(phase, message, detail) {
@@ -58,11 +72,18 @@
         const loginUrl = forumBase + '/admin.php?login=yes&username=' +
             encodeURIComponent(username) + '&password=' + encodeURIComponent(password);
 
+        log('info', 'ACP login', loginUrl.replace(/password=[^&]+/, 'password=***'));
         const resp = await fetch(loginUrl);
+        log('info', 'ACP login response', 'status=' + resp.status);
         const html = await resp.text();
+        log('info', 'ACP login page', html.length + ' bytes, contains adsess=' + (html.includes('adsess=') ? 'yes' : 'no'));
 
         const match = html.match(/adsess=([a-f0-9]+)/);
-        if (!match) return null;
+        if (!match) {
+            log('err', 'ACP login failed — no adsess token found in response');
+            return null;
+        }
+        log('ok', 'ACP login success', 'adsess=' + match[1].substring(0, 8) + '...');
         return match[1];
     }
 
@@ -129,6 +150,7 @@
         const forumBase = window.location.origin;
         const results = [];
         const total = characterIds.length;
+        log('info', 'Starting profile fetch', total + ' characters from ' + forumBase);
 
         for (let i = 0; i < total; i++) {
             const cid = characterIds[i];
@@ -136,10 +158,14 @@
 
             try {
                 const url = forumBase + '/index.php?showuser=' + cid;
+                log('info', 'Fetching profile', url);
                 const resp = await fetch(url);
+                log('info', 'Profile response', 'id=' + cid + ' status=' + resp.status);
                 const html = await resp.text();
+                log('info', 'Profile fetched', 'id=' + cid + ' size=' + html.length + ' bytes');
                 results.push({ character_id: cid, html: html });
             } catch (e) {
+                log('err', 'Profile fetch failed', 'id=' + cid + ' error=' + e.message);
                 sendStatus('profiles', 'Failed to fetch profile ' + cid, e.message);
             }
 
@@ -155,19 +181,35 @@
     // ── Upload to Watcher ──
 
     async function uploadAcpDump(sqlContent) {
+        const url = serverBase + '/api/acp/upload-dump';
+        log('info', 'Uploading ACP dump', url + ' (' + Math.round(sqlContent.length/1024) + ' KB)');
         sendStatus('upload', 'Uploading ACP data to server...');
-        const resp = await fetch(serverBase + '/api/acp/upload-dump', {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: sqlContent
-        });
-        return await resp.json();
+        try {
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: sqlContent
+            });
+            log('info', 'ACP upload response', 'status=' + resp.status);
+            if (!resp.ok) {
+                const text = await resp.text();
+                log('err', 'ACP upload failed', 'status=' + resp.status + ' body=' + text.substring(0, 200));
+                throw new Error('Upload failed: HTTP ' + resp.status);
+            }
+            const result = await resp.json();
+            log('ok', 'ACP upload success', JSON.stringify(result).substring(0, 200));
+            return result;
+        } catch (e) {
+            log('err', 'ACP upload error', e.message);
+            throw e;
+        }
     }
 
     async function uploadProfiles(profiles) {
         if (!profiles.length) return { count: 0 };
 
         sendStatus('upload', 'Uploading ' + profiles.length + ' profiles to server...');
+        log('info', 'Uploading profiles', profiles.length + ' profiles to ' + serverBase);
 
         // Send in batches of 10 to avoid huge payloads
         const batchSize = 10;
@@ -177,13 +219,23 @@
             const batch = profiles.slice(i, i + batchSize);
             sendStatus('upload', 'Uploading profiles...', (i + batch.length) + '/' + profiles.length);
 
-            const resp = await fetch(serverBase + '/api/profiles/upload-html', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ profiles: batch })
-            });
-            if (resp.ok) {
-                totalUploaded += batch.length;
+            const url = serverBase + '/api/profiles/upload-html';
+            try {
+                log('info', 'Uploading batch', (i + 1) + '-' + (i + batch.length) + ' of ' + profiles.length + ' to ' + url);
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ profiles: batch })
+                });
+                log('info', 'Batch response', 'status=' + resp.status);
+                if (resp.ok) {
+                    totalUploaded += batch.length;
+                } else {
+                    const text = await resp.text();
+                    log('err', 'Batch upload failed', 'status=' + resp.status + ' body=' + text.substring(0, 200));
+                }
+            } catch (e) {
+                log('err', 'Batch upload error', e.message);
             }
         }
 
@@ -194,10 +246,12 @@
 
     async function runSync(config) {
         const summary = { acp: null, profiles: null, errors: [] };
+        log('info', 'runSync started', 'server=' + serverBase + ' acp=' + !!config.acp_username + ' profiles=' + (config.character_ids || []).length);
 
         try {
             // Phase 1: ACP dump (if credentials provided)
             if (config.acp_username && config.acp_password) {
+                log('info', '── Phase 1: ACP Dump ──');
                 sendStatus('acp', 'Logging into ACP...');
                 const adsess = await acpLogin(config.acp_username, config.acp_password);
                 if (!adsess) {
@@ -206,6 +260,7 @@
                 } else {
                     const sql = await acpDump(adsess);
                     if (sql) {
+                        log('info', 'SQL dump obtained', sql.length + ' bytes');
                         const result = await uploadAcpDump(sql);
                         summary.acp = {
                             size_kb: Math.round(sql.length / 1024),
@@ -213,6 +268,7 @@
                         };
                         sendStatus('acp', 'ACP data uploaded (' + Math.round(sql.length / 1024) + ' KB)');
                     } else {
+                        log('err', 'SQL file was null — dump may have failed or file not ready');
                         summary.errors.push('SQL file not generated');
                         sendStatus('acp', 'SQL file not generated');
                     }
@@ -221,6 +277,7 @@
 
             // Phase 2: Profile sync (if character IDs provided)
             if (config.character_ids && config.character_ids.length > 0) {
+                log('info', '── Phase 2: Profile Sync ──', config.character_ids.length + ' characters');
                 sendStatus('profiles', 'Starting profile sync...', config.character_ids.length + ' characters');
                 const profiles = await fetchProfiles(config.character_ids);
                 if (profiles.length > 0) {
@@ -229,15 +286,20 @@
                         fetched: profiles.length,
                         uploaded: result.count
                     };
+                    log('ok', 'Profile sync done', 'fetched=' + profiles.length + ' uploaded=' + result.count);
                     sendStatus('profiles', 'Profiles uploaded', result.count + ' of ' + profiles.length);
+                } else {
+                    log('warn', 'No profiles were fetched successfully');
                 }
             }
 
         } catch (e) {
+            log('err', 'runSync caught exception', e.message + '\n' + e.stack);
             summary.errors.push(e.message);
             sendError(e.message);
         }
 
+        log('info', 'Sync complete', JSON.stringify(summary).substring(0, 300));
         sendComplete(summary);
     }
 
@@ -250,6 +312,9 @@
         // Store parent origin for responses
         parentOrigin = event.origin;
         serverBase = data.server_base || '';
+
+        console.log('[BrowserSync] Received sync-start from', event.origin, 'server_base=' + serverBase);
+        log('info', 'Received sync-start command', 'from=' + event.origin + ' server=' + serverBase);
 
         if (!serverBase) {
             sendError('No server URL provided');
@@ -271,6 +336,7 @@
 
     // Signal that the iframe is ready
     if (window.parent !== window) {
+        console.log('[BrowserSync] Bridge loaded on', window.location.href, '— sending ready signal');
         // Broadcast ready to any parent — they'll filter by type
         window.parent.postMessage({ type: 'watcher-sync-ready' }, '*');
     }

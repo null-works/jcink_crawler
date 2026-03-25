@@ -184,9 +184,30 @@
     <button class="btn btn-ghost" onclick="this.parentElement.style.display='none'">Close</button>
 </div>
 
+<div id="bs-log-container" style="display:none; margin-top: 0.75rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.3rem;">
+        <span style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-secondary);">Sync Log</span>
+        <button class="btn btn-ghost" style="font-size:0.7rem; padding:0.15rem 0.5rem;" onclick="document.getElementById('bs-log').innerHTML=''">Clear</button>
+    </div>
+    <div id="bs-log" style="background:var(--bg-primary); border:1px solid var(--border); border-radius:6px; padding:0.5rem 0.75rem; max-height:300px; overflow-y:auto;"></div>
+</div>
 <script>
 const BS_SERVER_BASE = window.location.origin;
 let bsSyncRunning = false;
+
+// ── Verbose log panel ──
+function bsLog(level, msg, detail) {
+    const logEl = document.getElementById('bs-log');
+    if (!logEl) return;
+    const ts = new Date().toLocaleTimeString('en-US', {hour12: false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const colors = {info: 'var(--text-secondary)', ok: 'var(--green)', warn: 'var(--yellow)', err: 'var(--red)'};
+    const prefix = {info: 'INFO', ok: ' OK ', warn: 'WARN', err: ' ERR'}[level] || 'INFO';
+    const line = document.createElement('div');
+    line.style.cssText = 'font-family:monospace; font-size:0.78rem; line-height:1.5; color:' + (colors[level] || colors.info);
+    line.textContent = '[' + ts + '] ' + prefix + '  ' + msg + (detail ? '  — ' + detail : '');
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+}
 
 function saveSyncUrl() {
     const url = document.getElementById('bs-page-url').value.trim();
@@ -231,12 +252,24 @@ function startBrowserSync() {
     btn.textContent = 'Syncing...';
     statusEl.innerHTML = '<span class="text-yellow">Loading sync bridge...</span>';
 
+    // Show log panel and start logging
+    document.getElementById('bs-log-container').style.display = 'block';
+    document.getElementById('bs-log').innerHTML = '';
+    bsLog('info', 'Browser Sync started');
+    bsLog('info', 'Board page URL', pageUrl);
+    bsLog('info', 'Server base', BS_SERVER_BASE);
+    bsLog('info', 'Options', (doAcp ? 'ACP dump' : '') + (doProfiles ? ' Profiles' : ''));
+    if (doAcp) bsLog('info', 'ACP username', username);
+
     // Load the iframe
+    bsLog('info', 'Loading iframe...');
     iframe.src = pageUrl;
 
     // Timeout if bridge never responds
     const bridgeTimeout = setTimeout(function() {
         if (bsSyncRunning && statusEl.innerHTML.includes('Loading sync bridge')) {
+            bsLog('err', 'Bridge timeout — no watcher-sync-ready received within 15s');
+            bsLog('err', 'Possible causes: board page missing JS, iframe blocked, wrong URL');
             statusEl.innerHTML = '<span class="text-red">Bridge did not load. Check that the board page exists at:<br>' +
                 '<a href="' + pageUrl + '" target="_blank" style="color:var(--purple);">' + pageUrl + '</a><br>' +
                 'The iframe should be visible below — check for errors.</span>';
@@ -246,6 +279,14 @@ function startBrowserSync() {
         }
     }, 15000);
 
+    // Log ALL incoming postMessages for debugging
+    const debugAllMessages = function(event) {
+        if (event.data && typeof event.data === 'object' && event.data.type) {
+            bsLog('info', 'postMessage received', 'type=' + event.data.type + ' origin=' + event.origin);
+        }
+    };
+    window.addEventListener('message', debugAllMessages);
+
     // Wait for iframe ready signal, then start sync
     const onMessage = function(event) {
         const data = event.data;
@@ -253,17 +294,23 @@ function startBrowserSync() {
 
         if (data.type === 'watcher-sync-ready') {
             clearTimeout(bridgeTimeout);
-            // Iframe loaded — get character IDs then start sync
+            bsLog('ok', 'Bridge ready signal received', 'origin=' + event.origin);
             statusEl.innerHTML = '<span class="text-yellow">Bridge loaded. Starting sync...</span>';
 
             if (doProfiles) {
+                bsLog('info', 'Fetching character list from /api/characters...');
                 fetch('/api/characters')
-                    .then(r => r.json())
+                    .then(r => {
+                        bsLog('info', 'Character API response', 'status=' + r.status);
+                        return r.json();
+                    })
                     .then(characters => {
                         const charIds = characters.map(c => c.id || c.character_id);
+                        bsLog('ok', 'Got ' + charIds.length + ' characters', 'IDs: ' + charIds.slice(0, 10).join(', ') + (charIds.length > 10 ? '...' : ''));
                         sendSyncCommand(iframe, username, password, doAcp, charIds);
                     })
-                    .catch(() => {
+                    .catch(err => {
+                        bsLog('warn', 'Failed to fetch character list', err.message);
                         sendSyncCommand(iframe, username, password, doAcp, []);
                     });
             } else {
@@ -272,8 +319,9 @@ function startBrowserSync() {
         }
 
         if (data.type === 'watcher-sync-status') {
-            const phase = data.phase === 'acp' ? 'ACP' : 'Profiles';
+            const phase = data.phase === 'acp' ? 'ACP' : (data.phase || 'Sync');
             const detail = data.detail ? ' (' + data.detail + ')' : '';
+            bsLog('info', phase + ': ' + data.message, data.detail || '');
             statusEl.innerHTML = '<span class="text-yellow">' + phase + ': ' + data.message + detail + '</span>';
             btn.textContent = data.message;
         }
@@ -283,35 +331,53 @@ function startBrowserSync() {
             let parts = [];
             if (s.acp) parts.push('ACP: ' + s.acp.size_kb + ' KB uploaded');
             if (s.profiles) parts.push('Profiles: ' + s.profiles.fetched + ' fetched');
-            if (s.errors && s.errors.length) parts.push('Errors: ' + s.errors.join(', '));
+            if (s.errors && s.errors.length) {
+                parts.push('Errors: ' + s.errors.join(', '));
+                s.errors.forEach(e => bsLog('err', 'Sync error', e));
+            }
 
+            bsLog('ok', 'Sync complete', parts.join(' | '));
             statusEl.innerHTML = '<span class="text-green">Sync complete. ' + parts.join(' | ') + '</span>';
             cleanup();
         }
 
         if (data.type === 'watcher-sync-error') {
+            bsLog('err', 'Sync error', data.message);
             statusEl.innerHTML = '<span class="text-red">Error: ' + data.message + '</span>';
             cleanup();
+        }
+
+        // Bridge verbose logs → dashboard log panel
+        if (data.type === 'watcher-sync-log') {
+            bsLog(data.level || 'info', '[bridge] ' + data.message, data.detail);
         }
     };
 
     function sendSyncCommand(iframe, username, password, doAcp, charIds) {
         const targetOrigin = new URL(pageUrl).origin;
-        iframe.contentWindow.postMessage({
-            type: 'watcher-sync-start',
-            server_base: BS_SERVER_BASE,
-            acp_username: doAcp ? username : '',
-            acp_password: doAcp ? password : '',
-            character_ids: charIds,
-        }, targetOrigin);
+        bsLog('info', 'Sending sync command to iframe', 'targetOrigin=' + targetOrigin + ' acp=' + doAcp + ' profiles=' + charIds.length);
+        try {
+            iframe.contentWindow.postMessage({
+                type: 'watcher-sync-start',
+                server_base: BS_SERVER_BASE,
+                acp_username: doAcp ? username : '',
+                acp_password: doAcp ? password : '',
+                character_ids: charIds,
+            }, targetOrigin);
+            bsLog('ok', 'Sync command sent to bridge');
+        } catch (e) {
+            bsLog('err', 'Failed to send postMessage', e.message);
+        }
     }
 
     function cleanup() {
+        bsLog('info', 'Cleanup — sync session ended');
         bsSyncRunning = false;
         btn.disabled = false;
         btn.textContent = 'Browser Sync';
         iframe.src = 'about:blank';
         window.removeEventListener('message', onMessage);
+        window.removeEventListener('message', debugAllMessages);
     }
 
     window.addEventListener('message', onMessage);
