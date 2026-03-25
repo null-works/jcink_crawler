@@ -25,6 +25,9 @@ if [ ! -f .env ]; then
 fi
 
 # Pull latest code
+# Ensure git hooks point to the tracked hooks/ directory
+git config core.hooksPath hooks
+
 echo "  [1/5] Pulling latest code..."
 git fetch origin "$BRANCH"
 git reset --hard "origin/$BRANCH"

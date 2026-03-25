@@ -54,6 +54,12 @@ fi
 
 info "All prerequisites found."
 
+# --- Configure git hooks ---
+
+info "Configuring git hooks..."
+git config core.hooksPath hooks
+info "Git hooks configured (hooks/ directory)."
+
 # --- Clone repository if needed ---
 
 REPO_URL="https://github.com/null-works/jcink_crawler.git"
