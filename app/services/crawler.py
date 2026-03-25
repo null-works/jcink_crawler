@@ -808,10 +808,8 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     Returns:
         Summary dict with counts
     """
-    from app.services.acp_client import ACPClient, detect_schema, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records, extract_member_records
-    from app.services.parser import categorize_thread
-    from app.models.operations import get_crawl_status, set_crawl_status
-    from datetime import datetime, timezone
+    from app.services.acp_client import ACPClient
+    from app.models.operations import get_crawl_status
 
     # Resolve credentials: params > DB > env
     if not username or not password:
@@ -838,6 +836,45 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             clear_activity()
             return {"error": "No data retrieved from ACP"}
 
+        return await _process_acp_raw_data(raw, db_path)
+
+    finally:
+        await client.close()
+
+
+async def process_acp_sql_dump(sql_text: str, db_path: str) -> dict:
+    """Process a raw SQL dump uploaded from the browser.
+
+    This is the browser-assisted ACP sync path: the admin's browser
+    fetches the ACP database dump (using its own IP, bypassing any
+    server IP blocks) and POSTs the raw SQL to the server.
+
+    The server parses and processes it identically to sync_posts_from_acp.
+    """
+    from app.services.acp_client import parse_sql_dump
+
+    set_activity("Processing uploaded ACP dump")
+    log_debug(f"Processing browser-uploaded SQL dump ({len(sql_text):,} bytes)")
+
+    raw = parse_sql_dump(sql_text)
+    if not raw:
+        clear_activity()
+        return {"error": "No valid SQL data found in upload"}
+
+    row_counts = {k: len(v) for k, v in raw.items()}
+    log_debug(f"Uploaded dump tables: {row_counts}")
+
+    return await _process_acp_raw_data(raw, db_path)
+
+
+async def _process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict:
+    """Shared processing pipeline for ACP data (server-fetched or browser-uploaded)."""
+    from app.services.acp_client import detect_schema, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records, extract_member_records
+    from app.services.parser import categorize_thread
+    from app.models.operations import get_crawl_status, set_crawl_status
+    from datetime import datetime, timezone
+
+    try:
         # Auto-detect column indices by cross-referencing tables
         schema = detect_schema(raw)
 
@@ -1133,8 +1170,10 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
         log_debug(f"ACP sync complete: {summary}", level="done")
         return summary
 
-    finally:
-        await client.close()
+    except Exception as e:
+        clear_activity()
+        log_debug(f"ACP processing error: {e}", level="error")
+        return {"error": str(e)}
 
 
 async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict:

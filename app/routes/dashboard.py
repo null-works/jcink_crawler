@@ -540,6 +540,7 @@ async def admin_page(
         "acp_configured": acp_configured,
         "acp_username": acp_username or "",
         "acp_last_sync": acp_last_sync,
+        "forum_base_url": settings.forum_base_url,
         "banner_album_url": banner_album_url,
         "banner_count": banner_count,
     })

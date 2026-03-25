@@ -37,7 +37,7 @@ from app.services import (
     register_character,
 )
 from app.models.operations import get_crawl_status, set_crawl_status, record_user_activity, get_recent_users
-from app.services.crawler import crawl_single_thread, sync_posts_from_acp, crawl_quotes_only
+from app.services.crawler import crawl_single_thread, sync_posts_from_acp, crawl_quotes_only, process_acp_sql_dump
 from app.services.scheduler import _crawl_all_characters, _crawl_all_profiles
 from app.services.activity import get_activity
 
@@ -355,6 +355,41 @@ async def trigger_crawl(
         "status": "crawl_queued",
         "character_id": data.character_id,
         "crawl_type": data.crawl_type,
+    }
+
+
+@router.post("/acp/upload-dump")
+async def upload_acp_dump(
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    """Accept a raw SQL dump uploaded from the browser.
+
+    The admin's browser fetches the ACP database dump directly from
+    JCink (using the browser's own IP) and POSTs the SQL text here.
+    The server parses it identically to sync_posts_from_acp but never
+    connects to JCink itself.
+
+    Accepts:
+        Body: raw SQL text (Content-Type: text/plain) or JSON {"sql": "..."}
+    """
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        body = await request.json()
+        sql_text = body.get("sql", "")
+    else:
+        raw = await request.body()
+        sql_text = raw.decode("utf-8", errors="replace")
+
+    if not sql_text or len(sql_text) < 100:
+        raise HTTPException(status_code=400, detail="No SQL data received (or too small)")
+
+    # Process in background so the browser gets an immediate response
+    background_tasks.add_task(process_acp_sql_dump, sql_text, settings.database_path)
+    return {
+        "status": "processing",
+        "size_bytes": len(sql_text),
+        "message": "SQL dump received — processing in background. Check activity indicator for progress.",
     }
 
 
