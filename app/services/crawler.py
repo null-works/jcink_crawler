@@ -1,6 +1,7 @@
 import asyncio
 import aiosqlite
 from app.config import settings
+from app.database import connect_db
 from app.services.activity import set_activity, clear_activity, log_debug
 from app.services.fetcher import fetch_page, fetch_page_rendered, fetch_page_with_delay, fetch_pages_concurrent, reauthenticate
 from app.services.parser import (
@@ -114,7 +115,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     )
 
     # Pre-load character info and quote scrape status in bulk
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         char = await get_character(db, character_id)
 
@@ -291,7 +292,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             f"({total_quotes_all_chars} total across all chars)"
         )
 
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
 
         for result in thread_results:
@@ -367,7 +368,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         await db.commit()
 
     # Update crawl timestamp
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         await update_character_crawl_time(db, character_id, "threads")
 
     clear_activity()
@@ -483,7 +484,7 @@ async def crawl_single_thread(
         forum_name = forum_link.get_text(strip=True)
 
     # Load known characters for quote extraction
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id, name FROM characters")
         rows = await cursor.fetchall()
@@ -579,7 +580,7 @@ async def crawl_single_thread(
     quotes_added = 0
     linked_characters: list[str] = []
     try:
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
 
             await upsert_thread(
@@ -702,7 +703,7 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     if is_board_message(html):
         log_debug(f"Profile {character_id} returned board message — removing character", level="error")
         set_activity(f"Removing deleted profile #{character_id}", character_id=character_id)
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             removed = await delete_character(db, character_id)
         clear_activity()
@@ -733,7 +734,7 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
             character_name=profile.name,
         )
 
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         await upsert_character(
             db,
@@ -772,7 +773,7 @@ async def process_profile_html(character_id: str, html: str, db_path: str) -> di
 
     if is_board_message(html):
         log_debug(f"Profile {character_id} returned board message — removing character", level="error")
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             removed = await delete_character(db, character_id)
         return {"removed": True, "character_id": character_id}
@@ -785,7 +786,7 @@ async def process_profile_html(character_id: str, html: str, db_path: str) -> di
     has_power_grid = bool(_PG_KEYS & set(profile.fields.keys()))
 
     if profile.name:
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             await upsert_character(
                 db,
@@ -898,7 +899,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
 
     # Resolve credentials: params > DB > env
     if not username or not password:
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             db_user = await get_crawl_status(db, "acp_username")
             db_pass = await get_crawl_status(db, "acp_password")
@@ -995,7 +996,7 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         base_url = settings.forum_base_url
 
         if members:
-            async with aiosqlite.connect(db_path) as db:
+            async with connect_db(db_path) as db:
                 db.row_factory = aiosqlite.Row
                 cursor = await db.execute("SELECT id FROM characters")
                 existing_ids = {row["id"] for row in await cursor.fetchall()}
@@ -1023,7 +1024,7 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         set_activity(f"Processing {len(topics)} topics, {len(posts)} posts from ACP")
 
         # Load tracked character IDs (now includes auto-registered members)
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT id FROM characters")
             tracked_chars = {row["id"] for row in await cursor.fetchall()}
@@ -1110,7 +1111,7 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
 
         # Check which avatars we already have in DB
         if poster_ids_needing_avatar:
-            async with aiosqlite.connect(db_path) as db:
+            async with connect_db(db_path) as db:
                 db.row_factory = aiosqlite.Row
                 placeholders = ",".join("?" * len(poster_ids_needing_avatar))
                 cursor = await db.execute(
@@ -1153,7 +1154,7 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         links_created = 0
         posts_stored = 0
 
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
 
             for tid in relevant_thread_ids:
@@ -1241,7 +1242,7 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
             await db.commit()
 
         # Record last sync time
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             await set_crawl_status(db, "acp_last_sync", datetime.now(timezone.utc).isoformat())
 
         clear_activity()
@@ -1287,7 +1288,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
     set_activity("Crawling quotes")
 
     # Load all characters and find threads needing quote scraping
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
 
         # All known characters
@@ -1357,7 +1358,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
                 all_pages.extend(h for h in page_htmls if h)
 
         # Check which characters still need this thread scraped
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT character_id FROM quote_crawl_log WHERE thread_id = ?",
@@ -1372,13 +1373,13 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
 
         # Extract quotes for each character
         thread_title = None
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT title FROM threads WHERE id = ?", (tid,))
             row = await cursor.fetchone()
             thread_title = row["title"] if row else "Unknown"
 
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             for cid, cname in chars_needing.items():
                 char_quotes = []
@@ -1462,7 +1463,7 @@ async def crawl_recent_threads(db_path: str) -> dict:
         return {"threads": 0, "posts_stored": 0}
 
     # Load tracked character IDs
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id FROM characters")
         tracked_chars = {row["id"] for row in await cursor.fetchall()}
@@ -1507,7 +1508,7 @@ async def crawl_recent_threads(db_path: str) -> dict:
     tasks = [_fetch_thread_posts(tid) for tid in thread_ids]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         for result in results:
             if isinstance(result, Exception) or result is None:
@@ -1544,7 +1545,7 @@ async def discover_characters(db_path: str) -> dict:
     set_activity("Discovering characters")
 
     # Pre-load existing character IDs to avoid per-ID DB queries
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id FROM characters")
         rows = await cursor.fetchall()

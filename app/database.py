@@ -1,20 +1,41 @@
 import pathlib
+from contextlib import asynccontextmanager
 
 import aiosqlite
 from app.config import settings
 
 DATABASE_PATH = settings.database_path
 
+# Default busy timeout in milliseconds — how long SQLite waits for a lock
+# before raising "database is locked".  5 seconds is enough for the brief
+# writes this application performs.
+BUSY_TIMEOUT_MS = 5000
 
-async def get_db():
-    """Get database connection."""
-    db = await aiosqlite.connect(DATABASE_PATH)
+
+@asynccontextmanager
+async def connect_db(path: str | None = None):
+    """Open a database connection with WAL mode and busy timeout.
+
+    Use as ``async with connect_db(db_path) as db: ...``
+
+    Every production call site should use this instead of raw
+    ``aiosqlite.connect()`` so that concurrent writers wait rather
+    than immediately failing with "database is locked".
+    """
+    db = await aiosqlite.connect(path or DATABASE_PATH)
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA journal_mode=WAL")
+    await db.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     try:
         yield db
     finally:
         await db.close()
+
+
+async def get_db():
+    """Get database connection (FastAPI dependency)."""
+    async with connect_db() as db:
+        yield db
 
 
 async def init_db():
@@ -31,6 +52,7 @@ async def init_db():
     async with aiosqlite.connect(DATABASE_PATH) as db:
         # Enable WAL mode for better concurrent read performance
         await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
         # Enforce foreign key constraints
         await db.execute("PRAGMA foreign_keys=ON")
 

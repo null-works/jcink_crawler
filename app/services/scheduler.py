@@ -7,6 +7,7 @@ scheduling; the APScheduler dependency has been removed.
 
 import asyncio
 import aiosqlite
+from app.database import connect_db
 
 from app.config import settings
 from app.services.crawler import (
@@ -26,7 +27,7 @@ async def _has_acp_credentials() -> bool:
     """Check if ACP admin credentials are configured (DB or env)."""
     if settings.admin_username and settings.admin_password:
         return True
-    async with aiosqlite.connect(settings.database_path) as db:
+    async with connect_db(settings.database_path) as db:
         db.row_factory = aiosqlite.Row
         from app.models.operations import get_crawl_status
         db_user = await get_crawl_status(db, "acp_username")
@@ -43,7 +44,7 @@ async def _clear_quote_crawl_log():
     re-extract everything cleanly.
     """
     try:
-        async with aiosqlite.connect(settings.database_path) as db:
+        async with connect_db(settings.database_path) as db:
             await db.execute("DELETE FROM quote_crawl_log")
             await db.commit()
         log_debug("Cleared quote_crawl_log for fresh extraction", level="done")
@@ -68,7 +69,7 @@ async def _cleanup_orphaned_data():
 
     excluded_forums = settings.excluded_forum_ids
     try:
-        async with aiosqlite.connect(settings.database_path) as db:
+        async with connect_db(settings.database_path) as db:
             db.row_factory = aiosqlite.Row
 
             # One-time wipe of corrupted thread data from bad column indices.
@@ -325,7 +326,7 @@ async def _crawl_all_profiles():
     log_debug("Starting profile-only re-crawl for all tracked characters")
     set_activity("Re-crawling all profiles")
 
-    async with aiosqlite.connect(settings.database_path) as db:
+    async with connect_db(settings.database_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id, name FROM characters ORDER BY id")
         characters = [(row["id"], row["name"]) for row in await cursor.fetchall()]
