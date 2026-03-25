@@ -16,36 +16,28 @@ and in your `.env` file.
 4. Click **Connect to GitHub**
 5. Authorize Cloudflare to access your GitHub account (if not already)
 6. Select the `null-works/jcink_crawler` repository
-7. Configure the build:
-   - Name: `jcink-proxy`
-   - Build command: _(leave empty)_
-   - Build output directory: `cloudflare-worker`
-   - Root directory: `cloudflare-worker`
+7. On the **Create a Worker** page:
+   - Root directory: change `/` to `cloudflare-worker`
+   - API token: leave as-is (let it create one automatically)
+   - Variable name: `CF_PROXY_KEY`
+   - Variable value: any long random string (use a password manager or mash your keyboard)
+   - Check **Encrypt** to make it a secret
 8. Click **Deploy**
 
-Your Worker URL will be: `https://jcink-proxy.storycraftink-sys.workers.dev`
+Keep a copy of the variable value you entered — you need it for step 2.
 
-Future pushes to the repo will auto-deploy the Worker — no manual updating.
+Your Worker URL will be shown after deploy, something like:
+`https://jcink-proxy.storycraftink-sys.workers.dev`
 
-## 2. Add the secret key
+Future pushes to the repo auto-deploy the Worker.
 
-1. Go to Workers & Pages → **jcink-proxy**
-2. Click **Settings**
-3. Under **Variables and Secrets**, click **Add**
-4. Change the type to **Secret**
-5. Variable name: `CF_PROXY_KEY`
-6. Value: any long random string (use a password manager — it won't be visible after saving)
-7. Click **Deploy**
-
-Keep a copy of the value you entered — you need it for the next step.
-
-## 3. Configure your server
+## 2. Configure your server
 
 Add two lines to your `.env` file on the VPS:
 
 ```
 CF_WORKER_URL=https://jcink-proxy.storycraftink-sys.workers.dev
-CF_WORKER_KEY=<the-secret-from-step-2>
+CF_WORKER_KEY=<the-secret-from-step-1>
 ```
 
 Restart the container. Done.
