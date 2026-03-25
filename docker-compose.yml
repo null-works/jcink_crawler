@@ -12,13 +12,4 @@ services:
       - ./tui.py:/app/tui.py
     env_file:
       - .env
-    environment:
-      PROXY_URL: "socks5://tor:9050"
-    depends_on:
-      - tor
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--proxy-headers", "--forwarded-allow-ips", "*"]
-
-  tor:
-    image: dperson/torproxy
-    container_name: jcink-tor
-    restart: unless-stopped
