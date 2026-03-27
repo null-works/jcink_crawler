@@ -721,6 +721,11 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
         # Title is always at col 1 (before any body that splits)
         title = row[col_title] or "Untitled"
 
+        # Skip JCink move-redirect stubs (e.g. "From: Rumors")
+        # These are placeholder entries left when a topic is moved between forums
+        if isinstance(title, str) and title.startswith("From:"):
+            continue
+
         # For rows with shifted columns, read from end
         if len(row) == expected_cols:
             forum_id = row[col_forum]

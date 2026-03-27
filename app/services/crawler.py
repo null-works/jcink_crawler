@@ -1181,6 +1181,20 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
 
+            # Clean up junk threads from previous syncs (move-redirect stubs)
+            junk = await db.execute(
+                "SELECT COUNT(*) FROM threads WHERE title LIKE 'From:%'"
+            )
+            junk_count = (await junk.fetchone())[0]
+            if junk_count:
+                await db.execute(
+                    "DELETE FROM character_threads WHERE thread_id IN "
+                    "(SELECT id FROM threads WHERE title LIKE 'From:%')"
+                )
+                await db.execute("DELETE FROM threads WHERE title LIKE 'From:%'")
+                await db.commit()
+                log_debug(f"ACP sync: cleaned up {junk_count} move-redirect stub threads")
+
             for tid in relevant_thread_ids:
                 topic = topic_map.get(tid)
                 if not topic:
