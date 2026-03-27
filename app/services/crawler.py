@@ -1181,6 +1181,10 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
 
+            # Clear quote_crawl_log so the chained quote crawl processes all threads
+            await db.execute("DELETE FROM quote_crawl_log")
+            await db.commit()
+
             # Clean up junk threads from previous syncs (move-redirect stubs)
             junk = await db.execute(
                 "SELECT COUNT(*) FROM threads WHERE title LIKE 'From:%'"
