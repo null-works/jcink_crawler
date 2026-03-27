@@ -1379,12 +1379,21 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
 
         # Fetch all pages of this thread
         thread_html = await fetch_page_with_delay(thread_url)
-        if not thread_html:
-            log_debug(f"Quote scrape: skipped thread {tid} (fetch returned None)", level="error")
-            continue
-        if is_board_message(thread_html):
-            snippet = thread_html[:200].replace('\n', ' ').strip()
-            log_debug(f"Quote scrape: skipped thread {tid} (board message): {snippet}", level="error")
+        if not thread_html or is_board_message(thread_html):
+            reason = "fetch returned None" if not thread_html else "board message (deleted/restricted thread)"
+            log_debug(f"Quote scrape: skipped thread {tid} ({reason})", level="error")
+            # Mark all characters for this thread as scraped so we don't retry
+            async with connect_db(db_path) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    "SELECT character_id FROM character_threads WHERE thread_id = ?", (tid,)
+                )
+                for row in await cursor.fetchall():
+                    await db.execute(
+                        "INSERT OR IGNORE INTO quote_crawl_log (thread_id, character_id) VALUES (?, ?)",
+                        (tid, row["character_id"]),
+                    )
+                await db.commit()
             continue
 
         max_st, page_offsets = parse_thread_pagination(thread_html)
