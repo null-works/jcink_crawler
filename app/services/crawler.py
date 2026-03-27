@@ -1065,6 +1065,25 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         if null_tid_count:
             log_debug(f"ACP sync debug: {null_tid_count}/{len(posts)} posts have no thread_id", level="warn")
 
+        # Debug: check if post thread_ids match known topic IDs
+        all_topic_ids = set(topic_map.keys()) | excluded_thread_ids
+        matched_posts = sum(1 for p in posts if p.get("thread_id") in all_topic_ids)
+        unmatched_posts = len(posts) - null_tid_count - matched_posts
+        log_debug(f"ACP sync debug: {matched_posts}/{len(posts)} posts match known topics, "
+                  f"{unmatched_posts} have unknown thread_ids")
+        if unmatched_posts > len(posts) * 0.5 and posts:
+            sample_unknown = set()
+            for p in posts:
+                tid = p.get("thread_id")
+                if tid and tid not in all_topic_ids:
+                    sample_unknown.add(tid)
+                    if len(sample_unknown) >= 10:
+                        break
+            log_debug(f"ACP sync debug: sample unknown thread_ids: {sorted(sample_unknown)}", level="warn")
+            # Also show what column 12 would give us (the default post_topic_id)
+            sample_posts = [p for p in posts[:5]]
+            log_debug(f"ACP sync debug: first 5 post thread_ids: {[p.get('thread_id') for p in sample_posts]}")
+
         for p in posts:
             tid = p.get("thread_id")
             cid = p["character_id"]
