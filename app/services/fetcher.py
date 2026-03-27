@@ -128,8 +128,14 @@ async def reauthenticate() -> bool:
 
 
 async def ensure_authenticated() -> None:
-    """Ensure the client is authenticated if credentials are available."""
+    """Ensure the client is authenticated if credentials are available.
+
+    Skipped when using CF Worker proxy — cookies can't be forwarded
+    through the proxy, and JCink thread/profile pages are public.
+    """
     global _authenticated
+    if _is_cf_worker_enabled():
+        return
     if not _authenticated and settings.bot_username:
         await authenticate()
 

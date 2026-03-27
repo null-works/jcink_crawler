@@ -1379,8 +1379,12 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
 
         # Fetch all pages of this thread
         thread_html = await fetch_page_with_delay(thread_url)
-        if not thread_html or is_board_message(thread_html):
-            log_debug(f"Quote scrape: skipped thread {tid} (fetch failed or board message)", level="error")
+        if not thread_html:
+            log_debug(f"Quote scrape: skipped thread {tid} (fetch returned None)", level="error")
+            continue
+        if is_board_message(thread_html):
+            snippet = thread_html[:200].replace('\n', ' ').strip()
+            log_debug(f"Quote scrape: skipped thread {tid} (board message): {snippet}", level="error")
             continue
 
         max_st, page_offsets = parse_thread_pagination(thread_html)
