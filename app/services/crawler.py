@@ -1343,6 +1343,10 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
     async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
 
+        # Force-clear quote_crawl_log right here, same connection, before the query
+        await db.execute("DELETE FROM quote_crawl_log")
+        await db.commit()
+
         # All known characters
         cursor = await db.execute("SELECT id, name FROM characters")
         rows = await cursor.fetchall()
@@ -1352,7 +1356,6 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
             clear_activity()
             return {"threads_processed": 0, "quotes_added": 0}
 
-        # Debug: count tables before the query
         c = await db.execute("SELECT COUNT(*) FROM character_threads")
         ct_count = (await c.fetchone())[0]
         c = await db.execute("SELECT COUNT(*) FROM threads")
