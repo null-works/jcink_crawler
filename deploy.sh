@@ -40,6 +40,15 @@ if [ "$(stat -c '%u' ./data 2>/dev/null)" != "1000" ]; then
     sudo chown 1000:1000 ./data
 fi
 
+# Patch .env defaults that changed between versions
+if [ -f .env ]; then
+    # CRAWL_QUOTES_BATCH_SIZE=5 was too low, change to unlimited
+    if grep -q "CRAWL_QUOTES_BATCH_SIZE=5" .env; then
+        sed -i 's/CRAWL_QUOTES_BATCH_SIZE=5/CRAWL_QUOTES_BATCH_SIZE=0/' .env
+        echo "        Patched CRAWL_QUOTES_BATCH_SIZE from 5 to 0 (unlimited)."
+    fi
+fi
+
 # Build container (no cache to ensure all file changes are picked up)
 echo "  [2/5] Building container..."
 docker compose build --no-cache
