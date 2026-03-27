@@ -172,16 +172,23 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
         table_name = match.group(1)
         values_str = match.group(2)
 
-        # Clean JCink encoding quirks
-        values_str = values_str.replace("\\'", "'")
-        values_str = values_str.replace("&amp;", "&")
-        values_str = values_str.replace("&lt;", "<")
-        values_str = values_str.replace("&gt;", ">")
-        values_str = values_str.replace("&quot;", '"')
-
+        # Clean JCink HTML encoding quirks AFTER value parsing
+        # IMPORTANT: Do NOT unescape \' before parsing — that breaks the
+        # quote delimiter detection in the CSV parser, causing post bodies
+        # with apostrophes to split into multiple columns.
         row = _parse_sql_values(values_str)
         if row is not None:
-            raw.setdefault(table_name, []).append(row)
+            # Unescape HTML entities in string values
+            cleaned = []
+            for val in row:
+                if isinstance(val, str):
+                    val = val.replace("\\'", "'")
+                    val = val.replace("&amp;", "&")
+                    val = val.replace("&lt;", "<")
+                    val = val.replace("&gt;", ">")
+                    val = val.replace("&quot;", '"')
+                cleaned.append(val)
+            raw.setdefault(table_name, []).append(cleaned)
 
     return raw
 
