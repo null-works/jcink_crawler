@@ -66,10 +66,9 @@ _NEXT_LINK_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Regex to parse REPLACE INTO statements (DOTALL for multi-line bodies)
+# Regex to parse REPLACE INTO statements
 _REPLACE_RE = re.compile(
-    r"^REPLACE INTO `\w+?_(\w+)` VALUES\s*\((.+)\);?\s*$",
-    re.DOTALL
+    r"^REPLACE INTO `\w+?_(\w+)` VALUES\s*\((.+)\);?\s*$"
 )
 
 
@@ -192,27 +191,13 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
     """
     raw: dict[str, list[list]] = {}
 
-    # Join multi-line REPLACE statements.  Post bodies can contain real
-    # newlines which split a single SQL statement across multiple lines.
-    # We reassemble them before parsing by tracking open statements.
-    lines = sql_text.split("\n")
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
+    for line in sql_text.split("\n"):
+        line = line.strip()
         if not line.startswith("REPLACE"):
-            i += 1
             continue
 
-        # Check if this line ends with ');' (complete statement)
-        # A statement is complete when we've seen balanced quotes.
-        full_line = line
-        while not _is_statement_complete(full_line) and i + 1 < len(lines):
-            i += 1
-            full_line += "\n" + lines[i]
-
-        match = _REPLACE_RE.match(full_line)
+        match = _REPLACE_RE.match(line)
         if not match:
-            i += 1
             continue
 
         table_name = match.group(1)
@@ -231,8 +216,6 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
                     val = val.replace("&quot;", '"')
                 cleaned.append(val)
             raw.setdefault(table_name, []).append(cleaned)
-
-        i += 1
 
     # Diagnostic: check for rows with wrong column counts
     for tbl_name in ("posts", "topics"):
@@ -269,25 +252,7 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
     return raw
 
 
-def _is_statement_complete(line: str) -> bool:
-    """Check if a REPLACE INTO statement is complete (balanced quotes, ends with );)."""
-    # Quick check: must end with ); to be complete
-    stripped = line.rstrip()
-    if not stripped.endswith(");"):
-        return False
-    # Count unescaped single quotes — if odd, statement is incomplete
-    in_escape = False
-    quote_count = 0
-    for ch in stripped:
-        if in_escape:
-            in_escape = False
-            continue
-        if ch == '\\':
-            in_escape = True
-            continue
-        if ch == "'":
-            quote_count += 1
-    return quote_count % 2 == 0
+
 
 
 def _detect_column(rows: list[list], valid_values: set, start_col: int = 2,
