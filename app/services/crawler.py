@@ -1184,6 +1184,9 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
             # Clear quote_crawl_log so the chained quote crawl processes all threads
             await db.execute("DELETE FROM quote_crawl_log")
             await db.commit()
+            c = await db.execute("SELECT COUNT(*) FROM quote_crawl_log")
+            remaining = (await c.fetchone())[0]
+            log_debug(f"ACP sync: cleared quote_crawl_log ({remaining} entries remaining)")
 
             # Clean up junk threads from previous syncs (move-redirect stubs)
             junk = await db.execute(
@@ -1348,6 +1351,15 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
         if not all_characters:
             clear_activity()
             return {"threads_processed": 0, "quotes_added": 0}
+
+        # Debug: count tables before the query
+        c = await db.execute("SELECT COUNT(*) FROM character_threads")
+        ct_count = (await c.fetchone())[0]
+        c = await db.execute("SELECT COUNT(*) FROM threads")
+        t_count = (await c.fetchone())[0]
+        c = await db.execute("SELECT COUNT(*) FROM quote_crawl_log")
+        qcl_count = (await c.fetchone())[0]
+        log_debug(f"Quote crawl: character_threads={ct_count}, threads={t_count}, quote_crawl_log={qcl_count}")
 
         # Find threads that have at least one character not yet quote-scraped.
         # We look at character_threads to find which threads involve tracked characters,
