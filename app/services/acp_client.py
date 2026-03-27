@@ -587,6 +587,11 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
 
     Returns list of dicts with: character_id, thread_id, post_date, forum_id, author_name
     When include_body=True, also includes post_body (HTML content) for quote extraction.
+
+    Handles mis-parsed rows where the post body (column 10) contains unescaped
+    single quotes that split it into extra columns.  For these rows, columns
+    before the body (0-9) are intact but columns after are shifted.  We read
+    topic_id and forum_id by counting from the END of the row.
     """
     s = schema or {}
     col_author = s.get("post_author_id", 3)
@@ -596,28 +601,59 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
     col_topic = s.get("post_topic_id", 12)
     col_forum = s.get("post_forum_id", 13)
 
-    min_col = max(col_author, col_date, col_topic, col_forum)
+    # Determine expected column count from first valid row
     posts_rows = raw.get("posts", [])
+    expected_cols = 21  # IPB default
+    if posts_rows:
+        # Use the most common column count as "expected"
+        from collections import Counter
+        counts = Counter(len(r) for r in posts_rows[:200])
+        if counts:
+            expected_cols = counts.most_common(1)[0][0]
+
+    # How far topic_id and forum_id are from the END of a correctly-parsed row
+    topic_from_end = expected_cols - col_topic  # e.g. 21 - 12 = 9
+    forum_from_end = expected_cols - col_forum  # e.g. 21 - 13 = 8
+
+    min_col = max(col_author, col_date, col_topic, col_forum)
     records = []
 
     for row in posts_rows:
-        if len(row) <= min_col:
+        if len(row) < min_col + 1:
             continue
 
         author_id = row[col_author]
         if author_id is None:
             continue
 
+        # For rows with the right column count, use direct indexing.
+        # For rows with extra columns (body split), count from the end.
+        if len(row) == expected_cols:
+            topic_val = row[col_topic]
+            forum_val = row[col_forum]
+        else:
+            topic_idx = len(row) - topic_from_end
+            forum_idx = len(row) - forum_from_end
+            topic_val = row[topic_idx] if 0 <= topic_idx < len(row) else None
+            forum_val = row[forum_idx] if 0 <= forum_idx < len(row) else None
+
         record = {
             "character_id": str(author_id),
-            "thread_id": str(row[col_topic]) if row[col_topic] is not None else None,
+            "thread_id": str(topic_val) if topic_val is not None else None,
             "post_date": _unix_to_iso(row[col_date]),
-            "forum_id": str(row[col_forum]) if row[col_forum] is not None else None,
+            "forum_id": str(forum_val) if forum_val is not None else None,
             "author_name": row[col_author_name] if col_author_name < len(row) else None,
         }
 
-        if include_body and col_body < len(row):
-            body = row[col_body]
+        if include_body:
+            if len(row) == expected_cols:
+                body = row[col_body] if col_body < len(row) else None
+            else:
+                # Body spans from col_body to (end - columns_after_body)
+                cols_after_body = expected_cols - col_body - 1
+                body_end = len(row) - cols_after_body
+                body_parts = row[col_body:body_end]
+                body = ",".join(str(p) for p in body_parts) if body_parts else None
             record["post_body"] = body if isinstance(body, str) else None
 
         records.append(record)
