@@ -428,6 +428,17 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
     post_topic_col = _detect_column(posts_rows, topic_ids, start_col=2)
     post_author_col = _detect_column(posts_rows, member_ids, start_col=2)
 
+    # Sanity check: topic_id column should have high cardinality (many distinct
+    # topics).  If it's very low (e.g. a boolean flag column where value "1"
+    # happens to match topic ID 1), reject it and fall back to the default.
+    if post_topic_col is not None:
+        card = _column_cardinality(posts_rows, post_topic_col)
+        if card < 0.05:
+            log_debug(f"ACP schema: post_topic_id col {post_topic_col} has very low "
+                      f"cardinality ({card:.3f}) — likely a flag, not topic IDs. "
+                      f"Falling back to default col 12.", level="warn")
+            post_topic_col = None
+
     # Resolve collisions between forum_id and author_id (topic_id rarely collides)
     if (post_forum_col is not None and post_author_col is not None
             and post_forum_col == post_author_col):
