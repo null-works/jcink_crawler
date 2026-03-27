@@ -205,8 +205,23 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
 
         i += 1
 
-    # Diagnostic: check for posts with wrong column counts
-    if "posts" in raw:
+    # Diagnostic: check for rows with wrong column counts
+    for tbl_name in ("posts", "topics"):
+        if tbl_name not in raw or not raw[tbl_name]:
+            continue
+        expected = len(raw[tbl_name][0])
+        wrong = sum(1 for r in raw[tbl_name] if len(r) != expected)
+        if wrong:
+            log_debug(f"ACP parse: {wrong}/{len(raw[tbl_name])} {tbl_name} rows have wrong column count "
+                      f"(expected {expected})", level="warn")
+            for r in raw[tbl_name]:
+                if len(r) != expected:
+                    log_debug(f"ACP parse: bad {tbl_name} row ({len(r)} cols): col[0]={r[0]}, "
+                              f"col[1]={str(r[1])[:60] if len(r) > 1 else 'N/A'}", level="warn")
+                    break
+
+    # Remove old posts-only diagnostic
+    if False and "posts" in raw:
         expected = 21  # From first row
         if raw["posts"]:
             expected = len(raw["posts"][0])
@@ -666,6 +681,9 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
 
     Returns list of dicts with: thread_id, title, forum_id, state,
     last_poster_id, last_poster_name, last_post_date
+
+    Like extract_post_records, handles rows with wrong column counts
+    by reading key fields from the end of the row when columns shift.
     """
     s = schema or {}
     col_title = s.get("topic_title", 1)
@@ -677,8 +695,20 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
     topics_rows = raw.get("topics", [])
     records = []
 
-    min_cols = max(_TOPIC_COL_ID, col_title, col_forum,
-                   col_last_post, col_poster_id, col_poster_name) + 1
+    # Determine expected column count
+    expected_cols = 22  # IPB default
+    if topics_rows:
+        from collections import Counter
+        counts = Counter(len(r) for r in topics_rows[:200])
+        if counts:
+            expected_cols = counts.most_common(1)[0][0]
+
+    # How far key columns are from the end
+    forum_from_end = expected_cols - col_forum
+    poster_id_from_end = expected_cols - col_poster_id
+    poster_name_from_end = expected_cols - col_poster_name
+
+    min_cols = max(_TOPIC_COL_ID, col_title) + 1
 
     for row in topics_rows:
         if len(row) < min_cols:
@@ -688,14 +718,33 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
         if topic_id is None:
             continue
 
+        # Title is always at col 1 (before any body that splits)
+        title = row[col_title] or "Untitled"
+
+        # For rows with shifted columns, read from end
+        if len(row) == expected_cols:
+            forum_id = row[col_forum]
+            poster_id = row[col_poster_id]
+            poster_name = row[col_poster_name]
+            last_post = row[col_last_post]
+        else:
+            forum_idx = len(row) - forum_from_end
+            poster_id_idx = len(row) - poster_id_from_end
+            poster_name_idx = len(row) - poster_name_from_end
+            forum_id = row[forum_idx] if 0 <= forum_idx < len(row) else None
+            poster_id = row[poster_id_idx] if 0 <= poster_id_idx < len(row) else None
+            poster_name = row[poster_name_idx] if 0 <= poster_name_idx < len(row) else None
+            # last_post_date is before the body split area, should be intact
+            last_post = row[col_last_post] if col_last_post < len(row) else None
+
         records.append({
             "thread_id": str(topic_id),
-            "title": row[col_title] or "Untitled",
-            "forum_id": str(row[col_forum]) if row[col_forum] else None,
+            "title": title,
+            "forum_id": str(forum_id) if forum_id is not None else None,
             "state": row[3] if len(row) > 3 else None,
-            "last_poster_id": str(row[col_poster_id]) if row[col_poster_id] else None,
-            "last_poster_name": row[col_poster_name] if isinstance(row[col_poster_name], str) else None,
-            "last_post_date": _unix_to_iso(row[col_last_post]),
+            "last_poster_id": str(poster_id) if poster_id else None,
+            "last_poster_name": poster_name if isinstance(poster_name, str) else None,
+            "last_post_date": _unix_to_iso(last_post),
         })
 
     return records
