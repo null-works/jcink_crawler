@@ -26,6 +26,7 @@ import httpx
 
 from app.config import settings
 from app.services.activity import log_debug
+from app.services.fetcher import _is_cf_worker_enabled, _cf_proxy_url
 
 
 # ── Default column indices (IPB 1.3.x baseline) ──
@@ -658,6 +659,12 @@ class ACPClient:
         self._password = password or settings.admin_password
         self._last_error: str | None = None
 
+    def _rewrite_url(self, url: str) -> str:
+        """Route URL through CF Worker proxy if configured."""
+        if _is_cf_worker_enabled():
+            return _cf_proxy_url(url)
+        return url
+
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
@@ -667,6 +674,8 @@ class ACPClient:
                     "User-Agent": "Mozilla/5.0 (compatible; TWAICrawler/1.0)",
                 },
             )
+            if _is_cf_worker_enabled():
+                log_debug("ACP: routing through Cloudflare Worker proxy")
         return self._client
 
     async def login(self, max_retries: int = 3) -> bool:
@@ -709,7 +718,7 @@ class ACPClient:
             client = await self._get_client()
 
             try:
-                response = await client.get(login_url)
+                response = await client.get(self._rewrite_url(login_url))
 
                 # Check redirect for adsess token
                 redirect_url = response.headers.get("location", "")
@@ -786,7 +795,7 @@ class ACPClient:
         log_debug("ACP: clearing previous backup")
         try:
             await client.get(
-                f"{base}/admin.php?act=mysql&code=backup&erase=1&adsess={self._token}",
+                self._rewrite_url(f"{base}/admin.php?act=mysql&code=backup&erase=1&adsess={self._token}"),
                 follow_redirects=True,
             )
         except Exception as e:
@@ -798,7 +807,7 @@ class ACPClient:
         log_debug("ACP: starting full database dump")
         try:
             init_resp = await client.get(
-                f"{base}/admin.php?act=mysql&code=dump&step1=1&adsess={self._token}",
+                self._rewrite_url(f"{base}/admin.php?act=mysql&code=dump&step1=1&adsess={self._token}"),
                 follow_redirects=True,
             )
             html = init_resp.text
@@ -831,7 +840,7 @@ class ACPClient:
             part = match.group(2)
             parts_seen.add(part)
 
-            url = f"{base}/admin.php?act=mysql&adsess={self._token}&code=dump&line={line}&part={part}"
+            url = self._rewrite_url(f"{base}/admin.php?act=mysql&adsess={self._token}&code=dump&line={line}&part={part}")
             page_ok = False
             for retry in range(3):
                 try:
@@ -872,7 +881,7 @@ class ACPClient:
             log_debug(f"ACP: waiting {wait_secs}s for SQL file")
             await asyncio.sleep(wait_secs)
             try:
-                resp = await client.get(sql_url, follow_redirects=True)
+                resp = await client.get(self._rewrite_url(sql_url), follow_redirects=True)
                 if resp.status_code == 200 and len(resp.text) > 100:
                     sql_content = resp.text
                     log_debug(f"ACP: SQL file retrieved ({len(sql_content):,} bytes)")
