@@ -1292,6 +1292,13 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
             "posts_stored": posts_stored,
         }
         log_debug(f"ACP sync complete: {summary}", level="done")
+
+        # Automatically start quote crawl after ACP sync
+        if threads_upserted > 0:
+            log_debug("Starting automatic quote crawl after ACP sync")
+            quote_result = await crawl_quotes_only(db_path)
+            summary["quotes"] = quote_result
+
         return summary
 
     except Exception as e:
