@@ -359,6 +359,16 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
         log_debug(f"ACP schema debug: topics[0] ({len(topics_rows[0])} cols) = {topics_rows[0][:20]}")
     if posts_rows:
         log_debug(f"ACP schema debug: posts[0] ({len(posts_rows[0])} cols) = {posts_rows[0][:16]}")
+        # Log a later post with different values to help identify columns
+        for i, row in enumerate(posts_rows):
+            if i > 0 and len(row) > 10 and row[0] != posts_rows[0][0]:
+                # Truncate long string values for readability
+                truncated = []
+                for v in row[:16]:
+                    s = str(v) if v is not None else 'None'
+                    truncated.append(s[:40] + '...' if len(s) > 40 else s)
+                log_debug(f"ACP schema debug: posts[{i}] = {truncated}")
+                break
     if members_rows:
         log_debug(f"ACP schema debug: members[0] ({len(members_rows[0])} cols) = {members_rows[0][:12]}")
 
