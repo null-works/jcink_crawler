@@ -966,7 +966,7 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
 
         # Extract structured records using detected schema
         topics = extract_topic_records(raw, schema=schema)
-        posts = acp_extract_posts(raw, include_body=False, schema=schema)
+        posts = acp_extract_posts(raw, include_body=True, schema=schema)
         forums = extract_forum_records(raw, schema=schema)
         log_debug(f"ACP dump: {len(topics)} topics, {len(posts)} posts, {len(forums)} forums")
 
@@ -1059,30 +1059,6 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         posts_by_thread: dict[str, list[dict]] = {}
         post_counts: dict[tuple[str, str], int] = {}
         chars_in_thread: dict[str, set[str]] = {}
-
-        # Debug: count posts with missing thread IDs
-        null_tid_count = sum(1 for p in posts if not p.get("thread_id"))
-        if null_tid_count:
-            log_debug(f"ACP sync debug: {null_tid_count}/{len(posts)} posts have no thread_id", level="warn")
-
-        # Debug: check if post thread_ids match known topic IDs
-        all_topic_ids = set(topic_map.keys()) | excluded_thread_ids
-        matched_posts = sum(1 for p in posts if p.get("thread_id") in all_topic_ids)
-        unmatched_posts = len(posts) - null_tid_count - matched_posts
-        log_debug(f"ACP sync debug: {matched_posts}/{len(posts)} posts match known topics, "
-                  f"{unmatched_posts} have unknown thread_ids")
-        if unmatched_posts > len(posts) * 0.5 and posts:
-            sample_unknown = set()
-            for p in posts:
-                tid = p.get("thread_id")
-                if tid and tid not in all_topic_ids:
-                    sample_unknown.add(tid)
-                    if len(sample_unknown) >= 10:
-                        break
-            log_debug(f"ACP sync debug: sample unknown thread_ids: {sorted(sample_unknown)}", level="warn")
-            # Also show what column 12 would give us (the default post_topic_id)
-            sample_posts = [p for p in posts[:5]]
-            log_debug(f"ACP sync debug: first 5 post thread_ids: {[p.get('thread_id') for p in sample_posts]}")
 
         for p in posts:
             tid = p.get("thread_id")
@@ -1180,13 +1156,6 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
 
         async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
-
-            # Clear quote_crawl_log so the chained quote crawl processes all threads
-            await db.execute("DELETE FROM quote_crawl_log")
-            await db.commit()
-            c = await db.execute("SELECT COUNT(*) FROM quote_crawl_log")
-            remaining = (await c.fetchone())[0]
-            log_debug(f"ACP sync: cleared quote_crawl_log ({remaining} entries remaining)")
 
             # Clean up junk threads from previous syncs (move-redirect stubs)
             junk = await db.execute(
@@ -1286,6 +1255,37 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
 
             await db.commit()
 
+        # ── Phase 5: Extract quotes from post bodies ──
+        # The SQL dump contains the raw HTML of every post body. We extract
+        # dialog quotes directly instead of fetching thread pages via HTTP.
+        from app.services.parser import extract_quotes_from_post_body
+
+        set_activity("Extracting quotes from post bodies")
+        quotes_added = 0
+
+        async with connect_db(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            for p in posts:
+                cid = p["character_id"]
+                if cid not in tracked_chars:
+                    continue
+                body = p.get("post_body")
+                if not body or not isinstance(body, str) or len(body) < 20:
+                    continue
+                tid = p.get("thread_id")
+                thread_title = topic_map.get(tid, {}).get("title") if tid else None
+
+                found = extract_quotes_from_post_body(body)
+                for q in found:
+                    added = await add_quote(db, cid, q["text"], tid, thread_title)
+                    if added:
+                        quotes_added += 1
+
+            await db.commit()
+
+        if quotes_added:
+            log_debug(f"ACP sync: extracted {quotes_added} new quotes from post bodies")
+
         # Record last sync time
         async with connect_db(db_path) as db:
             await set_crawl_status(db, "acp_last_sync", datetime.now(timezone.utc).isoformat())
@@ -1297,14 +1297,9 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
             "threads_upserted": threads_upserted,
             "character_links": links_created,
             "posts_stored": posts_stored,
+            "quotes_added": quotes_added,
         }
         log_debug(f"ACP sync complete: {summary}", level="done")
-
-        # Automatically start quote crawl after ACP sync
-        if threads_upserted > 0:
-            log_debug("Starting automatic quote crawl after ACP sync")
-            quote_result = await crawl_quotes_only(db_path)
-            summary["quotes"] = quote_result
 
         return summary
 
@@ -1343,10 +1338,6 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
     async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
 
-        # Force-clear quote_crawl_log right here, same connection, before the query
-        await db.execute("DELETE FROM quote_crawl_log")
-        await db.commit()
-
         # All known characters
         cursor = await db.execute("SELECT id, name FROM characters")
         rows = await cursor.fetchall()
@@ -1355,14 +1346,6 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
         if not all_characters:
             clear_activity()
             return {"threads_processed": 0, "quotes_added": 0}
-
-        c = await db.execute("SELECT COUNT(*) FROM character_threads")
-        ct_count = (await c.fetchone())[0]
-        c = await db.execute("SELECT COUNT(*) FROM threads")
-        t_count = (await c.fetchone())[0]
-        c = await db.execute("SELECT COUNT(*) FROM quote_crawl_log")
-        qcl_count = (await c.fetchone())[0]
-        log_debug(f"Quote crawl: character_threads={ct_count}, threads={t_count}, quote_crawl_log={qcl_count}")
 
         # Find threads that have at least one character not yet quote-scraped.
         # We look at character_threads to find which threads involve tracked characters,

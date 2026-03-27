@@ -39,7 +39,58 @@ class TestParseSqlValues:
         result = _parse_sql_values("1, 'it\\'s a test', 3")
         assert len(result) == 3
         assert result[0] == 1
+        assert result[1] == "it's a test"
         assert result[2] == 3
+
+    def test_html_with_single_quotes_in_attributes(self):
+        # JCink post bodies contain HTML with unescaped single quotes
+        sql = "1, '<table border=\\'0\\' cellpadding=\\'3\\'><tr><td>hello</td></tr></table>', 2, 100, 5"
+        result = _parse_sql_values(sql)
+        assert len(result) == 5
+        assert result[0] == 1
+        assert "table" in result[1]
+        assert result[3] == 100
+        assert result[4] == 5
+
+    def test_unescaped_html_quotes(self):
+        # JCink sometimes doesn't escape quotes in HTML content at all
+        sql = "1, 'She said <b>\"hello\"</b> and it\\'s fine', 0, 100, 5"
+        result = _parse_sql_values(sql)
+        assert len(result) == 5
+        assert result[0] == 1
+        assert "hello" in result[1]
+        assert result[3] == 100
+
+    def test_html_with_commas_in_body(self):
+        # Commas inside HTML attributes should not split the body
+        sql = "1, '<div class=\"foo, bar\" style=\"color:red, blue\">text</div>', 0, 100, 5"
+        result = _parse_sql_values(sql)
+        assert len(result) == 5
+        assert "foo, bar" in result[1]
+
+    def test_doubled_quote_escape(self):
+        # SQL standard '' escape for literal single quote
+        result = _parse_sql_values("1, 'it''s a test', 3")
+        assert len(result) == 3
+        assert result[1] == "it's a test"
+
+    def test_unescaped_apostrophe_in_html_body(self):
+        # JCink bug: raw apostrophe in post body not SQL-escaped
+        # The parser should treat ' followed by non-separator as part of the string
+        sql = "1, 0, 'The hero's journey begins <b>\"Today we fight!\"</b> she said', 0, 100, 5"
+        result = _parse_sql_values(sql)
+        assert len(result) == 6
+        assert result[0] == 1
+        assert "hero's journey" in result[2]
+        assert "Today we fight" in result[2]
+        assert result[4] == 100
+
+    def test_bold_dialog_in_post_body(self):
+        # Post body with bold dialog quotes — what extract_quotes_from_post_body needs
+        sql = "1, 0, '<p>She walked in. <b>\"This is my test quote.\"</b> Then she left.</p>', 0, 100, 5"
+        result = _parse_sql_values(sql)
+        assert len(result) == 6
+        assert '<b>"This is my test quote."</b>' in result[2]
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +125,17 @@ REPLACE INTO `ibf_posts` VALUES (2, 0, 0, 55, "Steve Rogers", 0, 0, 0, 170010000
 REPLACE INTO `ibf_topics` VALUES (100, "Avengers Assemble", "", "open", 0, 0, 0, 42, 1700100000, 0, 0, "Tony Stark", 0, 0, 0, 5);
 REPLACE INTO `ibf_forums` VALUES (5, 0, 0, 0, 0, 0, "IC Roleplay", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0);
 REPLACE INTO `ibf_members` VALUES (42, "Tony Stark", 3, 0, 0, 0, 0, "", 0, 150, 0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0, 0);
+"""
+
+# SQL with HTML post bodies containing quotes, apostrophes, and dialog
+SAMPLE_SQL_WITH_HTML_BODIES = """\
+REPLACE INTO `ibf_posts` VALUES (1, 0, 0, 42, 'Tony Stark', 0, 0, 0, 1700000000, 0, '<p>She walked in. <b>"I am Iron Man."</b> Tony declared proudly.</p>', 0, 100, 5, 0);
+REPLACE INTO `ibf_posts` VALUES (2, 0, 0, 55, 'Steve Rogers', 0, 0, 0, 1700100000, 0, '<p>It\\'s a beautiful day. <b>"Avengers assemble right now!"</b> Steve shouted.</p>', 0, 100, 5, 0);
+REPLACE INTO `ibf_posts` VALUES (3, 0, 0, 42, 'Tony Stark', 0, 0, 0, 1700200000, 0, '<div class=\\'post\\'><table border=\\'0\\' cellpadding=\\'3\\'><tr><td><b>"Another day, another fight."</b></td></tr></table></div>', 0, 100, 5, 0);
+REPLACE INTO `ibf_topics` VALUES (100, "Avengers Assemble", "", "open", 0, 0, 0, 42, 1700200000, 0, 0, "Tony Stark", 0, 0, 0, 5);
+REPLACE INTO `ibf_forums` VALUES (5, 0, 0, 0, 0, 0, "IC Roleplay", 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0);
+REPLACE INTO `ibf_members` VALUES (42, "Tony Stark", 3, 0, 0, 0, 0, "", 0, 150, 0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0, 0);
+REPLACE INTO `ibf_members` VALUES (55, "Steve Rogers", 3, 0, 0, 0, 0, "", 0, 100, 0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0, 0);
 """
 
 
@@ -205,3 +267,61 @@ class TestTablePartConstants:
 
     def test_default_parts_has_4_entries(self):
         assert len(DEFAULT_TABLE_PARTS) == 4
+
+
+# ---------------------------------------------------------------------------
+# HTML body parsing + quote extraction integration
+# ---------------------------------------------------------------------------
+
+class TestHtmlBodyParsing:
+    """Test the full pipeline: SQL with HTML bodies → parse → extract with body → quote extraction."""
+
+    def test_parses_html_bodies_correctly(self):
+        raw = parse_sql_dump(SAMPLE_SQL_WITH_HTML_BODIES)
+        assert "posts" in raw
+        assert len(raw["posts"]) == 3
+        # All rows should have the same column count (parser handles quotes correctly)
+        col_counts = {len(r) for r in raw["posts"]}
+        assert len(col_counts) == 1, f"Inconsistent column counts: {col_counts}"
+
+    def test_extract_posts_with_body(self):
+        raw = parse_sql_dump(SAMPLE_SQL_WITH_HTML_BODIES)
+        posts = extract_post_records(raw, include_body=True)
+        assert len(posts) == 3
+
+        # Check first post has body with dialog
+        assert posts[0]["character_id"] == "42"
+        assert posts[0]["thread_id"] == "100"
+        assert posts[0]["post_body"] is not None
+        assert "I am Iron Man" in posts[0]["post_body"]
+
+        # Check second post with escaped apostrophe
+        assert posts[1]["character_id"] == "55"
+        assert posts[1]["post_body"] is not None
+        assert "Avengers assemble right now" in posts[1]["post_body"]
+
+        # Check third post with HTML attributes containing escaped quotes
+        assert posts[2]["character_id"] == "42"
+        assert posts[2]["post_body"] is not None
+        assert "Another day" in posts[2]["post_body"]
+
+    def test_quote_extraction_from_parsed_bodies(self):
+        from app.services.parser import extract_quotes_from_post_body
+
+        raw = parse_sql_dump(SAMPLE_SQL_WITH_HTML_BODIES)
+        posts = extract_post_records(raw, include_body=True)
+
+        # Post 1: Tony says "I am Iron Man."
+        quotes_1 = extract_quotes_from_post_body(posts[0]["post_body"])
+        quote_texts = [q["text"] for q in quotes_1]
+        assert any("I am Iron Man" in t for t in quote_texts)
+
+        # Post 2: Steve says "Avengers assemble right now!"
+        quotes_2 = extract_quotes_from_post_body(posts[1]["post_body"])
+        quote_texts = [q["text"] for q in quotes_2]
+        assert any("Avengers assemble right now" in t for t in quote_texts)
+
+        # Post 3: Tony says "Another day, another fight."
+        quotes_3 = extract_quotes_from_post_body(posts[2]["post_body"])
+        quote_texts = [q["text"] for q in quotes_3]
+        assert any("Another day" in t for t in quote_texts)
