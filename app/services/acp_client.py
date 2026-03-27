@@ -205,6 +205,23 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
 
         i += 1
 
+    # Diagnostic: check for posts with wrong column counts
+    if "posts" in raw:
+        expected = 21  # From first row
+        if raw["posts"]:
+            expected = len(raw["posts"][0])
+        wrong_count = sum(1 for r in raw["posts"] if len(r) != expected)
+        if wrong_count:
+            log_debug(f"ACP parse: {wrong_count}/{len(raw['posts'])} post rows have wrong column count "
+                      f"(expected {expected})", level="warn")
+            # Show a sample bad row
+            for r in raw["posts"]:
+                if len(r) != expected:
+                    log_debug(f"ACP parse: bad row ({len(r)} cols): col[0]={r[0]}, "
+                              f"col[10]={str(r[10])[:60] if len(r) > 10 else 'N/A'}..., "
+                              f"col[12]={str(r[12])[:60] if len(r) > 12 else 'N/A'}", level="warn")
+                    break
+
     return raw
 
 
