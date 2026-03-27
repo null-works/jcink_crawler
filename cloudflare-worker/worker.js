@@ -76,22 +76,20 @@ export default {
 
 		try {
 			const resp = await fetch(target, fetchOpts);
-			const body = await resp.text();
 
 			// Build response with relevant headers
 			const responseHeaders = new Headers();
 			responseHeaders.set('Content-Type', resp.headers.get('Content-Type') || 'text/html');
 
 			// Forward set-cookie headers so the caller can maintain JCink sessions
-			const setCookies = resp.headers.getAll?.('Set-Cookie') || [];
-			// CF Workers use resp.headers.get which joins multiple values
 			const setCookie = resp.headers.get('Set-Cookie');
 			if (setCookie) {
 				responseHeaders.set('X-Proxied-Set-Cookie', setCookie);
 			}
 
-			// Include original status
-			return new Response(body, {
+			// Stream the response body instead of buffering — handles 40MB+ SQL files
+			// without hitting the Worker's 128MB memory limit
+			return new Response(resp.body, {
 				status: resp.status,
 				headers: responseHeaders,
 			});
