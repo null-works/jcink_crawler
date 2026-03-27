@@ -529,9 +529,9 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
 
         record = {
             "character_id": str(author_id),
-            "thread_id": str(row[col_topic]) if row[col_topic] else None,
+            "thread_id": str(row[col_topic]) if row[col_topic] is not None else None,
             "post_date": _unix_to_iso(row[col_date]),
-            "forum_id": str(row[col_forum]) if row[col_forum] else None,
+            "forum_id": str(row[col_forum]) if row[col_forum] is not None else None,
             "author_name": row[col_author_name] if col_author_name < len(row) else None,
         }
 

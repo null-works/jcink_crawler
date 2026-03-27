@@ -1060,6 +1060,11 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         post_counts: dict[tuple[str, str], int] = {}
         chars_in_thread: dict[str, set[str]] = {}
 
+        # Debug: count posts with missing thread IDs
+        null_tid_count = sum(1 for p in posts if not p.get("thread_id"))
+        if null_tid_count:
+            log_debug(f"ACP sync debug: {null_tid_count}/{len(posts)} posts have no thread_id", level="warn")
+
         for p in posts:
             tid = p.get("thread_id")
             cid = p["character_id"]
