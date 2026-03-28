@@ -28,7 +28,7 @@ async def _characters_with_quotes(db: aiosqlite.Connection) -> list[dict]:
     """Return characters that have at least one quote, with hero images."""
     excluded = settings.excluded_name_set
     cursor = await db.execute("""
-        SELECT c.id, c.name, c.avatar_url,
+        SELECT c.id, c.name, c.avatar_url, c.group_name,
                pf_sq.field_value AS square_image,
                pf_rect.field_value AS rectangle_gif
         FROM characters c
@@ -107,6 +107,7 @@ async def game_who_said_it(
         "options": [
             {
                 "id": c["id"], "name": c["name"], "avatar_url": c["avatar_url"],
+                "group": c.get("group_name"),
                 "square_image": c.get("square_image"), "rectangle_gif": c.get("rectangle_gif"),
             }
             for c in options

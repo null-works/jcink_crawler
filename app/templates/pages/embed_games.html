@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>How Well Do You Know Your Characters?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>
 :root {
     --bg: #282a36; --bg-darker: #1e1f29; --bg-light: #2d2f3d;
@@ -101,9 +104,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 .tile:hover .tile-img { filter: brightness(0.85); transform: scale(1.03); }
 .tile-name {
     position: absolute; bottom: 0; left: 0; right: 0;
-    padding: 0.4rem 0.55rem; font-size: 0.85rem; font-weight: 700;
-    color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.7);
-    background: linear-gradient(transparent, rgba(0,0,0,0.65));
+    padding: 0.35rem 0.5rem; font-family: 'Bebas Neue', Impact, sans-serif;
+    font-size: 1.3rem; font-weight: 400; letter-spacing: 0.03em;
+    color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.4);
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    line-height: 1.1;
 }
 /* No-image fallback */
 .tile-noimg {
@@ -116,7 +121,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 /* States */
 .tile.correct { border-color: var(--green); box-shadow: 0 0 20px rgba(80,250,123,0.3); }
 .tile.correct .tile-img { filter: brightness(1); }
-.tile.correct .tile-name { background: linear-gradient(transparent, rgba(80,250,123,0.4)); color: var(--green); }
+.tile.correct .tile-name { background: linear-gradient(transparent, rgba(80,250,123,0.35)); }
 .tile.wrong { border-color: var(--red); opacity: 0.5; }
 .tile.wrong .tile-img { filter: brightness(0.4) grayscale(0.5); }
 .tile.locked { cursor: default; pointer-events: none; }
@@ -285,15 +290,25 @@ function sRes(ok,det,detHtml){
 function rfHtml(){return '<div class="rf"><div class="ra"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div><button class="nb">Next Round</button></div>';}
 function erHtml(m){return '<div class="er"><div class="ei">&#x1F50C;</div><div class="et">'+esc(m)+'</div><button class="rb" onclick="loadRound()">Try Again</button></div>';}
 
-// Tile HTML helper — big image with name overlay
-function tileHtml(id, name, imgUrl, dataAttr) {
+// Group color map — matches the TWAI theme color groups
+var GROUP_COLORS = {
+    'Red':'#ff5555','Orange':'#ffb86c','Yellow':'#f1fa8c','Green':'#50fa7b',
+    'Blue':'#8be9fd','Purple':'#bd93f9','Corrupted':'#ff5555','Pastel':'#e8c1ff',
+    'Pink':'#ff79c6','Neutral':'#f8f8f2','Admin':'#f1fa8c','Reserved':'#6272a4'
+};
+function groupColor(g) { return (g && GROUP_COLORS[g]) || '#fff'; }
+
+// Tile HTML helper — big image with name overlay, group-colored name
+function tileHtml(id, name, imgUrl, group, dataAttr) {
+    var nc = groupColor(group);
+    var nameStyle = ' style="color:'+nc+'"';
     var inner;
     if (imgUrl) {
-        inner = '<img class="tile-img" src="'+esc(imgUrl)+'" alt="" onerror="this.parentNode.innerHTML=\'<div class=tile-noimg><span class=tile-initial>'+esc(name.charAt(0))+'</span></div><div class=tile-name>'+esc(name)+'</div>\'">';
+        inner = '<img class="tile-img" src="'+esc(imgUrl)+'" alt="" onerror="this.parentNode.innerHTML=\'<div class=tile-noimg><span class=tile-initial>'+esc(name.charAt(0))+'</span></div><div class=tile-name'+nameStyle.replace(/"/g,'&quot;')+'>'+esc(name)+'</div>\'">';
     } else {
         inner = '<div class="tile-noimg"><span class="tile-initial">'+esc(name.charAt(0))+'</span></div>';
     }
-    return '<div class="tile" '+dataAttr+'>' + inner + '<div class="tile-name">'+esc(name)+'</div></div>';
+    return '<div class="tile" '+dataAttr+'>' + inner + '<div class="tile-name"'+nameStyle+'>'+esc(name)+'</div></div>';
 }
 
 /* ── WHO SAID IT — Metro tiles ── */
@@ -305,7 +320,7 @@ function loadWSI(){
         h+='<div class="tiles">';
         d.options.forEach(function(o){
             var img = o.square_image || o.rectangle_gif || o.avatar_url;
-            h += tileHtml(o.id, o.name, img, 'data-id="'+esc(o.id)+'"');
+            h += tileHtml(o.id, o.name, img, o.group, 'data-id="'+esc(o.id)+'"');
         });
         h+='</div>'+rfHtml()+'</div>';
         $ga.innerHTML=h;
