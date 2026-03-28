@@ -504,7 +504,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 (function(){
 'use strict';
 var API = window.QUOTE_GAME_API || 'https://imagehut.ch:8943';
-var _lk=false,_gm='dash',_streak=0;
+var _lk=false,_gm='dash',_streak=0,_sessionScore=0;
 var $ga=document.getElementById('ga');
 
 // ── Per-game localStorage scores ──
@@ -515,7 +515,7 @@ function getScore(gm){var s=loadScores();return s[gm]||{score:0,best:0,streak:0,
 function setScore(gm,data){var s=loadScores();s[gm]=data;saveScores(s);}
 function recordResult(gm,correct){
     var s=getScore(gm);
-    if(correct){s.score++;_streak++;} else {_streak=0;}
+    if(correct){s.score++;_streak++;_sessionScore++;} else {_streak=0;}
     s.streak=_streak;
     if(_streak>s.best)s.best=_streak;
     s.played++;
@@ -567,7 +567,7 @@ function backHtml(){
     var s=getScore(_gm);
     return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;flex-shrink:0">'
         +'<button class="back-btn" style="margin-bottom:0" onclick="goHome()">&#x2190; Games</button>'
-        +'<div class="score-bar" id="score-bar"><span class="sb-item">Score <b style="color:var(--green)">'+s.score+'</b></span>'
+        +'<div class="score-bar" id="score-bar"><span class="sb-item">Score <b style="color:var(--green)">'+_sessionScore+'</b></span>'
         +'<span class="sb-item">Streak <b style="color:var(--orange)">'+_streak+'</b></span>'
         +'<span class="sb-item">Best <b style="color:var(--pink)">'+s.best+'</b></span></div></div>';
 }
@@ -582,8 +582,8 @@ function mlBackHtml(){
 function updateScoreBar(s){
     var bar=document.getElementById('score-bar');
     if(!bar)return;
-    bar.innerHTML='<span class="sb-item">Score <b style="color:var(--green)">'+s.score+'</b></span>'
-        +'<span class="sb-item">Streak <b style="color:var(--orange)">'+s.streak+'</b></span>'
+    bar.innerHTML='<span class="sb-item">Score <b style="color:var(--green)">'+_sessionScore+'</b></span>'
+        +'<span class="sb-item">Streak <b style="color:var(--orange)">'+_streak+'</b></span>'
         +'<span class="sb-item">Best <b style="color:var(--pink)">'+s.best+'</b></span>';
 }
 function rfHtml(){return '<div class="rf"><div class="ra"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div><button class="nb">Next Round</button></div>';}
@@ -702,8 +702,7 @@ function loadQM(){
 var _qcCharId = null;
 
 function loadQC(){
-    // Reset streak when choosing a new character
-    _streak=0;
+    _streak=0; _sessionScore=0;
     // Show character picker first
     _lk=false;
     $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
@@ -1142,7 +1141,7 @@ function loadDash() {
 /* ── Round Router ── */
 window.goHome = function() { _gm = 'dash'; loadRound(); };
 window.loadRound = function() {
-    _streak=0;
+    _streak=0; _sessionScore=0;
     if (_gm === 'dash') loadDash();
     else if (_gm === 'wsi') loadWSI();
     else if (_gm === 'qm') loadQM();
