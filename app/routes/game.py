@@ -327,14 +327,13 @@ async def game_millionaire(
         if len(with_group) < 1:
             return None
         char = random.choice(with_group)
-        groups = list({c["group_name"] for c in with_group if c["group_name"]})
-        if len(groups) < 4:
+        correct_group = char["group_name"].strip()
+        groups = list({c["group_name"].strip() for c in with_group if c["group_name"]} - {correct_group})
+        if len(groups) < 3:
             return None
-        correct_group = char["group_name"]
-        wrong_groups = [g for g in groups if g != correct_group]
-        random.shuffle(wrong_groups)
+        random.shuffle(groups)
         opts = [{"id": correct_group, "text": correct_group}]
-        for g in wrong_groups[:3]:
+        for g in groups[:3]:
             opts.append({"id": g, "text": g})
         random.shuffle(opts)
         return {"question": f"What group is {char['name']} in?", "options": opts, "answer_id": correct_group, "level": level, "char_image": _img(char)}
@@ -345,11 +344,23 @@ async def game_millionaire(
         if len(with_code) < 4:
             return None
         correct = random.choice(with_code)
-        wrong = [c for c in with_code if c["id"] != correct["id"]]
-        random.shuffle(wrong)
-        opts = [{"id": correct["id"], "text": correct["codename"]}]
-        for w in wrong[:3]:
-            opts.append({"id": w["id"], "text": w["codename"]})
+        correct_code = correct["codename"].strip()
+        # Exclude characters with the same codename to avoid duplicate option text
+        wrong = [c for c in with_code if c["id"] != correct["id"] and c["codename"].strip() != correct_code]
+        # Also deduplicate by codename text
+        seen_codes = {correct_code}
+        deduped = []
+        for w in wrong:
+            wc = w["codename"].strip()
+            if wc not in seen_codes:
+                seen_codes.add(wc)
+                deduped.append(w)
+        if len(deduped) < 3:
+            return None
+        random.shuffle(deduped)
+        opts = [{"id": correct["id"], "text": correct_code}]
+        for w in deduped[:3]:
+            opts.append({"id": w["id"], "text": w["codename"].strip()})
         random.shuffle(opts)
         return {"question": f"What is {correct['name']}'s codename?", "options": opts, "answer_id": correct["id"], "level": level, "char_image": _img(correct)}
 
@@ -377,16 +388,16 @@ async def game_millionaire(
         if len(with_aff) < 4:
             return None
         correct = random.choice(with_aff)
-        affs = list({c["affiliation"] for c in with_aff if c["affiliation"]})
-        if len(affs) < 4:
+        correct_aff = correct["affiliation"].strip()
+        wrong_affs = list({c["affiliation"].strip() for c in with_aff if c["affiliation"]} - {correct_aff})
+        if len(wrong_affs) < 3:
             return None
-        wrong_affs = [a for a in affs if a != correct["affiliation"]]
         random.shuffle(wrong_affs)
-        opts = [{"id": correct["affiliation"], "text": correct["affiliation"]}]
+        opts = [{"id": correct_aff, "text": correct_aff}]
         for a in wrong_affs[:3]:
             opts.append({"id": a, "text": a})
         random.shuffle(opts)
-        return {"question": f"What is {correct['name']}'s affiliation?", "options": opts, "answer_id": correct["affiliation"], "level": level, "char_image": _img(correct)}
+        return {"question": f"What is {correct['name']}'s affiliation?", "options": opts, "answer_id": correct_aff, "level": level, "char_image": _img(correct)}
 
     def q_species():
         """What species is this character?"""
@@ -394,16 +405,16 @@ async def game_millionaire(
         if len(with_sp) < 4:
             return None
         correct = random.choice(with_sp)
-        species_list = list({c["species"] for c in with_sp if c["species"]})
-        if len(species_list) < 4:
+        correct_sp = correct["species"].strip()
+        wrong_sp = list({c["species"].strip() for c in with_sp if c["species"]} - {correct_sp})
+        if len(wrong_sp) < 3:
             return None
-        wrong_sp = [s for s in species_list if s != correct["species"]]
         random.shuffle(wrong_sp)
-        opts = [{"id": correct["species"], "text": correct["species"]}]
+        opts = [{"id": correct_sp, "text": correct_sp}]
         for s in wrong_sp[:3]:
             opts.append({"id": s, "text": s})
         random.shuffle(opts)
-        return {"question": f"What species is {correct['name']}?", "options": opts, "answer_id": correct["species"], "level": level, "char_image": _img(correct)}
+        return {"question": f"What species is {correct['name']}?", "options": opts, "answer_id": correct_sp, "level": level, "char_image": _img(correct)}
 
     def q_most_quotes():
         """Who has the most/fewest quotes among these characters?"""
