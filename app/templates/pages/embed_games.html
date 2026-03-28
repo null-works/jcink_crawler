@@ -702,6 +702,8 @@ function loadQM(){
 var _qcCharId = null;
 
 function loadQC(){
+    // Reset streak when choosing a new character
+    _streak=0;
     // Show character picker first
     _lk=false;
     $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
