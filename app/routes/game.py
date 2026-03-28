@@ -48,9 +48,9 @@ async def _characters_with_quotes(db: aiosqlite.Connection) -> list[dict]:
 
 
 async def _random_quote(db: aiosqlite.Connection) -> dict | None:
-    """Get one random quote row as a dict."""
+    """Get one random quote row as a dict, with source thread info."""
     cursor = await db.execute(
-        "SELECT id, character_id, quote_text FROM quotes ORDER BY RANDOM() LIMIT 1"
+        "SELECT id, character_id, quote_text, source_thread_id, source_thread_title FROM quotes ORDER BY RANDOM() LIMIT 1"
     )
     row = await cursor.fetchone()
     return dict(row) if row else None
@@ -94,9 +94,16 @@ async def game_who_said_it(
     options = [correct] + wrong
     random.shuffle(options)
 
+    # Build thread URL if source thread is known
+    thread_id = quote.get("source_thread_id")
+    thread_title = quote.get("source_thread_title")
+    thread_url = f"{settings.forum_base_url}/index.php?showtopic={thread_id}" if thread_id else None
+
     return {
         "quote": quote["quote_text"],
         "quote_id": quote["id"],
+        "source_thread_title": thread_title,
+        "source_thread_url": thread_url,
         "options": [
             {
                 "id": c["id"], "name": c["name"], "avatar_url": c["avatar_url"],

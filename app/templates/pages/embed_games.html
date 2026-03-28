@@ -31,12 +31,6 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 }
 .top h1 { font-size: 0.95rem; font-weight: 700; }
 .top h1 .a { color: var(--purple); }
-.top .badge {
-    font-size: 0.48rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-    background: linear-gradient(135deg, var(--pink), var(--purple));
-    color: var(--bg); padding: 0.1em 0.35em; border-radius: 3px;
-    vertical-align: middle; margin-left: 0.25rem;
-}
 .scores { display: flex; gap: 0.6rem; font-size: 0.72rem; flex-shrink: 0; }
 .scores .l { color: var(--comment); }
 .scores .v { font-weight: 700; margin-left: 0.1rem; }
@@ -187,6 +181,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 .rm.show { opacity: 1; } .rm.ok { color: var(--green); } .rm.no { color: var(--red); }
 .rd { font-size: 0.7rem; color: var(--comment); margin-top: 0.05rem; opacity: 0; transition: opacity 0.2s 0.05s; }
 .rd.show { opacity: 1; }
+.rd a { color: var(--cyan); text-decoration: none; }
+.rd a:hover { text-decoration: underline; }
 .sk { font-size: 0.68rem; font-weight: 600; color: var(--orange); margin-top: 0.05rem; opacity: 0; transition: opacity 0.2s 0.1s; }
 .sk.show { opacity: 1; animation: bIn 0.3s ease-out; }
 @keyframes bIn { 0%{transform:scale(0.5);opacity:0} 70%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
@@ -224,7 +220,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 <canvas id="confetti-canvas"></canvas>
 <div class="wrap">
     <div class="top">
-        <h1>How Well Do You <span class="a">Really</span> Know Them?<span class="badge">Apr 1</span></h1>
+        <h1>How Well Do You <span class="a">Really</span> Know Them?</h1>
         <div class="scores">
             <span><span class="l">Score</span> <span class="v v-s" id="sc">0</span></span>
             <span><span class="l">Streak</span> <span class="v v-k" id="sk">0</span></span>
@@ -278,10 +274,11 @@ function apiRetry(p,fallbackMsg){
     });
 }
 function upd(ok){if(ok){_sc++;_sk++;}else _sk=0;if(_sk>_bs)_bs=_sk;$sc.textContent=_sc;$sk.textContent=_sk;$bs.textContent=_bs;if(_sk>0&&ok){$sk.classList.remove('fire');void $sk.offsetWidth;$sk.classList.add('fire');}}
-function sRes(ok,det){
+function sRes(ok,det,detHtml){
     var ra=document.querySelector('.ra'),m=ra.querySelector('.rm'),d=ra.querySelector('.rd'),s=ra.querySelector('.sk');
     m.textContent=ok?'Correct!':'Nope!'; m.className='rm show '+(ok?'ok':'no');
-    if(det){d.textContent=det;d.className='rd show';}
+    if(detHtml){d.innerHTML=detHtml;d.className='rd show';}
+    else if(det){d.textContent=det;d.className='rd show';}
     if(ok&&_sk>=3){var ms=['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!','Beyond mortal comprehension!'];s.textContent=_sk+' in a row! '+(ms[_sk]||_sk+'-streak!');s.className='sk show';boom(_sk>=5?50:25);}else if(ok)boom(10);
     document.querySelector('.nb').classList.add('show');
 }
@@ -324,7 +321,13 @@ function loadWSI(){
                 });
                 upd(ok);
                 var who=d.options.find(function(o){return o.id===aid;});
-                sRes(ok,ok?null:'It was '+who.name);
+                var detText=ok?null:'It was '+who.name;
+                var detHtml=null;
+                if(d.source_thread_title&&d.source_thread_url){
+                    var src='from <a href="'+esc(d.source_thread_url)+'" target="_blank">'+esc(d.source_thread_title)+'</a>';
+                    detHtml=ok?src:esc('It was '+who.name)+' &mdash; '+src;
+                }
+                sRes(ok,detText,detHtml);
             });
         });
         document.querySelector('.nb').addEventListener('click',loadRound);
