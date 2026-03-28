@@ -848,8 +848,26 @@ function mlUsePAF() {
         "I'm gonna say " + friendPick + "."
     ];
     var msg = phrases[Math.random() * phrases.length | 0];
-    var optsEl = document.getElementById('ml-opts');
-    optsEl.insertAdjacentHTML('beforebegin', '<div class="qblock" style="margin-bottom:0.25rem;border-color:var(--cyan)"><div class="qlabel" style="color:var(--cyan)">Phone a Friend</div><div class="qtext" style="font-size:0.8rem">' + esc(msg) + '</div></div>');
+    mlInjectQRight('ml-paf', '&#x1F4DE;', msg, 'var(--cyan)');
+}
+
+function mlInjectQRight(id, icon, msg, color) {
+    // Remove any previous injection (8-ball or phone-a-friend)
+    ['ml-8ball','ml-paf'].forEach(function(eid) { var el=document.getElementById(eid); if(el) el.remove(); });
+    var qblock = $ga.querySelector('.qblock');
+    if (!qblock) return;
+    if (!qblock.querySelector('#ml-qwrap')) {
+        var inner = qblock.innerHTML;
+        qblock.innerHTML = '<div id="ml-qwrap" style="flex:1;min-width:0">' + inner + '</div>';
+    }
+    qblock.style.display = 'flex';
+    qblock.style.alignItems = 'center';
+    qblock.style.gap = '0.6rem';
+    var borderColor = color || 'var(--current)';
+    qblock.insertAdjacentHTML('beforeend',
+        '<div id="'+id+'" style="flex:0 0 40%;display:flex;align-items:center;gap:0.5rem;padding-left:0.5rem;border-left:1px solid '+borderColor+';animation:fi 0.3s ease-out">'
+        + '<div style="font-size:2rem;line-height:1;flex-shrink:0">'+icon+'</div>'
+        + '<div style="font-size:0.85rem;color:'+borderColor+';font-style:italic">' + esc(msg) + '</div></div>');
 }
 
 function mlUse8Ball() {
@@ -863,25 +881,7 @@ function mlUse8Ball() {
         'Outlook not so good.', 'Very doubtful.'
     ];
     var msg = responses[Math.random() * responses.length | 0];
-    // Remove any previous 8-ball response
-    var prev = document.getElementById('ml-8ball');
-    if (prev) prev.remove();
-    // Wrap the qblock content in a flex row with the 8-ball on the right
-    var qblock = $ga.querySelector('.qblock');
-    if (qblock) {
-        // Wrap existing content if not already wrapped
-        if (!qblock.querySelector('#ml-qwrap')) {
-            var inner = qblock.innerHTML;
-            qblock.innerHTML = '<div id="ml-qwrap" style="flex:1;min-width:0;transition:flex 0.3s">' + inner + '</div>';
-        }
-        qblock.style.display = 'flex';
-        qblock.style.alignItems = 'center';
-        qblock.style.gap = '0.6rem';
-        qblock.insertAdjacentHTML('beforeend',
-            '<div id="ml-8ball" style="flex:0 0 40%;display:flex;align-items:center;gap:0.5rem;padding-left:0.5rem;border-left:1px solid var(--current);animation:fi 0.3s ease-out">'
-            + '<div style="font-size:2rem;line-height:1;flex-shrink:0">&#x1F3B1;</div>'
-            + '<div style="font-size:0.85rem;color:var(--comment);font-style:italic">' + esc(msg) + '</div></div>');
-    }
+    mlInjectQRight('ml-8ball', '&#x1F3B1;', msg, 'var(--comment)');
 }
 
 function mlCheat() {
