@@ -16,8 +16,9 @@ If you are making any commit that touches code under `app/`, `scripts/`, `cli.py
 FastAPI web crawler and caching service for a single JCink forum (`therewasanidea.jcink.net`). Replaces heavy client-side JS scraping with server-side crawling — serves profile fields, categorized threads, last-poster info, and dialog quotes via a REST API and an HTMX dashboard.
 
 - **Stack:** Python 3.11+, FastAPI, aiosqlite (SQLite), httpx, BeautifulSoup4, Jinja2/HTMX, Docker
-- **Deployment:** Single instance on `imagehut.ch:8943`, Docker Compose, SQLite persisted to `/opt/jcink-crawler/data/`
+- **Deployment:** Single instance on `imagehut.ch:8943` (VPSdime), Docker Compose, SQLite persisted to `./data/`
 - **Version:** `app/config.py` → `APP_VERSION`
+- **Proxy:** All server-side JCink requests route through a Cloudflare Worker (`cloudflare-worker/`) to avoid IP bans
 
 ## Architecture
 
@@ -27,31 +28,65 @@ Browser / CLI / Forum Theme JS
     ▼
 FastAPI (app/main.py)
 ├── Routes: character.py (REST API + webhooks), dashboard.py (HTML + HTMX partials), game.py (quote games)
-├── Services: crawler.py (orchestration), fetcher.py (HTTP + auth), parser.py (HTML extraction), scheduler.py (periodic jobs)
+├── Services: crawler.py (orchestration), fetcher.py (HTTP + CF Worker proxy), parser.py (HTML extraction), acp_client.py (ACP SQL dump)
 ├── Models: operations.py (DB CRUD), character.py (Pydantic schemas), dashboard_queries.py (search/pagination)
-└── Database: database.py (SQLite schema, aiosqlite)
+└── Database: database.py (SQLite schema, aiosqlite, WAL mode, busy_timeout)
 ```
 
-### Data flow
+### Data flow — ACP Sync (primary, one-click)
 
-1. **Webhook** — Forum theme JS sends `POST /api/webhook/activity` on new_post/new_topic/profile_edit
-2. **Background task** queued with configurable delay (`webhook_crawl_delay_seconds`)
-3. **Crawler** fetches JCink pages → **Parser** extracts data → **Operations** writes to SQLite
-4. **Dashboard/API** serves cached data from SQLite
-5. **Scheduler** runs periodic full crawls as a safety net
+The ACP Sync is the primary data pipeline. One button click does everything:
 
-### Three crawl triggers
+```
+Dashboard "ACP Sync" button
+    │
+    ▼
+Phase 1: ACP Dump ──→ CF Worker ──→ JCink ACP ──→ 145 pages ──→ SQL file (~41MB)
+    │
+    ▼
+Phase 2: Parse SQL ──→ Extract topics, posts (with bodies), forums, members
+    │
+    ▼
+Phase 3: Match ──→ Cross-reference posts to tracked characters
+    │
+    ▼
+Phase 4: DB Write ──→ Upsert threads, link characters, store posts
+    │
+    ▼
+Phase 5: Quotes ──→ Extract dialog quotes directly from post bodies in SQL dump
+    │
+    ▼
+Done (~80 seconds total)
+```
 
-| Trigger | Entry point | Notes |
+**Quote extraction happens from the SQL dump itself** — no HTTP thread-page fetching required. The `extract_quotes_from_post_body()` function in `parser.py` parses bold/strong and color-styled dialog from raw post HTML stored in the dump.
+
+### Other data paths
+
+| Path | Purpose | Notes |
 |---|---|---|
-| Webhook (real-time) | `POST /api/webhook/activity` | Theme JS fires on form submit |
-| Scheduled (periodic) | `scheduler.py` jobs | Threads 60min, profiles 24h, quotes 30min |
-| Manual (dashboard/CLI) | `POST /api/crawl/trigger` | Admin-triggered |
+| **Browser Sync** | Profile data (avatars, custom fields, power grids) | Runs from user's browser, bypasses server IP |
+| **Webhook** | Real-time updates on new posts/profile edits | Theme JS fires on form submit |
+| **HTTP Quote Crawl (Legacy)** | Fetches thread pages via HTTP for quote extraction | Slow (~45min), available as manual fallback button |
+
+### Cloudflare Worker Proxy
+
+All server-side requests to JCink route through a Cloudflare Worker to avoid IP bans:
+
+```
+Server (VPSdime) ──→ CF Worker (cloudflare-worker.storycraftink-sys.workers.dev) ──→ JCink
+```
+
+- Config: `CF_WORKER_URL` and `CF_WORKER_KEY` in `docker-compose.yml`
+- Worker code: `cloudflare-worker/worker.js`
+- Setup guide: `cloudflare-worker/SETUP.md`
+- The Worker streams response bodies (no buffering) to handle 41MB+ SQL files
+- **Do NOT run Tor or similar on VPSdime** — it's forbidden by their TOS and will get the server suspended
 
 ## Development
 
 ```bash
-# Run tests (194+ tests, asyncio_mode=auto, in-memory SQLite, mocked HTTP)
+# Run tests (asyncio_mode=auto, in-memory SQLite, mocked HTTP)
 pytest
 
 # Run server locally
@@ -59,7 +94,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # Run a specific test file or class
 pytest tests/test_parser.py
-pytest tests/test_operations.py::TestAddQuote
+pytest tests/test_acp_client.py::TestHtmlBodyParsing
 ```
 
 ## Key Files
@@ -68,19 +103,31 @@ pytest tests/test_operations.py::TestAddQuote
 |---|---|
 | `app/config.py` | Version, Pydantic settings (all env-var driven) |
 | `app/main.py` | FastAPI entry, lifespan events, router mounting |
-| `app/database.py` | SQLite schema, `init_db()` |
-| `app/services/crawler.py` | Crawl orchestration — `crawl_character_threads()`, `crawl_single_thread()`, `crawl_quotes_only()`, `crawl_recent_threads()` |
-| `app/services/parser.py` | HTML parsing — pagination, profiles, quotes, posts, search results |
-| `app/services/fetcher.py` | HTTP client (httpx), auth, rate limiting, concurrency semaphore |
-| `app/services/scheduler.py` | APScheduler periodic jobs |
+| `app/database.py` | SQLite schema, `init_db()`, `connect_db()` (WAL + busy_timeout) |
+| `app/services/crawler.py` | Crawl orchestration — `sync_posts_from_acp()`, `process_acp_raw_data()`, `crawl_quotes_only()`, `crawl_character_threads()` |
+| `app/services/acp_client.py` | ACP SQL dump client, SQL parser (`parse_sql_dump`, `_parse_sql_values`), record extractors |
+| `app/services/parser.py` | HTML parsing — pagination, profiles, quotes (`extract_quotes_from_post_body`), posts, search results |
+| `app/services/fetcher.py` | HTTP client (httpx), CF Worker proxy routing, auth, rate limiting |
+| `app/services/scheduler.py` | Manual crawl trigger functions (no automatic scheduling) |
 | `app/models/operations.py` | All database CRUD (upsert, link, query) |
 | `app/routes/character.py` | REST API + webhook endpoint |
 | `app/routes/dashboard.py` | HTMX dashboard routes + HTML rendering |
+| `cloudflare-worker/worker.js` | CF Worker proxy — streams requests to JCink |
 | `cli.py` | Rich-powered CLI client |
 
 ## JCink-Specific Knowledge
 
 These are platform behaviors that have caused bugs — preserve this knowledge.
+
+### SQL Dump Parsing
+
+- JCink's ACP SQL dump uses `\'` (backslash-quote) for escaping single quotes in string values
+- **Post bodies contain unescaped `'` in HTML attributes** (e.g. `border='0'`) — this is a JCink bug that causes the SQL parser to split rows into too many columns
+- ~80% of post rows parse with wrong column counts due to this. The `extract_post_records()` and `extract_topic_records()` functions handle this by reading `thread_id` and `forum_id` from the END of the row (count-from-end workaround)
+- **Do NOT replace `\'` with `'` before parsing** — it breaks quote delimiter detection in the CSV parser. The unescape happens after parsing, per-value.
+- JCink move-redirect stubs have titles starting with `From:` — filter these out in `extract_topic_records()`
+- The `post_topic_id` auto-detection can pick a boolean flag column (cardinality ~0.002). A sanity check rejects columns with <5% distinct values and falls back to the default (column 12).
+- `parse_sql_dump()` runs in a thread executor (`run_in_executor`) to avoid blocking the async event loop during the ~8-second parse of 41MB
 
 ### Pagination
 
@@ -119,19 +166,11 @@ These are platform behaviors that have caused bugs — preserve this knowledge.
 5. **Silent exception swallowing** — `add_quote` in operations.py catches all exceptions and returns `False`
 6. **Inconsistent commit behavior** — some operations.py functions call `db.commit()` internally, others don't
 7. **Raw SQL in route handler** — `/api/status` has 5 raw queries in the route instead of operations.py
-8. **Race condition on `avatar_cache`** — shared dict across concurrent coroutines causes duplicate fetches
-9. **No WAL mode or foreign key enforcement** in database.py
-10. **Scheduler jobs can overlap** — thread/profile/discovery jobs run concurrently, competing for resources
-
-### Test suite (B+ overall)
-
-- **Strengths:** Good breadth, realistic HTML fixtures, proper async testing
-- **Gaps:** `discover_characters()`, `parse_member_list()`, `fetch_pages_concurrent()` untested; shallow API happy-path coverage; duplicate autouse fixtures in conftest vs test files
-- **Weak assertions** in test_cli.py (OR-conditions that pass trivially)
+8. **~80% of post rows mis-parsed** — SQL parser can't handle unescaped HTML quotes in post bodies. Count-from-end workaround handles thread_id/forum_id but post body reconstruction uses lossy comma-joining.
 
 ### Docker/deployment
 
-- Container runs as root (no non-root user in Dockerfile)
 - No `.dockerignore` (`.git/`, `.env`, `__pycache__` may leak into images)
 - Test deps (`pytest`) installed in production image
 - `deploy.sh` uses `--no-cache` unconditionally
+- Debug files (`chr4.html`, `debug_snapshot.html`, `jcink_crawler.zip`) tracked in git

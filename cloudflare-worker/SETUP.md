@@ -4,42 +4,34 @@ Routes all server-side JCink requests through Cloudflare so your server IP
 never touches JCink directly. Free tier (100,000 requests/day) is plenty.
 
 Everything below happens in your browser at [dash.cloudflare.com](https://dash.cloudflare.com/)
-and in your `.env` file.
+and in your `docker-compose.yml`.
 
 ---
 
-## 1. Create the Worker from GitHub
+## 1. Create the Worker
 
 1. Log into [dash.cloudflare.com](https://dash.cloudflare.com/)
 2. In the left sidebar, click **Workers & Pages**
 3. Click **Create application** (blue button, top right)
-4. Click **Connect to GitHub**
-5. Authorize Cloudflare if prompted, then select the `null-works/jcink_crawler` repository
-6. On the **Create a Worker** page, fill in:
-   - Change the root directory from `/` to `/cloudflare-worker`
-   - API token: leave as-is (a new token will be created automatically)
-   - Variable name: `CF_PROXY_KEY`
-   - Variable value: any long random string (use a password manager)
-   - Check the **Encrypt** checkbox
-7. Click **Deploy**
+4. Click **Start with Hello World!** → **Get started**
+5. Name it (e.g. `cloudflare-worker`)
+6. Click **Deploy**, then **Edit Code**
+7. Delete the default code, paste the contents of `cloudflare-worker/worker.js`
+8. Click **Save and Deploy**
 
-Keep a copy of the variable value — you need it for step 2.
+## 2. Add the secret key
 
-Your Worker URL will be shown after deploy, something like:
-`https://jcink-proxy.storycraftink-sys.workers.dev`
+1. Go to your Worker → **Settings** → **Variables and Secrets**
+2. Click **Add**, change type to **Secret**
+3. Name: `CF_PROXY_KEY`, Value: any long random string
+4. Click **Deploy**
 
-Future pushes to the repo auto-deploy the Worker.
+Keep a copy of the value.
 
-## 2. Configure your server
+## 3. Configure your server
 
-Add two lines to your `.env` file on the VPS:
-
-```
-CF_WORKER_URL=https://jcink-proxy.storycraftink-sys.workers.dev
-CF_WORKER_KEY=<the-value-you-entered-above>
-```
-
-Restart the container. Done.
+The `CF_WORKER_URL` and `CF_WORKER_KEY` are set in `docker-compose.yml` under `environment:`.
+Update them to match your Worker URL and secret, then restart the container.
 
 ---
 
@@ -48,27 +40,18 @@ Restart the container. Done.
 In the container logs you should see:
 
 ```
-[Fetcher] Using Cloudflare Worker proxy: https://jcink-proxy.storycraftink-sys.workers.dev
+[Fetcher] Using Cloudflare Worker proxy: https://your-worker.workers.dev
 ```
-
-You can also test by pasting this into your browser (replace YOUR_KEY):
-```
-https://jcink-proxy.storycraftink-sys.workers.dev/?key=YOUR_KEY&url=https://therewasanidea.jcink.net/index.php
-```
-
-If you see JCink HTML, it's working.
-
----
 
 ## Disabling it
 
-Remove or blank out `CF_WORKER_URL` and `CF_WORKER_KEY` in `.env` and restart.
+Remove or blank out `CF_WORKER_URL` and `CF_WORKER_KEY` in `docker-compose.yml` and restart.
 The server falls back to direct connections automatically.
 
 ## Updating the Worker code
 
-Just push changes to `cloudflare-worker/worker.js` in your repo.
-Cloudflare picks them up automatically. No server restart needed.
+Open your Worker in the Cloudflare dashboard → **Edit Code** → paste the new
+version → **Save and Deploy**. No server restart needed.
 
 ## Free tier limits
 
@@ -78,6 +61,12 @@ Cloudflare picks them up automatically. No server restart needed.
 | CPU per request  | 10ms       | ~1-2ms         |
 | Script size      | 1 MB       | ~2 KB          |
 
+## Important: response streaming
+
+The Worker uses `return new Response(resp.body, ...)` to stream response bodies
+instead of buffering with `await resp.text()`. This is critical for the 41MB+
+SQL file downloads — buffering would exceed the Worker's 128MB memory limit.
+
 ---
 
-Sources: [Cloudflare Workers Advanced Setups](https://developers.cloudflare.com/workers/ci-cd/builds/advanced-setups/), [Workers Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
+Sources: [Cloudflare Workers Limits](https://developers.cloudflare.com/workers/platform/limits/), [Workers Streams API](https://developers.cloudflare.com/workers/runtime-apis/streams/)

@@ -8,3 +8,8 @@ data/
 dist/
 build/
 .venv/
+
+# Debug/snapshot files
+debug_snapshot.html
+chr4.html
+*.zip
