@@ -746,9 +746,9 @@ function mlReveal() {
         _mlLevel++;
         if (_mlLevel >= 15) {
             _mlOver = true;
-            setTimeout(function() { mlShowGameOver('YOU WON THE MILLION!', '$1,000,000', false, revealImg); boom(80); }, 1200);
+            setTimeout(function() { if (_gm==='ml') { mlShowGameOver('YOU WON THE MILLION!', '$1,000,000', false, revealImg); boom(80); } }, 1200);
         } else {
-            setTimeout(function() { mlLoadQuestion(); }, 1500);
+            setTimeout(function() { if (_gm==='ml') mlLoadQuestion(); }, 1500);
         }
     } else {
         rm.textContent = 'Wrong!'; rm.className = 'rm show no';
@@ -758,7 +758,7 @@ function mlReveal() {
         for (var i = ML_SAFE.length - 1; i >= 0; i--) {
             if (_mlLevel > ML_SAFE[i]) { safePrize = ML_PRIZES[ML_SAFE[i]]; break; }
         }
-        setTimeout(function() { mlShowGameOver('You leave with ' + safePrize + '.', safePrize, true, revealImg); }, 2000);
+        setTimeout(function() { if (_gm==='ml') mlShowGameOver('You leave with ' + safePrize + '.', safePrize, true, revealImg); }, 2000);
     }
 }
 
