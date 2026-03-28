@@ -19,6 +19,13 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
 body { font-family: var(--font); background: var(--bg); color: var(--fg); line-height: 1.4; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-darker); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--comment); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--purple); }
+* { scrollbar-width: thin; scrollbar-color: var(--comment) var(--bg-darker); }
 #confetti-canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1000; }
 
 /* ── Full-height flex layout — fills entire frame ── */
