@@ -461,12 +461,21 @@ function sRes(ok,det,detHtml){
     document.querySelector('.nb').classList.add('show');
 }
 function backHtml(){
+    if (_gm === 'ml') return mlBackHtml();
     var s=getScore(_gm);
     return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;flex-shrink:0">'
         +'<button class="back-btn" style="margin-bottom:0" onclick="goHome()">&#x2190; Games</button>'
         +'<div class="score-bar" id="score-bar"><span class="sb-item">Score <b style="color:var(--green)">'+s.score+'</b></span>'
         +'<span class="sb-item">Streak <b style="color:var(--orange)">'+_streak+'</b></span>'
         +'<span class="sb-item">Best <b style="color:var(--pink)">'+s.best+'</b></span></div></div>';
+}
+function mlBackHtml(){
+    var s=getScore('ml');
+    var topPrize = s.topPrize || '$0';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;flex-shrink:0">'
+        +'<button class="back-btn" style="margin-bottom:0" onclick="goHome()">&#x2190; Games</button>'
+        +'<div class="score-bar" id="score-bar"><span class="sb-item">Games <b style="color:var(--green)">'+(s.played||0)+'</b></span>'
+        +'<span class="sb-item">Top Prize <b style="color:var(--orange)">'+topPrize+'</b></span></div></div>';
 }
 function updateScoreBar(s){
     var bar=document.getElementById('score-bar');
@@ -767,10 +776,20 @@ function mlReveal() {
 }
 
 function mlShowGameOver(msg, prize, wasWrong, charImg) {
+    // Record top prize in localStorage
+    var s = getScore('ml');
+    s.played = (s.played || 0) + 1;
+    var prizeIdx = ML_PRIZES.indexOf(prize);
+    var topIdx = ML_PRIZES.indexOf(s.topPrize || '$0');
+    if (prizeIdx > topIdx) s.topPrize = prize;
+    setScore('ml', s);
+
+    var topPrize = s.topPrize || '$0';
     var h = '<div class="gi"><div class="ml-over">';
     if (charImg) h += charImg.replace('ml-reveal-img', 'ml-over-img' + (wasWrong ? ' lost' : ''));
     h += '<div class="ml-over-prize' + (wasWrong ? ' lost' : '') + '">' + esc(prize) + '</div>';
     h += '<div class="ml-over-msg">' + esc(msg) + '</div>';
+    if (topPrize !== '$0') h += '<div style="font-size:0.7rem;color:var(--comment);margin-bottom:0.5rem">Top winnings: <b style="color:var(--orange)">' + esc(topPrize) + '</b></div>';
     h += '<button class="ml-play-btn" onclick="mlStartGame()">Play Again</button>';
     h += '</div></div>';
     $ga.innerHTML = h;
@@ -918,7 +937,10 @@ function loadDash() {
         h += '<div class="dash-card-icon">'+g.icon+'</div>';
         h += '<div class="dash-card-title">'+g.title+'</div>';
         h += '<div class="dash-card-desc">'+g.desc+'</div>';
-        if(gs.played>0) h += '<div style="font-size:0.58rem;color:var(--comment);margin-top:0.2rem">Score: <b style="color:var(--green)">'+gs.score+'</b> &middot; Best streak: <b style="color:var(--pink)">'+gs.best+'</b></div>';
+        if(gs.played>0) {
+            if(g.id==='ml') h += '<div style="font-size:0.58rem;color:var(--comment);margin-top:0.2rem">Games: <b style="color:var(--green)">'+gs.played+'</b> &middot; Top prize: <b style="color:var(--orange)">'+(gs.topPrize||'$0')+'</b></div>';
+            else h += '<div style="font-size:0.58rem;color:var(--comment);margin-top:0.2rem">Score: <b style="color:var(--green)">'+gs.score+'</b> &middot; Best streak: <b style="color:var(--pink)">'+gs.best+'</b></div>';
+        }
         h += '</div>';
     });
     h += '</div></div>';
