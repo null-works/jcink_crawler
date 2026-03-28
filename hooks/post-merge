@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Sync nginx config after git pull if it changed
+
+NGINX_CONF="/etc/nginx/sites-enabled/jcink-crawler.conf"
+
+if git diff-tree -r --name-only ORIG_HEAD HEAD | grep -q '^nginx-crawler.conf$'; then
+    echo "  [post-merge] nginx-crawler.conf changed, updating..."
+    sudo cp nginx-crawler.conf "$NGINX_CONF"
+    if sudo nginx -t 2>/dev/null; then
+        sudo systemctl reload nginx
+        echo "  [post-merge] Nginx reloaded."
+    else
+        echo "  [post-merge] ERROR: nginx config test failed! Fix manually."
+    fi
+fi

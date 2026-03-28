@@ -53,31 +53,81 @@ async def get_character(db: aiosqlite.Connection, character_id: str) -> Characte
 
 
 async def get_all_characters(db: aiosqlite.Connection) -> list[CharacterSummary]:
-    """Get all tracked characters, excluding filtered names."""
+    """Get all tracked characters, excluding filtered names and IDs."""
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
+
+    # 1. All characters
     cursor = await db.execute(
-        """SELECT c.*, pf.field_value AS affiliation
-           FROM characters c
-           LEFT JOIN profile_fields pf
-             ON pf.character_id = c.id AND pf.field_key = ?
-           ORDER BY c.name""",
-        (settings.affiliation_field_key,),
+        "SELECT * FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
     )
     rows = await cursor.fetchall()
+    if not rows:
+        return []
+
+    char_ids = [row["id"] for row in rows if row["name"].lower() not in excluded and row["id"] not in excluded_ids]
+    if not char_ids:
+        return []
+
+    # 2. Batch-load profile fields: affiliation, square_image, alias
+    _panel_field_keys = [settings.affiliation_field_key, "square_image", "alias"]
+    placeholders_ids = ",".join("?" * len(char_ids))
+    placeholders_keys = ",".join("?" * len(_panel_field_keys))
+    cursor = await db.execute(
+        f"""SELECT character_id, field_key, field_value
+            FROM profile_fields
+            WHERE character_id IN ({placeholders_ids})
+              AND field_key IN ({placeholders_keys})""",
+        [*char_ids, *_panel_field_keys],
+    )
+    field_rows = await cursor.fetchall()
+
+    fields_map: dict[str, dict[str, str]] = {}
+    for row in field_rows:
+        fields_map.setdefault(row["character_id"], {})[row["field_key"]] = row["field_value"]
+
+    # 3. Batch-load thread counts
+    cursor = await db.execute(
+        f"""SELECT character_id, category, COUNT(*) as count
+            FROM character_threads
+            WHERE character_id IN ({placeholders_ids})
+            GROUP BY character_id, category""",
+        char_ids,
+    )
+    count_rows = await cursor.fetchall()
+
+    counts_map: dict[str, dict[str, int]] = {}
+    for row in count_rows:
+        counts_map.setdefault(row["character_id"], {})[row["category"]] = row["count"]
+
+    # 4. Assemble results
     results = []
     for row in rows:
         char = dict(row)
-        if char["name"].lower() in excluded:
+        if char["name"].lower() in excluded or char["id"] in excluded_ids:
             continue
-        counts = await get_thread_counts(db, char["id"])
+
+        cid = char["id"]
+        fields = fields_map.get(cid, {})
+        raw_counts = counts_map.get(cid, {})
+        thread_counts = {
+            "ongoing": raw_counts.get("ongoing", 0),
+            "comms": raw_counts.get("comms", 0),
+            "complete": raw_counts.get("complete", 0),
+            "incomplete": raw_counts.get("incomplete", 0),
+        }
+        thread_counts["total"] = sum(thread_counts.values())
+
         results.append(CharacterSummary(
-            id=char["id"],
+            id=cid,
             name=char["name"],
             profile_url=char["profile_url"],
             group_name=char.get("group_name"),
             avatar_url=char.get("avatar_url"),
-            affiliation=char.get("affiliation"),
-            thread_counts=counts,
+            square_image=fields.get("square_image"),
+            alias=fields.get("alias"),
+            affiliation=fields.get(settings.affiliation_field_key),
+            thread_counts=thread_counts,
             last_profile_crawl=char.get("last_profile_crawl"),
             last_thread_crawl=char.get("last_thread_crawl"),
         ))
@@ -104,6 +154,26 @@ async def upsert_character(
             updated_at = CURRENT_TIMESTAMP
     """, (character_id, name, profile_url, group_name, avatar_url))
     await db.commit()
+
+
+async def toggle_character_hidden(
+    db: aiosqlite.Connection,
+    character_id: str,
+) -> bool | None:
+    """Toggle the hidden flag for a character. Returns new hidden state, or None if not found."""
+    cursor = await db.execute(
+        "SELECT hidden FROM characters WHERE id = ?", (character_id,)
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return None
+    new_val = 0 if row["hidden"] else 1
+    await db.execute(
+        "UPDATE characters SET hidden = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (new_val, character_id),
+    )
+    await db.commit()
+    return bool(new_val)
 
 
 async def update_character_crawl_time(
@@ -426,17 +496,18 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     profile fields and thread counts to avoid N+1 queries.
     """
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
     # 1. All characters
     cursor = await db.execute(
-        "SELECT id, name, profile_url, group_name, avatar_url FROM characters ORDER BY name"
+        "SELECT id, name, profile_url, group_name, avatar_url FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
     )
     char_rows = await cursor.fetchall()
 
     if not char_rows:
         return []
 
-    char_ids = [row["id"] for row in char_rows if row["name"].lower() not in excluded]
+    char_ids = [row["id"] for row in char_rows if row["name"].lower() not in excluded and row["id"] not in excluded_ids]
     if not char_ids:
         return []
 
@@ -476,7 +547,7 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     results = []
     for row in char_rows:
         char = dict(row)
-        if char["name"].lower() in excluded:
+        if char["name"].lower() in excluded or char["id"] in excluded_ids:
             continue
 
         cid = char["id"]
@@ -605,6 +676,46 @@ async def replace_thread_posts(
         )
 
 
+async def set_approval_date(
+    db: aiosqlite.Connection,
+    character_id: str,
+    approval_date: str | None,
+) -> bool:
+    """Set the approval date for a single character. Returns True if found."""
+    cursor = await db.execute(
+        "UPDATE characters SET approval_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (approval_date, character_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def set_approval_dates(
+    db: aiosqlite.Connection,
+    entries: list[dict],
+) -> dict:
+    """Bulk-set approval dates by matching character name.
+
+    Each entry: {'name': str, 'approval_date': str (YYYY-MM-DD)}.
+    Returns {'matched': int, 'unmatched': list[str]}.
+    """
+    matched = 0
+    unmatched = []
+    for entry in entries:
+        name = entry["name"].strip()
+        date = entry["approval_date"].strip()
+        cursor = await db.execute(
+            "UPDATE characters SET approval_date = ? WHERE LOWER(name) = LOWER(?)",
+            (date, name),
+        )
+        if cursor.rowcount > 0:
+            matched += cursor.rowcount
+        else:
+            unmatched.append(name)
+    await db.commit()
+    return {"matched": matched, "unmatched": unmatched}
+
+
 async def delete_character(db: aiosqlite.Connection, character_id: str) -> dict:
     """Delete a character and all associated data.
 
@@ -633,3 +744,53 @@ async def delete_character(db: aiosqlite.Connection, character_id: str) -> dict:
     counts["characters"] = cursor.rowcount
     await db.commit()
     return counts
+
+
+# --- User Activity Operations ---
+
+async def record_user_activity(
+    db: aiosqlite.Connection,
+    user_id: str,
+    user_name: str,
+    source: str = "webhook",
+) -> None:
+    """Record or update a user's last-seen timestamp. Auto-commits."""
+    await db.execute(
+        """INSERT INTO user_activity (user_id, user_name, last_seen, source)
+           VALUES (?, ?, datetime('now'), ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+               user_name = excluded.user_name,
+               last_seen = excluded.last_seen,
+               source = excluded.source""",
+        (user_id, user_name, source),
+    )
+    await db.commit()
+
+
+async def get_recent_users(
+    db: aiosqlite.Connection,
+    hours: int = 6,
+) -> list[dict]:
+    """Return users active within the last `hours` hours, most recent first."""
+    cursor = await db.execute(
+        """SELECT user_id, user_name, last_seen, source
+           FROM user_activity
+           WHERE last_seen >= datetime('now', ?)
+           ORDER BY last_seen DESC""",
+        (f"-{hours} hours",),
+    )
+    rows = await cursor.fetchall()
+    excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
+    base = settings.forum_base_url
+    return [
+        {
+            "id": row["user_id"],
+            "name": row["user_name"],
+            "last_seen": row["last_seen"],
+            "profile_url": f"{base}/index.php?showuser={row['user_id']}",
+            "source": row["source"],
+        }
+        for row in rows
+        if row["user_name"].lower() not in excluded and row["user_id"] not in excluded_ids
+    ]

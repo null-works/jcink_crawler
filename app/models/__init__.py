@@ -17,6 +17,9 @@ from app.models.operations import (
     get_all_characters,
     get_all_claims,
     upsert_character,
+    toggle_character_hidden,
+    set_approval_date,
+    set_approval_dates,
     update_character_crawl_time,
     upsert_thread,
     link_character_thread,
@@ -34,6 +37,8 @@ from app.models.operations import (
     set_crawl_status,
     get_crawl_status,
     replace_thread_posts,
+    record_user_activity,
+    get_recent_users,
 )
 from app.models.dashboard_queries import (
     search_characters,
@@ -46,4 +51,5 @@ from app.models.dashboard_queries import (
     get_player_detail,
     get_dashboard_stats,
     get_dashboard_chart_data,
+    get_activity_check_data,
 )

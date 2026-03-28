@@ -696,3 +696,53 @@ class TestGetCharactersFieldsBatch:
             assert result["99999"] == {}
         finally:
             await db.close()
+
+
+class TestUserActivity:
+    async def test_record_and_retrieve(self):
+        from app.models.operations import record_user_activity, get_recent_users
+        db = await _get_db()
+        try:
+            await record_user_activity(db, "42", "Tony Stark", source="webhook")
+            users = await get_recent_users(db, hours=1)
+            assert len(users) == 1
+            assert users[0]["id"] == "42"
+            assert users[0]["name"] == "Tony Stark"
+            assert users[0]["source"] == "webhook"
+        finally:
+            await db.close()
+
+    async def test_upsert_updates_existing(self):
+        from app.models.operations import record_user_activity, get_recent_users
+        db = await _get_db()
+        try:
+            await record_user_activity(db, "42", "Tony Stark", source="webhook")
+            await record_user_activity(db, "42", "Tony Stark", source="online")
+            users = await get_recent_users(db, hours=1)
+            assert len(users) == 1
+            assert users[0]["source"] == "online"
+        finally:
+            await db.close()
+
+    async def test_multiple_users_sorted_by_recent(self):
+        from app.models.operations import record_user_activity, get_recent_users
+        db = await _get_db()
+        try:
+            await record_user_activity(db, "1", "First User")
+            await record_user_activity(db, "2", "Second User")
+            users = await get_recent_users(db, hours=1)
+            assert len(users) == 2
+            # Most recent first
+            assert users[0]["id"] == "2"
+            assert users[1]["id"] == "1"
+        finally:
+            await db.close()
+
+    async def test_empty_when_no_activity(self):
+        from app.models.operations import get_recent_users
+        db = await _get_db()
+        try:
+            users = await get_recent_users(db, hours=6)
+            assert users == []
+        finally:
+            await db.close()

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The Watcher - Deploy Script
+# Watcher (JCink Analytics Platform) - Deploy Script
 # Usage: ./deploy.sh [branch]
 #   branch defaults to the current branch
 
 BRANCH="${1:-$(git rev-parse --abbrev-ref HEAD)}"
 
 echo
-echo "  Deploying The Watcher"
-echo "  ====================="
+echo "  Deploying Watcher (JCink Analytics Platform)"
+echo "  ============================================="
 echo "  Branch: $BRANCH"
 echo
 
@@ -25,6 +25,9 @@ if [ ! -f .env ]; then
 fi
 
 # Pull latest code
+# Ensure git hooks point to the tracked hooks/ directory
+git config core.hooksPath hooks
+
 echo "  [1/5] Pulling latest code..."
 git fetch origin "$BRANCH"
 git reset --hard "origin/$BRANCH"
@@ -35,6 +38,15 @@ mkdir -p ./data
 if [ "$(stat -c '%u' ./data 2>/dev/null)" != "1000" ]; then
     echo "        Fixing data directory permissions for container user..."
     sudo chown 1000:1000 ./data
+fi
+
+# Patch .env defaults that changed between versions
+if [ -f .env ]; then
+    # CRAWL_QUOTES_BATCH_SIZE=5 was too low, change to unlimited
+    if grep -q "CRAWL_QUOTES_BATCH_SIZE=5" .env; then
+        sed -i 's/CRAWL_QUOTES_BATCH_SIZE=5/CRAWL_QUOTES_BATCH_SIZE=0/' .env
+        echo "        Patched CRAWL_QUOTES_BATCH_SIZE from 5 to 0 (unlimited)."
+    fi
 fi
 
 # Build container (no cache to ensure all file changes are picked up)

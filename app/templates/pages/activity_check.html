@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}Activity Check - The Watcher{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h1>Activity Check</h1>
+    <p class="subtitle">Characters need 2+ posts per month to be safe</p>
+</div>
+
+<div class="ac-subtabs">
+    <a href="/activity-check" class="ac-subtab ac-subtab-active">Overview</a>
+    <a href="/ac-results" class="ac-subtab">Results</a>
+</div>
+
+{# Summary cards — clickable as filters #}
+{% set mo = month or current_month %}
+{% set qp = '&q=' ~ q if q else '' %}
+<div class="ac-summary-grid">
+    <a href="/activity-check?month={{ mo }}{% if filter != 'safe' %}&filter=safe{% endif %}{{ qp }}"
+       class="ac-summary-card ac-summary-safe {{ 'ac-summary-active' if filter == 'safe' }}">
+        <div class="ac-summary-num">{{ data.totals.safe }}</div>
+        <div class="ac-summary-label">Safe</div>
+    </a>
+    <a href="/activity-check?month={{ mo }}{% if filter != 'warning' %}&filter=warning{% endif %}{{ qp }}"
+       class="ac-summary-card ac-summary-warning {{ 'ac-summary-active' if filter == 'warning' }}">
+        <div class="ac-summary-num">{{ data.totals.warning }}</div>
+        <div class="ac-summary-label">Warning</div>
+    </a>
+    <a href="/activity-check?month={{ mo }}{% if filter != 'danger' %}&filter=danger{% endif %}{{ qp }}"
+       class="ac-summary-card ac-summary-danger {{ 'ac-summary-active' if filter == 'danger' }}">
+        <div class="ac-summary-num">{{ data.totals.danger }}</div>
+        <div class="ac-summary-label">Danger</div>
+    </a>
+    <a href="/activity-check?month={{ mo }}{% if filter != 'pending' %}&filter=pending{% endif %}{{ qp }}"
+       class="ac-summary-card ac-summary-pending {{ 'ac-summary-active' if filter == 'pending' }}">
+        <div class="ac-summary-num">{{ data.totals.pending }}</div>
+        <div class="ac-summary-label">Pending</div>
+    </a>
+</div>
+
+{# Progress bar #}
+{% set pct_safe = (data.totals.safe / data.totals.total * 100) if data.totals.total else 0 %}
+{% set pct_warn = (data.totals.warning / data.totals.total * 100) if data.totals.total else 0 %}
+{% set pct_danger = (data.totals.danger / data.totals.total * 100) if data.totals.total else 0 %}
+{% set pct_pending = (data.totals.pending / data.totals.total * 100) if data.totals.total else 0 %}
+<div class="card" style="padding: 1rem 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <span class="text-comment" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em;">
+            {{ data.totals.safe }} / {{ data.totals.total }} characters safe
+        </span>
+        <span class="text-comment" style="font-size: 0.8rem;">
+            {{ "%.0f"|format(pct_safe) }}%
+        </span>
+    </div>
+    <div class="ac-progress-bar">
+        {% if pct_safe > 0 %}<div class="ac-progress-segment ac-seg-safe" style="width: {{ pct_safe }}%" title="{{ data.totals.safe }} safe"></div>{% endif %}
+        {% if pct_warn > 0 %}<div class="ac-progress-segment ac-seg-warning" style="width: {{ pct_warn }}%" title="{{ data.totals.warning }} warning"></div>{% endif %}
+        {% if pct_danger > 0 %}<div class="ac-progress-segment ac-seg-danger" style="width: {{ pct_danger }}%" title="{{ data.totals.danger }} danger"></div>{% endif %}
+        {% if pct_pending > 0 %}<div class="ac-progress-segment ac-seg-pending" style="width: {{ pct_pending }}%" title="{{ data.totals.pending }} pending"></div>{% endif %}
+    </div>
+</div>
+
+{# Top 10 leaderboards — two columns #}
+{% if data.top_posters or data.top_players %}
+<div class="ac-lb-grid">
+    {% if data.top_posters %}
+    <div class="card" style="padding: 1rem 1.5rem;">
+        <div style="margin-bottom: 0.75rem;">
+            <span style="font-size: 0.85rem; font-weight: 600; color: var(--purple); text-transform: uppercase; letter-spacing: 0.04em;">Top 10 Characters</span>
+        </div>
+        <div class="ac-leaderboard">
+            {% for c in data.top_posters %}
+            <a href="/character/{{ c.id }}" class="ac-lb-row" style="text-decoration: none;">
+                <span class="ac-lb-rank {% if loop.index <= 3 %}ac-lb-top3{% endif %}">{{ loop.index }}</span>
+                <span class="ac-lb-avatar">
+                    {% if c.avatar_url %}<img src="{{ c.avatar_url }}" alt="" loading="lazy">{% else %}<span class="avatar-placeholder" style="font-size: 0.6rem;">?</span>{% endif %}
+                </span>
+                <span class="ac-lb-name">{{ c.name }}</span>
+                <span class="text-comment" style="font-size: 0.75rem;">{{ c.player_name }}</span>
+                <span class="ac-lb-count text-green">{{ c.monthly_posts }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% if data.top_players %}
+    <div class="card" style="padding: 1rem 1.5rem;">
+        <div style="margin-bottom: 0.75rem;">
+            <span style="font-size: 0.85rem; font-weight: 600; color: var(--cyan); text-transform: uppercase; letter-spacing: 0.04em;">Top 10 Players</span>
+        </div>
+        <div class="ac-leaderboard">
+            {% for p in data.top_players %}
+            <a href="/player/{{ p.player_name }}" class="ac-lb-row" style="text-decoration: none;">
+                <span class="ac-lb-rank {% if loop.index <= 3 %}ac-lb-top3{% endif %}">{{ loop.index }}</span>
+                <span class="ac-lb-name">{{ p.player_name }}</span>
+                <span class="text-comment" style="font-size: 0.75rem;">{{ p.character_count }} chars</span>
+                <span class="ac-lb-count text-cyan">{{ p.monthly_posts }}</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+{# Month toggles + search + sort #}
+<div class="card" style="padding: 0.75rem 1.25rem;">
+    <div class="ac-toolbar">
+        <div class="ac-month-toggles">
+            {% for m in months %}
+            <a href="/activity-check?month={{ m.value }}{% if filter %}&filter={{ filter }}{% endif %}{% if sort %}&sort={{ sort }}&dir={{ dir }}{% endif %}{{ qp }}"
+               class="ac-month-pill {{ 'ac-month-active' if m.value == mo }}">
+                {{ m.label }}
+            </a>
+            {% endfor %}
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0;">
+            <div class="ac-sort-wrap">
+                {% set sp = '&filter=' ~ filter if filter else '' %}
+                <a href="/activity-check?month={{ mo }}{{ sp }}{% if sort == 'monthly_posts' and dir == 'desc' %}&sort=monthly_posts&dir=asc{% else %}&sort=monthly_posts&dir=desc{% endif %}{{ qp }}"
+                   class="ac-sort-pill {{ 'ac-sort-active' if sort == 'monthly_posts' }}">
+                    Monthly Posts
+                    {% if sort == 'monthly_posts' %}{{ '▲' if dir == 'asc' else '▼' }}{% endif %}
+                </a>
+                <a href="/activity-check?month={{ mo }}{{ sp }}{% if sort == 'total_posts' and dir == 'desc' %}&sort=total_posts&dir=asc{% else %}&sort=total_posts&dir=desc{% endif %}{{ qp }}"
+                   class="ac-sort-pill {{ 'ac-sort-active' if sort == 'total_posts' }}">
+                    Total Posts
+                    {% if sort == 'total_posts' %}{{ '▲' if dir == 'asc' else '▼' }}{% endif %}
+                </a>
+            </div>
+            <div class="ac-search-wrap">
+                <svg class="ac-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="ac-search" class="form-input ac-search-input" placeholder="Search player or character..." value="{{ q }}">
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Player cards #}
+<div class="ac-player-grid">
+{% for player in data.players %}
+<div class="card ac-player-card ac-player-{{ player.status }}"
+     data-player="{{ player.player_name|lower }}"
+     data-characters="{{ player.characters|map(attribute='name')|join(',')|lower }}">
+    <div class="ac-player-header">
+        <div class="ac-player-info">
+            <a href="/player/{{ player.player_name }}" class="ac-player-name">{{ player.player_name }}</a>
+            <div class="ac-player-counts">
+                {% if player.safe > 0 %}<span class="ac-badge ac-safe">{{ player.safe }} safe</span>{% endif %}
+                {% if player.warning > 0 %}<span class="ac-badge ac-warning">{{ player.warning }} warning</span>{% endif %}
+                {% if player.danger > 0 %}<span class="ac-badge ac-unsafe">{{ player.danger }} danger</span>{% endif %}
+                {% if player.pending > 0 %}<span class="ac-badge ac-pending">{{ player.pending }} pending</span>{% endif %}
+                <span class="text-comment" style="font-size: 0.75rem; margin-left: 0.25rem;">{{ player.total_posts }} posts &middot; {{ player.total_monthly_posts }} this month</span>
+            </div>
+        </div>
+        {% if player.all_safe %}
+        <span class="ac-badge ac-safe" style="font-size: 0.8rem; padding: 0.3rem 0.8rem;">ALL SAFE</span>
+        {% endif %}
+    </div>
+
+    <div class="ac-char-grid">
+        {% for char in player.characters %}
+        <a href="/character/{{ char.id }}" class="ac-char-card ac-char-{{ char.ac_status }}">
+            <div class="ac-char-avatar">
+                {% if char.avatar_url %}
+                <img src="{{ char.avatar_url }}" alt="" loading="lazy">
+                {% else %}
+                <span class="avatar-placeholder">?</span>
+                {% endif %}
+            </div>
+            <div class="ac-char-info">
+                <div class="ac-char-name">{{ char.name }}</div>
+                <div class="ac-char-detail">
+                    {% if char.affiliation %}<span class="text-cyan">{{ char.affiliation }}</span>{% endif %}
+                    {% if char.approval_date %}<span class="text-comment"> &middot; {{ char.approval_date }}</span>{% endif %}
+                </div>
+                <div class="ac-char-posts">
+                    <span class="text-comment">{{ char.total_posts }} total</span>
+                    <span class="text-comment">&middot;</span>
+                    <span class="{% if char.monthly_posts >= 2 %}text-green{% elif char.monthly_posts == 1 %}text-orange{% else %}text-red{% endif %}">{{ char.monthly_posts }} this month</span>
+                </div>
+            </div>
+            <div class="ac-char-status">
+                {% if char.ac_status == 'pending' %}
+                <span class="ac-badge ac-pending">PENDING</span>
+                {% elif char.ac_status == 'safe' %}
+                <span class="ac-badge ac-safe">SAFE</span>
+                {% elif char.ac_status == 'warning' %}
+                <span class="ac-badge ac-warning">WARNING</span>
+                {% else %}
+                <span class="ac-badge ac-unsafe">DANGER</span>
+                {% endif %}
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+</div>
+
+{% if not data.players %}
+<div class="card" style="text-align: center; padding: 3rem;">
+    <p class="text-comment">No characters found for the selected filters.</p>
+</div>
+{% endif %}
+
+<script>
+(function() {
+    var searchEl = document.getElementById('ac-search');
+
+    function applySearch() {
+        var q = searchEl.value.toLowerCase().trim();
+        document.querySelectorAll('.ac-player-card').forEach(function(card) {
+            var player = card.dataset.player || '';
+            var chars = card.dataset.characters || '';
+            card.style.display = (!q || player.includes(q) || chars.includes(q)) ? '' : 'none';
+        });
+        // Keep q param in all navigation links so it survives page transitions
+        document.querySelectorAll('.ac-summary-card, .ac-month-pill').forEach(function(a) {
+            var url = new URL(a.href);
+            if (q) { url.searchParams.set('q', searchEl.value.trim()); }
+            else { url.searchParams.delete('q'); }
+            a.href = url.toString();
+        });
+    }
+
+    searchEl.addEventListener('input', applySearch);
+    // Apply on load when q is pre-filled from URL
+    if (searchEl.value.trim()) { applySearch(); }
+})();
+</script>
+{% endblock %}

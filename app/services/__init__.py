@@ -6,4 +6,4 @@ from app.services.crawler import (
     sync_posts_from_acp,
     crawl_quotes_only,
 )
-from app.services.scheduler import start_scheduler, stop_scheduler
+from app.services.scheduler import run_startup_tasks

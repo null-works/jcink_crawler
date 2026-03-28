@@ -20,6 +20,7 @@ async def search_characters(
 ) -> tuple[list[dict], int]:
     """Search/filter characters with pagination. Returns (rows, total_count)."""
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
     base = """
         FROM characters c
@@ -29,7 +30,7 @@ async def search_characters(
           ON pf_player.character_id = c.id AND pf_player.field_key = ?
     """
     params: list = [settings.affiliation_field_key, settings.player_field_key]
-    wheres: list[str] = []
+    wheres: list[str] = ["COALESCE(c.hidden, 0) = 0"]
 
     if query:
         wheres.append("c.name LIKE ?")
@@ -84,7 +85,7 @@ async def search_characters(
     results = []
     for r in rows:
         d = dict(r)
-        if d["name"].lower() in excluded:
+        if d["name"].lower() in excluded or d["id"] in excluded_ids:
             continue
         # Get thread counts inline
         tc = await db.execute(
@@ -119,7 +120,7 @@ async def search_threads_global(
         JOIN characters c ON c.id = ct.character_id
     """
     params: list = []
-    wheres: list[str] = []
+    wheres: list[str] = ["COALESCE(c.hidden, 0) = 0"]
 
     if player_name:
         base += " JOIN profile_fields pf_player ON pf_player.character_id = c.id AND pf_player.field_key = ?"
@@ -195,7 +196,7 @@ async def search_quotes_global(
         JOIN characters c ON c.id = q.character_id
     """
     params: list = []
-    wheres: list[str] = []
+    wheres: list[str] = ["COALESCE(c.hidden, 0) = 0"]
 
     if query:
         wheres.append("q.quote_text LIKE ?")
@@ -267,6 +268,7 @@ async def search_players(
 ) -> tuple[list[dict], int]:
     """Get players with character counts, thread counts, and activity. Returns (rows, total_count)."""
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
     base = """
         FROM profile_fields pf_player
@@ -274,6 +276,7 @@ async def search_players(
         WHERE pf_player.field_key = ?
           AND pf_player.field_value IS NOT NULL
           AND pf_player.field_value != ''
+          AND COALESCE(c.hidden, 0) = 0
     """
     params: list = [settings.player_field_key]
 
@@ -340,7 +343,7 @@ async def search_players(
             (settings.player_field_key, d["player_name"]),
         )
         chars = await chars_cursor.fetchall()
-        char_list = [dict(ch) for ch in chars if ch["name"].lower() not in excluded]
+        char_list = [dict(ch) for ch in chars if ch["name"].lower() not in excluded and ch["id"] not in excluded_ids]
         if not char_list:
             continue
         d["characters"] = char_list
@@ -362,13 +365,15 @@ async def get_player_detail(
         month_start: ISO date string for activity period start (e.g. "2026-02-01").
         month_end: ISO date string for activity period end (e.g. "2026-03-01").
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
     # Default to current calendar month if no range provided
     if not month_start or not month_end:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(ZoneInfo(settings.activity_timezone))
         month_start = now.strftime("%Y-%m-01")
         # First day of next month
         if now.month == 12:
@@ -382,11 +387,11 @@ async def get_player_detail(
            FROM characters c
            JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
            LEFT JOIN profile_fields pf_aff ON pf_aff.character_id = c.id AND pf_aff.field_key = ?
-           WHERE pf.field_value = ?""",
+           WHERE pf.field_value = ? AND COALESCE(c.hidden, 0) = 0""",
         (settings.player_field_key, settings.affiliation_field_key, player_name),
     )
     rows = await cursor.fetchall()
-    characters = [dict(r) for r in rows if r["name"].lower() not in excluded]
+    characters = [dict(r) for r in rows if r["name"].lower() not in excluded and r["id"] not in excluded_ids]
 
     if not characters:
         return None
@@ -492,21 +497,187 @@ async def get_player_detail(
     }
 
 
+async def get_activity_check_data(
+    db: aiosqlite.Connection,
+    month_start: str | None = None,
+    month_end: str | None = None,
+) -> dict:
+    """Get activity check overview for ALL players/characters in a single view.
+
+    Returns summary stats, per-player breakdowns with AC status per character.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
+
+    # Default to current calendar month
+    if not month_start or not month_end:
+        now = datetime.now(ZoneInfo(settings.activity_timezone))
+        month_start = now.strftime("%Y-%m-01")
+        if now.month == 12:
+            month_end = f"{now.year + 1}-01-01"
+        else:
+            month_end = f"{now.year}-{now.month + 1:02d}-01"
+
+    # Get all characters with their player name and affiliation
+    cursor = await db.execute(
+        """SELECT c.id, c.name, c.avatar_url, c.group_name, c.approval_date,
+                  pf_player.field_value AS player_name,
+                  pf_aff.field_value AS affiliation
+           FROM characters c
+           LEFT JOIN profile_fields pf_player
+             ON pf_player.character_id = c.id AND pf_player.field_key = ?
+           LEFT JOIN profile_fields pf_aff
+             ON pf_aff.character_id = c.id AND pf_aff.field_key = ?
+           WHERE pf_player.field_value IS NOT NULL AND pf_player.field_value != ''
+             AND COALESCE(c.hidden, 0) = 0
+           ORDER BY pf_player.field_value, c.name""",
+        (settings.player_field_key, settings.affiliation_field_key),
+    )
+    rows = await cursor.fetchall()
+
+    players: dict[str, dict] = {}
+    totals = {"safe": 0, "warning": 0, "danger": 0, "pending": 0, "total": 0}
+
+    for r in rows:
+        char = dict(r)
+        if char["name"].lower() in excluded or char["id"] in excluded_ids:
+            continue
+
+        cid = char["id"]
+        player_name = char["player_name"]
+
+        # Monthly post count
+        mc = await db.execute(
+            "SELECT COUNT(*) as cnt FROM posts WHERE character_id = ? AND post_date >= ? AND post_date < ?",
+            (cid, month_start, month_end),
+        )
+        mc_row = await mc.fetchone()
+        char["monthly_posts"] = mc_row["cnt"] if mc_row else 0
+
+        # Total post count (all time)
+        tc = await db.execute(
+            "SELECT COUNT(*) as cnt FROM posts WHERE character_id = ?", (cid,),
+        )
+        tc_row = await tc.fetchone()
+        char["total_posts"] = tc_row["cnt"] if tc_row else 0
+        char["has_post_data"] = char["total_posts"] > 0
+
+        # Determine AC status
+        if not char["has_post_data"]:
+            char["ac_status"] = "pending"
+        elif char["monthly_posts"] >= 2:
+            char["ac_status"] = "safe"
+        elif char["monthly_posts"] == 1:
+            char["ac_status"] = "warning"
+        else:
+            char["ac_status"] = "danger"
+
+        totals[char["ac_status"]] += 1
+        totals["total"] += 1
+
+        # Group into players
+        if player_name not in players:
+            players[player_name] = {
+                "player_name": player_name,
+                "characters": [],
+                "safe": 0,
+                "warning": 0,
+                "danger": 0,
+                "pending": 0,
+                "total": 0,
+                "total_posts": 0,
+                "total_monthly_posts": 0,
+                "all_safe": True,
+            }
+        p = players[player_name]
+        p["characters"].append(char)
+        p[char["ac_status"]] += 1
+        p["total"] += 1
+        p["total_posts"] += char["total_posts"]
+        p["total_monthly_posts"] += char["monthly_posts"]
+        if char["ac_status"] not in ("safe",):
+            p["all_safe"] = False
+
+    # Determine player-level status
+    for p in players.values():
+        if p["danger"] > 0:
+            p["status"] = "danger"
+        elif p["warning"] > 0:
+            p["status"] = "warning"
+        elif p["pending"] > 0 and p["safe"] == 0:
+            p["status"] = "pending"
+        else:
+            p["status"] = "safe"
+
+    # Sort: danger first, then warning, then pending, then safe
+    status_order = {"danger": 0, "warning": 1, "pending": 2, "safe": 3}
+    sorted_players = sorted(
+        players.values(), key=lambda p: (status_order.get(p["status"], 4), p["player_name"].lower())
+    )
+
+    # Top 10 characters by monthly posts
+    all_chars = []
+    for p in players.values():
+        for c in p["characters"]:
+            all_chars.append({
+                "name": c["name"],
+                "player_name": p["player_name"],
+                "monthly_posts": c["monthly_posts"],
+                "avatar_url": c.get("avatar_url"),
+                "id": c["id"],
+            })
+    top_posters = sorted(all_chars, key=lambda c: c["monthly_posts"], reverse=True)[:10]
+
+    # Top 10 players by monthly posts
+    top_players = sorted(
+        players.values(), key=lambda p: p["total_monthly_posts"], reverse=True
+    )[:10]
+    top_players = [
+        {
+            "player_name": p["player_name"],
+            "monthly_posts": p["total_monthly_posts"],
+            "total_posts": p["total_posts"],
+            "character_count": p["total"],
+        }
+        for p in top_players
+    ]
+
+    return {
+        "players": sorted_players,
+        "totals": totals,
+        "month_start": month_start,
+        "month_end": month_end,
+        "top_posters": top_posters,
+        "top_players": top_players,
+    }
+
+
 async def get_dashboard_stats(db: aiosqlite.Connection) -> dict:
     """Get aggregate stats for the dashboard."""
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
 
-    cursor = await db.execute("SELECT COUNT(*) as cnt FROM characters")
+    cursor = await db.execute("SELECT COUNT(*) as cnt FROM characters WHERE COALESCE(hidden, 0) = 0")
     total_chars = (await cursor.fetchone())["cnt"]
-    # Subtract excluded
+    # Subtract excluded by name
     if excluded:
         placeholders = ",".join("?" for _ in excluded)
         cursor = await db.execute(
-            f"SELECT COUNT(*) as cnt FROM characters WHERE LOWER(name) IN ({placeholders})",
+            f"SELECT COUNT(*) as cnt FROM characters WHERE COALESCE(hidden, 0) = 0 AND LOWER(name) IN ({placeholders})",
             list(excluded),
         )
-        excluded_count = (await cursor.fetchone())["cnt"]
-        total_chars -= excluded_count
+        total_chars -= (await cursor.fetchone())["cnt"]
+    # Subtract excluded by ID
+    if excluded_ids:
+        id_placeholders = ",".join("?" for _ in excluded_ids)
+        cursor = await db.execute(
+            f"SELECT COUNT(*) as cnt FROM characters WHERE COALESCE(hidden, 0) = 0 AND id IN ({id_placeholders}) AND LOWER(name) NOT IN ({','.join('?' for _ in excluded)})",
+            list(excluded_ids) + list(excluded),
+        )
+        total_chars -= (await cursor.fetchone())["cnt"]
 
     cursor = await db.execute("SELECT COUNT(*) as cnt FROM threads")
     total_threads = (await cursor.fetchone())["cnt"]
@@ -547,6 +718,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     from zoneinfo import ZoneInfo
 
     excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
     # Use US/Eastern as "today" so the chart never shows a future date for users
     eastern_now = datetime.now(ZoneInfo("America/New_York"))
     today_eastern = eastern_now.strftime("%Y-%m-%d")
@@ -591,6 +763,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
            FROM characters c
            JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
            WHERE pf.field_value IS NOT NULL AND pf.field_value != ''
+             AND COALESCE(c.hidden, 0) = 0
            GROUP BY pf.field_value
            ORDER BY cnt DESC""",
         (settings.affiliation_field_key,),
@@ -604,9 +777,10 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
 
     # Top 10 characters by thread count
     cursor = await db.execute(
-        """SELECT c.name, COUNT(ct.thread_id) AS cnt
+        """SELECT c.id, c.name, COUNT(ct.thread_id) AS cnt
            FROM characters c
            JOIN character_threads ct ON ct.character_id = c.id
+           WHERE COALESCE(c.hidden, 0) = 0
            GROUP BY c.id
            ORDER BY cnt DESC
            LIMIT 10"""
@@ -615,14 +789,15 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     top_characters = [
         {"label": r["name"], "count": r["cnt"]}
         for r in rows
-        if r["name"].lower() not in excluded
+        if r["name"].lower() not in excluded and r["id"] not in excluded_ids
     ]
 
     # Top 10 characters by quote count
     cursor = await db.execute(
-        """SELECT c.name, COUNT(q.id) AS cnt
+        """SELECT c.id, c.name, COUNT(q.id) AS cnt
            FROM characters c
            JOIN quotes q ON q.character_id = c.id
+           WHERE COALESCE(c.hidden, 0) = 0
            GROUP BY c.id
            ORDER BY cnt DESC
            LIMIT 10"""
@@ -631,7 +806,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     top_quoters = [
         {"label": r["name"], "count": r["cnt"]}
         for r in rows
-        if r["name"].lower() not in excluded
+        if r["name"].lower() not in excluded and r["id"] not in excluded_ids
     ]
 
     # Threads per player
@@ -639,7 +814,9 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
         """SELECT pf.field_value AS player, COUNT(DISTINCT ct.thread_id) AS cnt
            FROM profile_fields pf
            JOIN character_threads ct ON ct.character_id = pf.character_id
+           JOIN characters c ON c.id = pf.character_id
            WHERE pf.field_key = ? AND pf.field_value IS NOT NULL AND pf.field_value != ''
+             AND COALESCE(c.hidden, 0) = 0
            GROUP BY pf.field_value
            ORDER BY cnt DESC
            LIMIT 10""",
@@ -657,7 +834,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
                   pf.field_value AS affiliation
            FROM characters c
            LEFT JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
-           WHERE c.last_thread_crawl IS NOT NULL
+           WHERE c.last_thread_crawl IS NOT NULL AND COALESCE(c.hidden, 0) = 0
            ORDER BY c.last_thread_crawl DESC
            LIMIT 10""",
         (settings.affiliation_field_key,),
@@ -665,7 +842,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     rows = await cursor.fetchall()
     recent_crawls = [
         dict(r) for r in rows
-        if r["name"].lower() not in excluded
+        if r["name"].lower() not in excluded and r["id"] not in excluded_ids
     ]
 
     return {

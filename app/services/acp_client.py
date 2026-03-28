@@ -26,6 +26,7 @@ import httpx
 
 from app.config import settings
 from app.services.activity import log_debug
+from app.services.fetcher import _is_cf_worker_enabled, _cf_proxy_url
 
 
 # ── Default column indices (IPB 1.3.x baseline) ──
@@ -75,7 +76,7 @@ def _parse_sql_values(values_str: str) -> list | None:
     """Parse the VALUES portion of a REPLACE INTO statement.
 
     Tries JSON parsing first (fast path), falls back to manual
-    parsing for edge cases with escaped quotes.
+    CSV-style parsing for SQL with single-quoted strings.
     """
     # Try JSON array parse: wrap in brackets
     json_str = f"[{values_str}]"
@@ -158,8 +159,13 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
         e.g. {"posts": [[col0, col1, ...], ...], "topics": [...]}
     """
     raw: dict[str, list[list]] = {}
+    total_rows = 0
 
-    for line in sql_text.split("\n"):
+    lines = sql_text.split("\n")
+    total_lines = len(lines)
+    log_debug(f"ACP parse: {total_lines:,} lines ({len(sql_text):,} bytes)")
+
+    for line_num, line in enumerate(lines):
         line = line.strip()
         if not line.startswith("REPLACE"):
             continue
@@ -171,18 +177,61 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
         table_name = match.group(1)
         values_str = match.group(2)
 
-        # Clean JCink encoding quirks
-        values_str = values_str.replace("\\'", "'")
-        values_str = values_str.replace("&amp;", "&")
-        values_str = values_str.replace("&lt;", "<")
-        values_str = values_str.replace("&gt;", ">")
-        values_str = values_str.replace("&quot;", '"')
-
+        # Parse values, then decode HTML entities in string values.
+        # The parser already handles \' internally (backslash escapes).
         row = _parse_sql_values(values_str)
         if row is not None:
-            raw.setdefault(table_name, []).append(row)
+            cleaned = []
+            for val in row:
+                if isinstance(val, str):
+                    val = val.replace("\\'", "'")
+                    val = val.replace("&amp;", "&")
+                    val = val.replace("&lt;", "<")
+                    val = val.replace("&gt;", ">")
+                    val = val.replace("&quot;", '"')
+                cleaned.append(val)
+            raw.setdefault(table_name, []).append(cleaned)
+            total_rows += 1
+            if total_rows % 2000 == 0:
+                pct = int(line_num / total_lines * 100)
+                log_debug(f"ACP parse: {pct}% — {total_rows:,} rows ({table_name})")
+
+    # Diagnostic: check for rows with wrong column counts
+    for tbl_name in ("posts", "topics"):
+        if tbl_name not in raw or not raw[tbl_name]:
+            continue
+        expected = len(raw[tbl_name][0])
+        wrong = sum(1 for r in raw[tbl_name] if len(r) != expected)
+        if wrong:
+            log_debug(f"ACP parse: {wrong}/{len(raw[tbl_name])} {tbl_name} rows have wrong column count "
+                      f"(expected {expected})", level="warn")
+            for r in raw[tbl_name]:
+                if len(r) != expected:
+                    log_debug(f"ACP parse: bad {tbl_name} row ({len(r)} cols): col[0]={r[0]}, "
+                              f"col[1]={str(r[1])[:60] if len(r) > 1 else 'N/A'}", level="warn")
+                    break
+
+    # Remove old posts-only diagnostic
+    if False and "posts" in raw:
+        expected = 21  # From first row
+        if raw["posts"]:
+            expected = len(raw["posts"][0])
+        wrong_count = sum(1 for r in raw["posts"] if len(r) != expected)
+        if wrong_count:
+            log_debug(f"ACP parse: {wrong_count}/{len(raw['posts'])} post rows have wrong column count "
+                      f"(expected {expected})", level="warn")
+            # Show a sample bad row
+            for r in raw["posts"]:
+                if len(r) != expected:
+                    log_debug(f"ACP parse: bad row ({len(r)} cols): col[0]={r[0]}, "
+                              f"col[10]={str(r[10])[:60] if len(r) > 10 else 'N/A'}..., "
+                              f"col[12]={str(r[12])[:60] if len(r) > 12 else 'N/A'}", level="warn")
+                    break
 
     return raw
+
+
+
 
 
 def _detect_column(rows: list[list], valid_values: set, start_col: int = 2,
@@ -358,6 +407,16 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
         log_debug(f"ACP schema debug: topics[0] ({len(topics_rows[0])} cols) = {topics_rows[0][:20]}")
     if posts_rows:
         log_debug(f"ACP schema debug: posts[0] ({len(posts_rows[0])} cols) = {posts_rows[0][:16]}")
+        # Log a later post with different values to help identify columns
+        for i, row in enumerate(posts_rows):
+            if i > 0 and len(row) > 10 and row[0] != posts_rows[0][0]:
+                # Truncate long string values for readability
+                truncated = []
+                for v in row[:16]:
+                    s = str(v) if v is not None else 'None'
+                    truncated.append(s[:40] + '...' if len(s) > 40 else s)
+                log_debug(f"ACP schema debug: posts[{i}] = {truncated}")
+                break
     if members_rows:
         log_debug(f"ACP schema debug: members[0] ({len(members_rows[0])} cols) = {members_rows[0][:12]}")
 
@@ -426,6 +485,17 @@ def detect_schema(raw: dict[str, list[list]]) -> dict:
     post_forum_col = _detect_column(posts_rows, forum_ids, start_col=2)
     post_topic_col = _detect_column(posts_rows, topic_ids, start_col=2)
     post_author_col = _detect_column(posts_rows, member_ids, start_col=2)
+
+    # Sanity check: topic_id column should have high cardinality (many distinct
+    # topics).  If it's very low (e.g. a boolean flag column where value "1"
+    # happens to match topic ID 1), reject it and fall back to the default.
+    if post_topic_col is not None:
+        card = _column_cardinality(posts_rows, post_topic_col)
+        if card < 0.05:
+            log_debug(f"ACP schema: post_topic_id col {post_topic_col} has very low "
+                      f"cardinality ({card:.3f}) — likely a flag, not topic IDs. "
+                      f"Falling back to default col 12.", level="warn")
+            post_topic_col = None
 
     # Resolve collisions between forum_id and author_id (topic_id rarely collides)
     if (post_forum_col is not None and post_author_col is not None
@@ -505,6 +575,11 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
 
     Returns list of dicts with: character_id, thread_id, post_date, forum_id, author_name
     When include_body=True, also includes post_body (HTML content) for quote extraction.
+
+    Handles mis-parsed rows where the post body (column 10) contains unescaped
+    single quotes that split it into extra columns.  For these rows, columns
+    before the body (0-9) are intact but columns after are shifted.  We read
+    topic_id and forum_id by counting from the END of the row.
     """
     s = schema or {}
     col_author = s.get("post_author_id", 3)
@@ -514,8 +589,20 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
     col_topic = s.get("post_topic_id", 12)
     col_forum = s.get("post_forum_id", 13)
 
-    min_col = max(col_author, col_date, col_topic, col_forum)
+    # Determine expected column count from first valid row
     posts_rows = raw.get("posts", [])
+    expected_cols = 21  # IPB default
+    if posts_rows:
+        from collections import Counter
+        counts = Counter(len(r) for r in posts_rows[:200])
+        if counts:
+            expected_cols = counts.most_common(1)[0][0]
+
+    # How far topic_id and forum_id are from the END of a correctly-parsed row
+    topic_from_end = expected_cols - col_topic
+    forum_from_end = expected_cols - col_forum
+
+    min_col = max(col_author, col_date)
     records = []
 
     for row in posts_rows:
@@ -526,16 +613,34 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
         if author_id is None:
             continue
 
+        # For rows with the right column count, use direct indexing.
+        # For rows with extra columns (body split), count from the end.
+        if len(row) == expected_cols:
+            topic_val = row[col_topic] if col_topic < len(row) else None
+            forum_val = row[col_forum] if col_forum < len(row) else None
+        else:
+            topic_idx = len(row) - topic_from_end
+            forum_idx = len(row) - forum_from_end
+            topic_val = row[topic_idx] if 0 <= topic_idx < len(row) else None
+            forum_val = row[forum_idx] if 0 <= forum_idx < len(row) else None
+
         record = {
             "character_id": str(author_id),
-            "thread_id": str(row[col_topic]) if row[col_topic] else None,
+            "thread_id": str(topic_val) if topic_val is not None else None,
             "post_date": _unix_to_iso(row[col_date]),
-            "forum_id": str(row[col_forum]) if row[col_forum] else None,
+            "forum_id": str(forum_val) if forum_val is not None else None,
             "author_name": row[col_author_name] if col_author_name < len(row) else None,
         }
 
-        if include_body and col_body < len(row):
-            body = row[col_body]
+        if include_body:
+            if len(row) == expected_cols:
+                body = row[col_body] if col_body < len(row) else None
+            else:
+                # Body spans from col_body to (end - columns_after_body)
+                cols_after_body = expected_cols - col_body - 1
+                body_end = len(row) - cols_after_body
+                body_parts = row[col_body:body_end]
+                body = ",".join(str(p) for p in body_parts) if body_parts else None
             record["post_body"] = body if isinstance(body, str) else None
 
         records.append(record)
@@ -548,6 +653,8 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
 
     Returns list of dicts with: thread_id, title, forum_id, state,
     last_poster_id, last_poster_name, last_post_date
+
+    Handles rows with wrong column counts by reading from the end.
     """
     s = schema or {}
     col_title = s.get("topic_title", 1)
@@ -559,8 +666,18 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
     topics_rows = raw.get("topics", [])
     records = []
 
-    min_cols = max(_TOPIC_COL_ID, col_title, col_forum,
-                   col_last_post, col_poster_id, col_poster_name) + 1
+    expected_cols = 22
+    if topics_rows:
+        from collections import Counter
+        counts = Counter(len(r) for r in topics_rows[:200])
+        if counts:
+            expected_cols = counts.most_common(1)[0][0]
+
+    forum_from_end = expected_cols - col_forum
+    poster_id_from_end = expected_cols - col_poster_id
+    poster_name_from_end = expected_cols - col_poster_name
+
+    min_cols = max(_TOPIC_COL_ID, col_title) + 1
 
     for row in topics_rows:
         if len(row) < min_cols:
@@ -570,14 +687,34 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
         if topic_id is None:
             continue
 
+        title = row[col_title] or "Untitled"
+
+        # Skip JCink move-redirect stubs (e.g. "From: Rumors")
+        if isinstance(title, str) and title.startswith("From:"):
+            continue
+
+        if len(row) == expected_cols:
+            forum_id = row[col_forum]
+            poster_id = row[col_poster_id]
+            poster_name = row[col_poster_name]
+            last_post = row[col_last_post]
+        else:
+            forum_idx = len(row) - forum_from_end
+            poster_id_idx = len(row) - poster_id_from_end
+            poster_name_idx = len(row) - poster_name_from_end
+            forum_id = row[forum_idx] if 0 <= forum_idx < len(row) else None
+            poster_id = row[poster_id_idx] if 0 <= poster_id_idx < len(row) else None
+            poster_name = row[poster_name_idx] if 0 <= poster_name_idx < len(row) else None
+            last_post = row[col_last_post] if col_last_post < len(row) else None
+
         records.append({
             "thread_id": str(topic_id),
-            "title": row[col_title] or "Untitled",
-            "forum_id": str(row[col_forum]) if row[col_forum] else None,
+            "title": title,
+            "forum_id": str(forum_id) if forum_id is not None else None,
             "state": row[3] if len(row) > 3 else None,
-            "last_poster_id": str(row[col_poster_id]) if row[col_poster_id] else None,
-            "last_poster_name": row[col_poster_name] if isinstance(row[col_poster_name], str) else None,
-            "last_post_date": _unix_to_iso(row[col_last_post]),
+            "last_poster_id": str(poster_id) if poster_id else None,
+            "last_poster_name": poster_name if isinstance(poster_name, str) else None,
+            "last_post_date": _unix_to_iso(last_post),
         })
 
     return records
@@ -656,6 +793,13 @@ class ACPClient:
         self._forum_name: str | None = None
         self._username = username or settings.admin_username
         self._password = password or settings.admin_password
+        self._last_error: str | None = None
+
+    def _rewrite_url(self, url: str) -> str:
+        """Route URL through CF Worker proxy if configured."""
+        if _is_cf_worker_enabled():
+            return _cf_proxy_url(url)
+        return url
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -663,16 +807,21 @@ class ACPClient:
                 timeout=120.0,
                 follow_redirects=False,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; TWAICrawler/1.0)",
+                    "User-Agent": "Mozilla/5.0 (compatible; Watcher/1.0)",
                 },
             )
+            if _is_cf_worker_enabled():
+                log_debug("ACP: routing through Cloudflare Worker proxy")
         return self._client
 
-    async def login(self) -> bool:
+    async def login(self, max_retries: int = 3) -> bool:
         """Login to ACP and obtain adsess token.
 
         JCink ACP login: GET /admin.php?login=yes&username=X&password=Y
         On success, redirects to a URL containing adsess=TOKEN.
+
+        Retries on connection errors with exponential backoff since
+        transient DNS/TCP failures are common from Docker containers.
         """
         if not self._username or not self._password:
             log_debug("ACP: no admin credentials configured", level="error")
@@ -686,8 +835,6 @@ class ACPClient:
             log_debug("ACP: could not extract forum name from base URL", level="error")
             return False
 
-        client = await self._get_client()
-
         login_url = (
             f"{settings.forum_base_url}/admin.php"
             f"?login=yes"
@@ -695,36 +842,68 @@ class ACPClient:
             f"&password={url_quote(self._password)}"
         )
 
-        try:
-            response = await client.get(login_url)
+        last_error = None
+        for attempt in range(max_retries):
+            # Fresh client on retry in case the previous one has stale state
+            if attempt > 0:
+                await self._close_and_reset_client()
+                delay = 2 ** attempt  # 2s, 4s
+                log_debug(f"ACP: retrying login in {delay}s (attempt {attempt + 1}/{max_retries})")
+                await asyncio.sleep(delay)
 
-            # Check redirect for adsess token
-            redirect_url = response.headers.get("location", "")
-            if not redirect_url:
-                redirect_url = str(response.url)
+            client = await self._get_client()
 
-            if "adsess=" in redirect_url:
-                idx = redirect_url.index("adsess=") + 7
-                end = redirect_url.find("&", idx)
-                self._token = redirect_url[idx:end] if end != -1 else redirect_url[idx:]
-                log_debug("ACP: login successful, token obtained")
-                return True
+            try:
+                response = await client.get(self._rewrite_url(login_url))
 
-            # Maybe got a page with a redirect in the HTML
-            if response.status_code == 200:
-                text = response.text
-                adsess_match = re.search(r"adsess=([a-f0-9]+)", text)
-                if adsess_match:
-                    self._token = adsess_match.group(1)
-                    log_debug("ACP: login successful (from response body)")
+                # Check redirect for adsess token
+                redirect_url = response.headers.get("location", "")
+                if not redirect_url:
+                    redirect_url = str(response.url)
+
+                if "adsess=" in redirect_url:
+                    idx = redirect_url.index("adsess=") + 7
+                    end = redirect_url.find("&", idx)
+                    self._token = redirect_url[idx:end] if end != -1 else redirect_url[idx:]
+                    log_debug("ACP: login successful, token obtained")
                     return True
 
-            log_debug(f"ACP: login failed — status {response.status_code}, no adsess token found", level="error")
-            return False
+                # Maybe got a page with a redirect in the HTML
+                if response.status_code == 200:
+                    text = response.text
+                    adsess_match = re.search(r"adsess=([a-f0-9]+)", text)
+                    if adsess_match:
+                        self._token = adsess_match.group(1)
+                        log_debug("ACP: login successful (from response body)")
+                        return True
 
-        except Exception as e:
-            log_debug(f"ACP: login failed: {e}", level="error")
-            return False
+                # Auth failure (not a connection issue) — don't retry
+                self._last_error = f"ACP login rejected (HTTP {response.status_code}) — check credentials"
+                log_debug(f"ACP: {self._last_error}", level="error")
+                return False
+
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                last_error = e
+                log_debug(f"ACP: connection failed (attempt {attempt + 1}/{max_retries}): {e}", level="warn")
+                continue
+
+            except Exception as e:
+                self._last_error = f"ACP login error: {e}"
+                log_debug(f"ACP: {self._last_error}", level="error")
+                return False
+
+        self._last_error = (
+            f"Cannot reach jcink.net — server has no network connectivity to the forum "
+            f"(tried {max_retries} times). This is NOT a credentials issue."
+        )
+        log_debug(f"ACP: {self._last_error}", level="error")
+        return False
+
+    async def _close_and_reset_client(self):
+        """Close and discard the HTTP client so a fresh one is created."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
 
     async def _dump_database(self, table_parts: list[str] | None = None) -> str | None:
         """Trigger a full MySQL dump via ACP and return the SQL file contents.
@@ -752,7 +931,7 @@ class ACPClient:
         log_debug("ACP: clearing previous backup")
         try:
             await client.get(
-                f"{base}/admin.php?act=mysql&code=backup&erase=1&adsess={self._token}",
+                self._rewrite_url(f"{base}/admin.php?act=mysql&code=backup&erase=1&adsess={self._token}"),
                 follow_redirects=True,
             )
         except Exception as e:
@@ -761,10 +940,10 @@ class ACPClient:
         await asyncio.sleep(1)
 
         # Step 2: Start the full dump — step1=1 begins at page 1
-        log_debug("ACP: starting full database dump")
+        log_debug("── Phase 1: ACP Dump ──")
         try:
             init_resp = await client.get(
-                f"{base}/admin.php?act=mysql&code=dump&step1=1&adsess={self._token}",
+                self._rewrite_url(f"{base}/admin.php?act=mysql&code=dump&step1=1&adsess={self._token}"),
                 follow_redirects=True,
             )
             html = init_resp.text
@@ -797,12 +976,26 @@ class ACPClient:
             part = match.group(2)
             parts_seen.add(part)
 
-            url = f"{base}/admin.php?act=mysql&adsess={self._token}&code=dump&line={line}&part={part}"
-            try:
-                resp = await client.get(url, follow_redirects=True)
-                html = resp.text
-            except Exception as e:
-                log_debug(f"ACP: dump page failed (part={part} line={line}): {e}", level="error")
+            url = self._rewrite_url(f"{base}/admin.php?act=mysql&adsess={self._token}&code=dump&line={line}&part={part}")
+            page_ok = False
+            for retry in range(5):
+                try:
+                    resp = await client.get(url, follow_redirects=True)
+                    if resp.status_code != 200:
+                        log_debug(f"ACP: dump page error (part={part} line={line}): HTTP {resp.status_code}, retry {retry + 1}/5", level="warn")
+                        await asyncio.sleep(2 ** retry)
+                        continue
+                    html = resp.text
+                    page_ok = True
+                    break
+                except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+                    log_debug(f"ACP: dump page retry {retry + 1}/5 (part={part} line={line}): {e}", level="warn")
+                    await asyncio.sleep(2 ** retry)
+                except Exception as e:
+                    log_debug(f"ACP: dump page failed (part={part} line={line}): {e}", level="error")
+                    break
+            if not page_ok:
+                log_debug(f"ACP: dump aborted — page failed after 5 retries (part={part} line={line})", level="error")
                 break
 
             total_pages += 1
@@ -810,7 +1003,7 @@ class ACPClient:
 
             # Brief pause every 10 pages to be polite
             if total_pages % 10 == 0:
-                log_debug(f"ACP: dump progress — {total_pages} pages, parts seen: {sorted(parts_seen)}")
+                log_debug(f"ACP dump: {total_pages} pages fetched")
                 await asyncio.sleep(0.3)
 
         log_debug(
@@ -826,15 +1019,19 @@ class ACPClient:
             log_debug(f"ACP: waiting {wait_secs}s for SQL file")
             await asyncio.sleep(wait_secs)
             try:
-                resp = await client.get(sql_url, follow_redirects=True)
+                log_debug("ACP: fetching SQL file...")
+                resp = await client.get(self._rewrite_url(sql_url), follow_redirects=True)
+                log_debug(f"ACP: SQL file response — status={resp.status_code}, size={len(resp.text):,}")
                 if resp.status_code == 200 and len(resp.text) > 100:
                     sql_content = resp.text
                     log_debug(f"ACP: SQL file retrieved ({len(sql_content):,} bytes)")
                     break
                 else:
                     log_debug(f"ACP: SQL file not ready (status={resp.status_code}, size={len(resp.text)})")
+            except httpx.ReadTimeout:
+                log_debug(f"ACP: SQL file fetch timed out (attempt after {wait_secs}s wait)", level="warn")
             except Exception as e:
-                log_debug(f"ACP: SQL file fetch error: {e}", level="warn")
+                log_debug(f"ACP: SQL file fetch error: {type(e).__name__}: {e}", level="warn")
 
         if not sql_content:
             log_debug("ACP: failed to retrieve SQL file after all retries", level="error")
@@ -870,16 +1067,20 @@ class ACPClient:
 
         Returns dict with keys like 'posts', 'topics', 'members', 'forums', etc.
         Each value is a list of row arrays.
+        On failure, returns a dict with an "error" key describing what went wrong.
         """
         if not await self.login():
-            return {}
+            reason = self._last_error or "login failed"
+            return {"error": reason}
 
         sql_content = await self._dump_database()
         if not sql_content:
             return {}
 
         log_debug("ACP: parsing SQL dump")
-        raw = parse_sql_dump(sql_content)
+        # Run parser in a thread to avoid blocking the async event loop
+        # (parse_sql_dump is CPU-bound and processes 28K+ lines)
+        raw = await asyncio.get_event_loop().run_in_executor(None, parse_sql_dump, sql_content)
         row_counts = {k: len(v) for k, v in raw.items()}
         log_debug(f"ACP: tables parsed — {row_counts}")
 

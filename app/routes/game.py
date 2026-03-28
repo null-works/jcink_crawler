@@ -31,6 +31,7 @@ async def _characters_with_quotes(db: aiosqlite.Connection) -> list[dict]:
         SELECT c.id, c.name, c.avatar_url
         FROM characters c
         WHERE c.id IN (SELECT DISTINCT character_id FROM quotes)
+          AND COALESCE(c.hidden, 0) = 0
         ORDER BY c.name
     """)
     rows = await cursor.fetchall()

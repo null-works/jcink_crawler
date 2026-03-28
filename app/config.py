@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "3.9.18"
+APP_VERSION = "1.0.0"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
@@ -16,9 +16,6 @@ class Settings(BaseSettings):
     forum_incomplete_id: str = "59"
     forum_comms_id: str = "31"
     forums_excluded: str = "4,5,6,7,8,9,10,11,12,14,15,16,18,52,56,57,58,60,63,69,85,86,87,88,90,91,92,95"
-    crawl_threads_interval_minutes: int = 60
-    crawl_profiles_interval_minutes: int = 1440
-    crawl_discovery_interval_minutes: int = 1440
     crawl_quotes_batch_size: int = 0  # 0 = unlimited, process all unscraped threads
     quote_min_words: int = 3
     webhook_crawl_delay_seconds: float = 5.0
@@ -29,12 +26,16 @@ class Settings(BaseSettings):
     bot_password: str = ""
     admin_username: str = ""
     admin_password: str = ""
-    acp_sync_interval_minutes: int = 5  # minutes between ACP sync cycles
     affiliation_field_key: str = "affiliation"
     player_field_key: str = "player"
     excluded_names: str = "Watcher,Null,Spider,Kat,RandomPrecision"
+    excluded_character_ids: str = "327"
+    proxy_url: str = ""
+    cf_worker_url: str = ""
+    cf_worker_key: str = ""
     dashboard_password_b64: str = ""
     dashboard_secret_key: str = "change-me-in-production"
+    activity_timezone: str = "America/New_York"
 
     @property
     def dashboard_password(self) -> str:
@@ -49,6 +50,10 @@ class Settings(BaseSettings):
     @property
     def excluded_name_set(self) -> set[str]:
         return {n.strip().lower() for n in self.excluded_names.split(",") if n.strip()}
+
+    @property
+    def excluded_id_set(self) -> set[str]:
+        return {i.strip() for i in self.excluded_character_ids.split(",") if i.strip()}
 
 
 settings = Settings()

@@ -1,5 +1,6 @@
 import pathlib
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -25,8 +26,9 @@ from app.models import (
     get_player_detail,
     get_dashboard_stats,
     get_dashboard_chart_data,
+    get_activity_check_data,
 )
-from app.models.operations import set_crawl_status, get_crawl_status
+from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden, set_approval_date, set_approval_dates
 from app.services import crawl_character_threads, crawl_character_profile, register_character
 from app.services.crawler import sync_posts_from_acp, crawl_quotes_only
 from app.services.scheduler import _crawl_all_characters
@@ -247,6 +249,12 @@ async def character_detail_page(
     quotes = await get_all_quotes(db, character_id)
     activity = get_activity()
 
+    # Check hidden state and approval date
+    cursor = await db.execute("SELECT hidden, approval_date FROM characters WHERE id = ?", (character_id,))
+    row = await cursor.fetchone()
+    is_hidden = bool(row["hidden"]) if row else False
+    approval_date = row["approval_date"] if row else None
+
     total_quotes = len(quotes)
     return templates.TemplateResponse(request, "pages/character_detail.html", {
         "character": char,
@@ -261,6 +269,8 @@ async def character_detail_page(
         "q": None,
         "character_id": character_id,
         "category": None,
+        "is_hidden": is_hidden,
+        "approval_date": approval_date,
     })
 
 
@@ -364,6 +374,140 @@ async def quotes_page(
     })
 
 
+@router.get("/activity-check", response_class=HTMLResponse)
+async def activity_check_page(
+    request: Request,
+    month: str | None = None,
+    filter: str | None = None,
+    q: str | None = None,
+    sort: str | None = None,
+    dir: str = "desc",
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    now = datetime.now(ZoneInfo(settings.activity_timezone))
+    current_month = now.strftime("%Y-%m")
+
+    # Build last 12 months for toggle pills
+    months = []
+    for i in range(11, -1, -1):
+        y = now.year
+        m = now.month - i
+        while m <= 0:
+            m += 12
+            y -= 1
+        val = f"{y}-{m:02d}"
+        label = datetime(y, m, 1).strftime("%b %Y")
+        months.append({"value": val, "label": label})
+
+    # Parse selected month (format: "YYYY-MM"), default to current
+    selected = month or current_month
+    try:
+        dt = datetime.strptime(selected, "%Y-%m")
+        month_start = dt.strftime("%Y-%m-01")
+        if dt.month == 12:
+            month_end = f"{dt.year + 1}-01-01"
+        else:
+            month_end = f"{dt.year}-{dt.month + 1:02d}-01"
+    except ValueError:
+        month_start = None
+        month_end = None
+
+    data = await get_activity_check_data(db, month_start, month_end)
+    activity = get_activity()
+
+    # Apply status filter — filter at the character level, then drop empty players
+    if filter and filter in ("safe", "warning", "danger", "pending"):
+        filtered_players = []
+        for p in data["players"]:
+            chars = [c for c in p["characters"] if c["ac_status"] == filter]
+            if chars:
+                p = {**p, "characters": chars}
+                filtered_players.append(p)
+        data["players"] = filtered_players
+
+    # Apply sorting
+    if sort in ("monthly_posts", "total_posts"):
+        key = "total_monthly_posts" if sort == "monthly_posts" else "total_posts"
+        reverse = dir != "asc"
+        data["players"] = sorted(data["players"], key=lambda p: p[key], reverse=reverse)
+
+    return templates.TemplateResponse(request, "pages/activity_check.html", {
+        "data": data,
+        "activity": activity,
+        "month": month,
+        "current_month": current_month,
+        "months": months,
+        "filter": filter,
+        "q": q or "",
+        "sort": sort or "",
+        "dir": dir,
+    })
+
+
+@router.get("/ac-results", response_class=HTMLResponse)
+async def ac_results_page(
+    request: Request,
+    period: str | None = None,
+    q: str | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    now = datetime.now(ZoneInfo(settings.activity_timezone))
+    current_month = now.strftime("%Y-%m")
+
+    # Previous month
+    if now.month == 1:
+        prev_y, prev_m = now.year - 1, 12
+    else:
+        prev_y, prev_m = now.year, now.month - 1
+    prev_month = f"{prev_y}-{prev_m:02d}"
+
+    # Default to previous month ("last")
+    if period == "current":
+        selected = current_month
+    else:
+        period = "last"
+        selected = prev_month
+
+    dt = datetime.strptime(selected, "%Y-%m")
+    month_start = dt.strftime("%Y-%m-01")
+    if dt.month == 12:
+        month_end = f"{dt.year + 1}-01-01"
+    else:
+        month_end = f"{dt.year}-{dt.month + 1:02d}-01"
+
+    data = await get_activity_check_data(db, month_start, month_end)
+    activity = get_activity()
+
+    # Filter to only danger + warning characters (missed AC)
+    filtered_players = []
+    failed_total = 0
+    for p in data["players"]:
+        chars = [c for c in p["characters"] if c["ac_status"] in ("danger", "warning")]
+        if chars:
+            failed_total += len(chars)
+            filtered_players.append({**p, "characters": chars})
+    data["players"] = filtered_players
+
+    period_label = datetime.strptime(selected, "%Y-%m").strftime("%B %Y")
+
+    return templates.TemplateResponse(request, "pages/ac_results.html", {
+        "data": data,
+        "activity": activity,
+        "period": period,
+        "period_label": period_label,
+        "failed_total": failed_total,
+        "q": q or "",
+    })
+
+
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_page(
     request: Request,
@@ -382,13 +526,13 @@ async def admin_page(
     acp_password = await get_crawl_status(db, "acp_password") or settings.admin_password
     acp_configured = bool(acp_username and acp_password)
     acp_last_sync = await get_crawl_status(db, "acp_last_sync")
+    browser_sync_url = await get_crawl_status(db, "browser_sync_url") or ""
 
-    # Crawl schedule
-    schedule_defaults = {"sync_interval": 30, "quote_interval": 30, "profile_interval": 120, "discovery_interval": 1440}
-    schedule = {}
-    for key, default in schedule_defaults.items():
-        val = await get_crawl_status(db, f"schedule_{key}")
-        schedule[key] = int(val) if val else default
+    # Banner album
+    banner_album_url = await get_crawl_status(db, "banner_album_url") or "https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+    # Import cache state to show count
+    from app.routes.character import _banner_cache
+    banner_count = len(_banner_cache["urls"]) if _banner_cache["urls"] else 0
 
     return templates.TemplateResponse(request, "pages/admin.html", {
         "stats": stats,
@@ -397,7 +541,10 @@ async def admin_page(
         "acp_configured": acp_configured,
         "acp_username": acp_username or "",
         "acp_last_sync": acp_last_sync,
-        "schedule": schedule,
+        "forum_base_url": settings.forum_base_url,
+        "browser_sync_url": browser_sync_url,
+        "banner_album_url": banner_album_url,
+        "banner_count": banner_count,
     })
 
 
@@ -695,6 +842,94 @@ async def htmx_character_quotes(
     })
 
 
+@router.post("/htmx/character/{character_id}/toggle-hidden", response_class=HTMLResponse)
+async def htmx_toggle_hidden(
+    request: Request,
+    character_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    new_state = await toggle_character_hidden(db, character_id)
+    if new_state is None:
+        return HTMLResponse(status_code=404, content="Character not found")
+
+    if new_state:
+        return HTMLResponse(
+            '<button class="btn btn-ghost btn-sm btn-hidden-active" '
+            f'hx-post="/htmx/character/{character_id}/toggle-hidden" '
+            'hx-target="#hide-toggle" hx-swap="innerHTML">'
+            'Hidden</button>'
+        )
+    else:
+        return HTMLResponse(
+            '<button class="btn btn-ghost btn-sm" '
+            f'hx-post="/htmx/character/{character_id}/toggle-hidden" '
+            'hx-target="#hide-toggle" hx-swap="innerHTML">'
+            'Hide</button>'
+        )
+
+
+@router.post("/htmx/character/{character_id}/approval-date", response_class=HTMLResponse)
+async def htmx_set_approval_date(
+    request: Request,
+    character_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    date_val = form.get("approval_date", "").strip() or None
+    found = await set_approval_date(db, character_id, date_val)
+    if not found:
+        return HTMLResponse(status_code=404, content="Character not found")
+
+    if date_val:
+        return HTMLResponse(f'<span class="text-green">Approved: {date_val}</span>')
+    else:
+        return HTMLResponse('<span class="text-comment">Approval date cleared</span>')
+
+
+@router.post("/htmx/bulk-approval-dates", response_class=HTMLResponse)
+async def htmx_bulk_approval_dates(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    raw = form.get("csv_data", "").strip()
+    if not raw:
+        return HTMLResponse('<span class="text-red">No data provided</span>')
+
+    entries = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Expect: "Character Name\tYYYY-MM-DD" or "Character Name,YYYY-MM-DD"
+        parts = line.split("\t") if "\t" in line else line.rsplit(",", 1)
+        if len(parts) >= 2:
+            entries.append({"name": parts[-2].strip(), "approval_date": parts[-1].strip()})
+
+    if not entries:
+        return HTMLResponse('<span class="text-red">No valid entries found</span>')
+
+    result = await set_approval_dates(db, entries)
+    unmatched_msg = ""
+    if result["unmatched"]:
+        unmatched_msg = f'<br><span class="text-yellow">Unmatched: {", ".join(result["unmatched"])}</span>'
+    return HTMLResponse(
+        f'<span class="text-green">Updated {result["matched"]} characters</span>{unmatched_msg}'
+    )
+
+
 @router.post("/htmx/register", response_class=HTMLResponse)
 async def htmx_register(
     request: Request,
@@ -775,8 +1010,9 @@ async def htmx_save_acp_credentials(
     return HTMLResponse(f'<span class="text-green">ACP credentials saved for {username}.</span>')
 
 
-@router.post("/htmx/crawl-schedule", response_class=HTMLResponse)
-async def htmx_save_crawl_schedule(
+@router.post("/htmx/banner-album", response_class=HTMLResponse)
+@router.post("/htmx/save-sync-url", response_class=HTMLResponse)
+async def htmx_save_sync_url(
     request: Request,
     db: aiosqlite.Connection = Depends(get_db),
 ):
@@ -785,24 +1021,59 @@ async def htmx_save_crawl_schedule(
         return auth_err
 
     form = await request.form()
-    labels = {
-        "sync_interval": "ACP Sync",
-        "quote_interval": "Quotes",
-        "profile_interval": "Profiles",
-        "discovery_interval": "Discovery",
-    }
-    saved = []
-    for key in labels:
-        val = form.get(key, "").strip()
-        if val:
-            minutes = max(1, int(val))
-            await set_crawl_status(db, f"schedule_{key}", str(minutes))
-            saved.append(f"{labels[key]}: {minutes}m")
+    url = form.get("browser_sync_url", "").strip()
+    await set_crawl_status(db, "browser_sync_url", url)
+    return HTMLResponse(f'<span class="text-green">Saved</span>')
 
-    if not saved:
-        return HTMLResponse('<span class="text-red">No values provided</span>')
 
-    return HTMLResponse(f'<span class="text-green">Schedule saved — {", ".join(saved)}</span>')
+@router.post("/htmx/banner-album", response_class=HTMLResponse)
+async def htmx_save_banner_album(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    url = form.get("banner_album_url", "").strip()
+
+    if not url:
+        return HTMLResponse('<span class="text-red">Album URL is required</span>')
+
+    await set_crawl_status(db, "banner_album_url", url)
+
+    # Invalidate cache so next /api/banners call fetches from new URL
+    from app.routes.character import _banner_cache
+    _banner_cache["fetched_at"] = 0.0
+
+    return HTMLResponse(f'<span class="text-green">Banner album URL saved. Next API call will re-scrape.</span>')
+
+
+@router.post("/htmx/banner-refresh", response_class=HTMLResponse)
+async def htmx_refresh_banners(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    from app.routes.character import _banner_cache, _fetch_all_banners, BANNER_ALBUM_URL_DEFAULT
+    import httpx as _httpx
+
+    album_url = await get_crawl_status(db, "banner_album_url") or BANNER_ALBUM_URL_DEFAULT
+    try:
+        urls = await _fetch_all_banners(album_url)
+    except _httpx.HTTPError as e:
+        return HTMLResponse(f'<span class="text-red">Fetch failed: {e}</span>')
+
+    import time
+    _banner_cache["urls"] = urls
+    _banner_cache["album_url"] = album_url
+    _banner_cache["fetched_at"] = time.time()
+
+    return HTMLResponse(f'<span class="text-green">Cache refreshed — {len(urls)} banner images loaded.</span>')
 
 
 @router.post("/htmx/acp-sync", response_class=HTMLResponse)

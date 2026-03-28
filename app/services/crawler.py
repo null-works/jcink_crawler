@@ -1,6 +1,7 @@
 import asyncio
 import aiosqlite
 from app.config import settings
+from app.database import connect_db
 from app.services.activity import set_activity, clear_activity, log_debug
 from app.services.fetcher import fetch_page, fetch_page_rendered, fetch_page_with_delay, fetch_pages_concurrent, reauthenticate
 from app.services.parser import (
@@ -114,7 +115,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
     )
 
     # Pre-load character info and quote scrape status in bulk
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         char = await get_character(db, character_id)
 
@@ -291,7 +292,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
             f"({total_quotes_all_chars} total across all chars)"
         )
 
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
 
         for result in thread_results:
@@ -367,7 +368,7 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         await db.commit()
 
     # Update crawl timestamp
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         await update_character_crawl_time(db, character_id, "threads")
 
     clear_activity()
@@ -483,7 +484,7 @@ async def crawl_single_thread(
         forum_name = forum_link.get_text(strip=True)
 
     # Load known characters for quote extraction
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id, name FROM characters")
         rows = await cursor.fetchall()
@@ -579,7 +580,7 @@ async def crawl_single_thread(
     quotes_added = 0
     linked_characters: list[str] = []
     try:
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
 
             await upsert_thread(
@@ -702,7 +703,7 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     if is_board_message(html):
         log_debug(f"Profile {character_id} returned board message — removing character", level="error")
         set_activity(f"Removing deleted profile #{character_id}", character_id=character_id)
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             removed = await delete_character(db, character_id)
         clear_activity()
@@ -733,7 +734,7 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
             character_name=profile.name,
         )
 
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         await upsert_character(
             db,
@@ -755,6 +756,91 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
         "fields_count": len(profile.fields),
         "group": profile.group_name,
     }
+
+
+async def process_profile_html(character_id: str, html: str, db_path: str) -> dict:
+    """Process pre-fetched profile HTML (browser-side sync path).
+
+    The browser fetches the profile page from JCink (using its own IP)
+    and sends the rendered HTML here. The server parses it with the
+    existing BeautifulSoup pipeline and updates the database.
+
+    Since the browser renders JS, this gets the full rendered page
+    including power grid and other JS-built elements.
+    """
+    base_url = settings.forum_base_url
+    profile_url = f"{base_url}/index.php?showuser={character_id}"
+
+    if is_board_message(html):
+        log_debug(f"Profile {character_id} returned board message — removing character", level="error")
+        async with connect_db(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            removed = await delete_character(db, character_id)
+        return {"removed": True, "character_id": character_id}
+
+    profile = parse_profile_page(html, character_id)
+
+    # Power grid: browser-rendered HTML should already have it, but check
+    _PG_KEYS = {"power grid - int", "power grid - str", "power grid - spd",
+                "power grid - dur", "power grid - pwr", "power grid - cmb"}
+    has_power_grid = bool(_PG_KEYS & set(profile.fields.keys()))
+
+    if profile.name:
+        async with connect_db(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(
+                db,
+                character_id=character_id,
+                name=profile.name,
+                profile_url=profile_url,
+                group_name=profile.group_name,
+                avatar_url=profile.avatar_url,
+            )
+            for key, value in profile.fields.items():
+                await upsert_profile_field(db, character_id, key, value)
+            await update_character_crawl_time(db, character_id, "profile")
+            await db.commit()
+
+    return {
+        "character_id": character_id,
+        "name": profile.name,
+        "fields_count": len(profile.fields),
+        "group": profile.group_name,
+        "has_power_grid": has_power_grid,
+    }
+
+
+async def process_profile_html_batch(profiles: list[dict], db_path: str) -> dict:
+    """Process a batch of pre-fetched profile HTML pages.
+
+    Args:
+        profiles: List of {"character_id": "N", "html": "..."} dicts
+        db_path: Path to SQLite database
+
+    Returns:
+        Summary dict with counts
+    """
+    set_activity(f"Processing {len(profiles)} uploaded profiles")
+    log_debug(f"Processing {len(profiles)} browser-uploaded profiles")
+
+    processed = 0
+    errors = 0
+    for p in profiles:
+        cid = str(p.get("character_id", ""))
+        html = p.get("html", "")
+        if not cid or not html:
+            continue
+        try:
+            result = await process_profile_html(cid, html, db_path)
+            if "error" not in result:
+                processed += 1
+        except Exception as e:
+            errors += 1
+            log_debug(f"Error processing profile {cid}: {e}", level="error")
+
+    clear_activity()
+    log_debug(f"Browser profile sync: {processed} processed, {errors} errors", level="done")
+    return {"processed": processed, "errors": errors}
 
 
 async def register_character(user_id: str, db_path: str) -> dict:
@@ -808,14 +894,12 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     Returns:
         Summary dict with counts
     """
-    from app.services.acp_client import ACPClient, detect_schema, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records, extract_member_records
-    from app.services.parser import categorize_thread
-    from app.models.operations import get_crawl_status, set_crawl_status
-    from datetime import datetime, timezone
+    from app.services.acp_client import ACPClient
+    from app.models.operations import get_crawl_status
 
     # Resolve credentials: params > DB > env
     if not username or not password:
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             db_user = await get_crawl_status(db, "acp_username")
             db_pass = await get_crawl_status(db, "acp_password")
@@ -825,29 +909,77 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     if not username or not password:
         return {"error": "No admin credentials configured — set them in Admin > ACP Settings"}
 
-    log_debug("Starting ACP full sync")
+    log_debug("═══ ACP Sync Started ═══")
     set_activity("Syncing from ACP")
 
     client = ACPClient(username=username, password=password)
     try:
         raw = await client.fetch_all_data()
+        if "error" in raw:
+            clear_activity()
+            return {"error": raw["error"]}
         if not raw:
             clear_activity()
             return {"error": "No data retrieved from ACP"}
 
+        return await process_acp_raw_data(raw, db_path)
+
+    finally:
+        await client.close()
+
+
+async def process_acp_sql_dump(sql_text: str, db_path: str) -> dict:
+    """Process a raw SQL dump uploaded from the browser.
+
+    This is the browser-assisted ACP sync path: the admin's browser
+    fetches the ACP database dump (using its own IP, bypassing any
+    server IP blocks) and POSTs the raw SQL to the server.
+
+    The server parses and processes it identically to sync_posts_from_acp.
+    """
+    from app.services.acp_client import parse_sql_dump
+
+    set_activity("Processing uploaded ACP dump")
+    log_debug(f"Processing browser-uploaded SQL dump ({len(sql_text):,} bytes)")
+
+    import asyncio
+    raw = await asyncio.get_event_loop().run_in_executor(None, parse_sql_dump, sql_text)
+    if not raw:
+        clear_activity()
+        return {"error": "No valid SQL data found in upload"}
+
+    row_counts = {k: len(v) for k, v in raw.items()}
+    log_debug(f"Uploaded dump tables: {row_counts}")
+
+    return await process_acp_raw_data(raw, db_path)
+
+
+async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict:
+    """Shared processing pipeline for ACP data (server-fetched or browser-uploaded)."""
+    from app.services.acp_client import detect_schema, extract_topic_records, extract_post_records as acp_extract_posts, extract_forum_records, extract_member_records
+    from app.services.parser import categorize_thread
+    from app.models.operations import get_crawl_status, set_crawl_status
+    from datetime import datetime, timezone
+
+    try:
         # Auto-detect column indices by cross-referencing tables
         schema = detect_schema(raw)
 
         # Extract structured records using detected schema
         topics = extract_topic_records(raw, schema=schema)
-        posts = acp_extract_posts(raw, include_body=False, schema=schema)
+        posts = acp_extract_posts(raw, include_body=True, schema=schema)
         forums = extract_forum_records(raw, schema=schema)
-        log_debug(f"ACP dump: {len(topics)} topics, {len(posts)} posts, {len(forums)} forums")
+        log_debug(f"── Phase 2: Schema ── {len(topics)} topics, {len(posts)} posts, {len(forums)} forums")
 
-        if not topics and not posts:
+        if not topics:
             clear_activity()
-            log_debug("ACP sync FAILED: 0 topics and 0 posts extracted", level="error")
-            return {"error": "ACP dump contained no topic or post data"}
+            log_debug("ACP sync FAILED: 0 topics extracted — dump may be incomplete (CF Worker 502?)", level="error")
+            return {"error": "ACP dump contained no topic data — try again"}
+
+        if not posts:
+            clear_activity()
+            log_debug("ACP sync FAILED: 0 posts extracted", level="error")
+            return {"error": "ACP dump contained no post data"}
 
         # Sanity-check: log sample data to verify schema detection
         if topics:
@@ -867,11 +999,10 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
         # find 0 relevant threads. Fix this by registering members from
         # the dump itself before matching threads.
         members = extract_member_records(raw, schema=schema)
-        excluded_names = settings.excluded_name_set
         base_url = settings.forum_base_url
 
         if members:
-            async with aiosqlite.connect(db_path) as db:
+            async with connect_db(db_path) as db:
                 db.row_factory = aiosqlite.Row
                 cursor = await db.execute("SELECT id FROM characters")
                 existing_ids = {row["id"] for row in await cursor.fetchall()}
@@ -881,8 +1012,6 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                     mid = m["member_id"]
                     mname = m["name"]
                     if mid in existing_ids:
-                        continue
-                    if mname.lower() in excluded_names:
                         continue
                     if mname == "Unknown" or not mname:
                         continue
@@ -898,13 +1027,14 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                 if new_chars:
                     log_debug(f"ACP sync: auto-registered {new_chars} characters from member dump")
 
-        set_activity(f"Processing {len(topics)} topics, {len(posts)} posts from ACP")
-
         # Load tracked character IDs (now includes auto-registered members)
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT id FROM characters")
             tracked_chars = {row["id"] for row in await cursor.fetchall()}
+
+        log_debug(f"── Phase 3: Match ── {len(tracked_chars)} characters, {len(topics)} topics")
+        set_activity(f"Matching {len(posts)} posts to {len(tracked_chars)} characters")
 
         # Excluded forum IDs
         excluded_forums = settings.excluded_forum_ids
@@ -988,7 +1118,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
 
         # Check which avatars we already have in DB
         if poster_ids_needing_avatar:
-            async with aiosqlite.connect(db_path) as db:
+            async with connect_db(db_path) as db:
                 db.row_factory = aiosqlite.Row
                 placeholders = ",".join("?" * len(poster_ids_needing_avatar))
                 cursor = await db.execute(
@@ -1026,15 +1156,37 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
                     avatar_cache[poster_id] = None
 
         # ── Phase 4: Write everything to DB ──
-        set_activity("Writing ACP data to database")
+        total_relevant = len(relevant_thread_ids)
+        log_debug(f"── Phase 4: DB Write ── {total_relevant} threads to process")
+        set_activity(f"Writing {total_relevant} threads to database")
         threads_upserted = 0
         links_created = 0
         posts_stored = 0
 
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
 
+            # Clean up junk threads from previous syncs (move-redirect stubs)
+            junk = await db.execute(
+                "SELECT COUNT(*) FROM threads WHERE title LIKE 'From:%'"
+            )
+            junk_count = (await junk.fetchone())[0]
+            if junk_count:
+                await db.execute(
+                    "DELETE FROM character_threads WHERE thread_id IN "
+                    "(SELECT id FROM threads WHERE title LIKE 'From:%')"
+                )
+                await db.execute("DELETE FROM threads WHERE title LIKE 'From:%'")
+                await db.commit()
+                log_debug(f"DB write: cleaned up {junk_count} redirect stubs")
+
+            thread_idx = 0
             for tid in relevant_thread_ids:
+                thread_idx += 1
+                if thread_idx % 200 == 0:
+                    pct = int(thread_idx / total_relevant * 100)
+                    log_debug(f"DB write: {pct}% — {threads_upserted} threads, {links_created} links, {posts_stored} posts")
+                    await asyncio.sleep(0)
                 topic = topic_map.get(tid)
                 if not topic:
                     # Thread exists in posts but not in topics — skip thread upsert
@@ -1118,8 +1270,47 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
 
             await db.commit()
 
+        # ── Phase 5: Extract quotes from post bodies ──
+        # The SQL dump contains the raw HTML of every post body. We extract
+        # dialog quotes directly instead of fetching thread pages via HTTP.
+        from app.services.parser import extract_quotes_from_post_body
+
+        posts_with_body = sum(1 for p in posts if p.get("post_body") and isinstance(p["post_body"], str) and len(p["post_body"]) >= 20)
+        log_debug(f"── Phase 5: Quotes ── {posts_with_body} posts with bodies")
+        set_activity(f"Extracting quotes from {posts_with_body} posts")
+        quotes_added = 0
+
+        async with connect_db(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            processed = 0
+            for p in posts:
+                cid = p["character_id"]
+                if cid not in tracked_chars:
+                    continue
+                body = p.get("post_body")
+                if not body or not isinstance(body, str) or len(body) < 20:
+                    continue
+                tid = p.get("thread_id")
+                thread_title = topic_map.get(tid, {}).get("title") if tid else None
+
+                found = extract_quotes_from_post_body(body)
+                for q in found:
+                    added = await add_quote(db, cid, q["text"], tid, thread_title)
+                    if added:
+                        quotes_added += 1
+
+                processed += 1
+                if processed % 500 == 0:
+                    pct = int(processed / posts_with_body * 100) if posts_with_body else 0
+                    log_debug(f"Quote extraction: {pct}% — {processed}/{posts_with_body} posts, {quotes_added} new quotes")
+                    await asyncio.sleep(0)
+
+            await db.commit()
+
+        log_debug(f"Quote extraction: 100% — {quotes_added} new quotes from {processed} posts")
+
         # Record last sync time
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             await set_crawl_status(db, "acp_last_sync", datetime.now(timezone.utc).isoformat())
 
         clear_activity()
@@ -1129,12 +1320,21 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
             "threads_upserted": threads_upserted,
             "character_links": links_created,
             "posts_stored": posts_stored,
+            "quotes_added": quotes_added,
         }
-        log_debug(f"ACP sync complete: {summary}", level="done")
+        log_debug(
+            f"═══ ACP Sync Complete ═══ "
+            f"threads={threads_upserted} links={links_created} "
+            f"posts={posts_stored} quotes={quotes_added}",
+            level="done",
+        )
+
         return summary
 
-    finally:
-        await client.close()
+    except Exception as e:
+        clear_activity()
+        log_debug(f"ACP processing error: {e}", level="error")
+        return {"error": str(e)}
 
 
 async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict:
@@ -1163,7 +1363,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
     set_activity("Crawling quotes")
 
     # Load all characters and find threads needing quote scraping
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
 
         # All known characters
@@ -1217,7 +1417,20 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
         # Fetch all pages of this thread
         thread_html = await fetch_page_with_delay(thread_url)
         if not thread_html or is_board_message(thread_html):
-            log_debug(f"Quote scrape: skipped thread {tid} (fetch failed or board message)", level="error")
+            reason = "fetch returned None" if not thread_html else "board message (deleted/restricted thread)"
+            log_debug(f"Quote scrape: skipped thread {tid} ({reason})", level="error")
+            # Mark all characters for this thread as scraped so we don't retry
+            async with connect_db(db_path) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    "SELECT character_id FROM character_threads WHERE thread_id = ?", (tid,)
+                )
+                for row in await cursor.fetchall():
+                    await db.execute(
+                        "INSERT OR IGNORE INTO quote_crawl_log (thread_id, character_id) VALUES (?, ?)",
+                        (tid, row["character_id"]),
+                    )
+                await db.commit()
             continue
 
         max_st, page_offsets = parse_thread_pagination(thread_html)
@@ -1233,7 +1446,7 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
                 all_pages.extend(h for h in page_htmls if h)
 
         # Check which characters still need this thread scraped
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT character_id FROM quote_crawl_log WHERE thread_id = ?",
@@ -1248,13 +1461,13 @@ async def crawl_quotes_only(db_path: str, batch_size: int | None = None) -> dict
 
         # Extract quotes for each character
         thread_title = None
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT title FROM threads WHERE id = ?", (tid,))
             row = await cursor.fetchone()
             thread_title = row["title"] if row else "Unknown"
 
-        async with aiosqlite.connect(db_path) as db:
+        async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             for cid, cname in chars_needing.items():
                 char_quotes = []
@@ -1338,7 +1551,7 @@ async def crawl_recent_threads(db_path: str) -> dict:
         return {"threads": 0, "posts_stored": 0}
 
     # Load tracked character IDs
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id FROM characters")
         tracked_chars = {row["id"] for row in await cursor.fetchall()}
@@ -1383,7 +1596,7 @@ async def crawl_recent_threads(db_path: str) -> dict:
     tasks = [_fetch_thread_posts(tid) for tid in thread_ids]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         for result in results:
             if isinstance(result, Exception) or result is None:
@@ -1420,7 +1633,7 @@ async def discover_characters(db_path: str) -> dict:
     set_activity("Discovering characters")
 
     # Pre-load existing character IDs to avoid per-ID DB queries
-    async with aiosqlite.connect(db_path) as db:
+    async with connect_db(db_path) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT id FROM characters")
         rows = await cursor.fetchall()
@@ -1459,13 +1672,8 @@ async def discover_characters(db_path: str) -> dict:
         if not members:
             continue
 
-        excluded = settings.excluded_name_set
         for member in members:
             uid = member["user_id"]
-
-            if member["name"].lower() in excluded:
-                skipped_count += 1
-                continue
 
             if uid in existing_ids:
                 existing_count += 1

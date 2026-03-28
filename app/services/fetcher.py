@@ -1,5 +1,6 @@
 import asyncio
 import re
+from urllib.parse import quote
 
 import httpx
 from app.config import settings
@@ -18,17 +19,33 @@ def _get_semaphore() -> asyncio.Semaphore:
     return _semaphore
 
 
+def _is_cf_worker_enabled() -> bool:
+    """Check if Cloudflare Worker proxy is configured."""
+    return bool(settings.cf_worker_url and settings.cf_worker_key)
+
+
+def _cf_proxy_url(target_url: str) -> str:
+    """Rewrite a JCink URL to route through the Cloudflare Worker."""
+    return f"{settings.cf_worker_url}/?key={quote(settings.cf_worker_key, safe='')}&url={quote(target_url, safe='')}"
+
+
 async def get_client() -> httpx.AsyncClient:
     """Get or create the shared HTTP client."""
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(
-            timeout=30.0,
-            follow_redirects=True,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; TWAICrawler/1.0)",
+        kwargs = {
+            "timeout": 30.0,
+            "follow_redirects": True,
+            "headers": {
+                "User-Agent": "Mozilla/5.0 (compatible; Watcher/1.0)",
             },
-        )
+        }
+        if settings.proxy_url:
+            kwargs["proxy"] = settings.proxy_url
+            print(f"[Fetcher] Using proxy: {settings.proxy_url}")
+        if _is_cf_worker_enabled():
+            print(f"[Fetcher] Using Cloudflare Worker proxy: {settings.cf_worker_url}")
+        _client = httpx.AsyncClient(**kwargs)
     return _client
 
 
@@ -67,7 +84,11 @@ async def authenticate() -> bool:
     }
 
     try:
-        response = await client.post(login_url, data=login_data)
+        if _is_cf_worker_enabled():
+            actual_url = _cf_proxy_url(login_url)
+            response = await client.post(actual_url, data=login_data)
+        else:
+            response = await client.post(login_url, data=login_data)
 
         # JCink redirects on successful login; check for session cookie
         has_session = any(
@@ -107,8 +128,14 @@ async def reauthenticate() -> bool:
 
 
 async def ensure_authenticated() -> None:
-    """Ensure the client is authenticated if credentials are available."""
+    """Ensure the client is authenticated if credentials are available.
+
+    Skipped when using CF Worker proxy — cookies can't be forwarded
+    through the proxy, and JCink thread/profile pages are public.
+    """
     global _authenticated
+    if _is_cf_worker_enabled():
+        return
     if not _authenticated and settings.bot_username:
         await authenticate()
 
@@ -116,8 +143,8 @@ async def ensure_authenticated() -> None:
 async def fetch_page(url: str) -> str | None:
     """Fetch a page and return HTML content.
 
-    This is the abstraction point — swap this to Playwright later
-    for JS-rendered content without changing any callers.
+    If a Cloudflare Worker is configured, requests are routed through it
+    so JCink sees Cloudflare's IP instead of the server's.
 
     Args:
         url: Full URL to fetch
@@ -128,7 +155,11 @@ async def fetch_page(url: str) -> str | None:
     await ensure_authenticated()
     try:
         client = await get_client()
-        response = await client.get(url)
+        if _is_cf_worker_enabled():
+            actual_url = _cf_proxy_url(url)
+            response = await client.get(actual_url)
+        else:
+            response = await client.get(url)
         response.raise_for_status()
         return response.text
     except Exception as e:

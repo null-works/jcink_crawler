@@ -76,41 +76,66 @@
     </div>
 </div>
 
-{# ACP Post Sync #}
+{# Data Sync #}
 <div class="card" style="margin-top: 1.5rem;">
-    <h3 class="card-title" style="margin-bottom: 0.5rem;">ACP Post Sync</h3>
-    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 1rem;">
-        Logs into JCink's Admin Control Panel and dumps the full database. Syncs topics, post counts, last poster data,
-        and accurate timestamps from the SQL database. When configured, this replaces HTML scraping for everything except quotes.
-    </p>
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Data Sync</h3>
 
     <div class="admin-grid" style="margin-bottom: 1rem;">
-        {# Credentials #}
-        <div style="flex: 1;">
-            <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--text-secondary);">ACP Credentials</h4>
-            <form hx-post="/htmx/acp-credentials" hx-target="#acp-cred-result" hx-swap="innerHTML">
-                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-                    <input type="text" name="acp_username" class="form-input"
-                           placeholder="Admin username" value="{{ acp_username }}" required>
-                    <input type="password" name="acp_password" class="form-input"
-                           placeholder="Admin password" required>
-                    <button type="submit" class="btn btn-purple">Save Credentials</button>
+        {# Browser Sync — primary method, uses iframe on jcink.net #}
+        <div style="flex: 2;">
+            <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--text-secondary);">Browser Sync</h4>
+            <p class="text-comment" style="font-size: 0.8rem; margin-bottom: 0.75rem;">
+                Syncs ACP data + profiles using your browser's connection to JCink.
+                Requires a one-time board page setup
+                (<a href="#browser-sync-setup" style="color: var(--purple);" onclick="document.getElementById('browser-sync-setup').style.display='block'">setup instructions</a>).
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem;">
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <input type="text" id="bs-page-url" class="form-input" style="flex: 1;"
+                           placeholder="Board page URL (e.g. https://therewasanidea.jcink.net/index.php?act=Pages&pid=13)"
+                           value="{{ browser_sync_url }}">
+                    <button class="btn btn-purple" style="white-space: nowrap; font-size: 0.75rem;" onclick="saveSyncUrl()">Save</button>
                 </div>
-            </form>
-            <div id="acp-cred-result" class="result"></div>
+                <input type="text" id="bs-username" class="form-input"
+                       placeholder="ACP username" value="{{ acp_username }}">
+                <input type="password" id="bs-password" class="form-input"
+                       placeholder="ACP password">
+                <div style="display: flex; gap: 0.5rem;">
+                    <label style="font-size: 0.8rem; display: flex; align-items: center; gap: 0.3rem; color: var(--text-secondary);">
+                        <input type="checkbox" id="bs-do-acp" checked> ACP dump
+                    </label>
+                    <label style="font-size: 0.8rem; display: flex; align-items: center; gap: 0.3rem; color: var(--text-secondary);">
+                        <input type="checkbox" id="bs-do-profiles" checked> Profiles
+                    </label>
+                </div>
+                <button class="btn btn-green" id="bs-start" onclick="startBrowserSync()">Browser Sync</button>
+            </div>
+            {% if acp_last_sync %}
+            <p class="text-comment" style="font-size: 0.8rem;">
+                Last sync: {{ acp_last_sync|format_time }}
+            </p>
+            {% endif %}
+            <div id="bs-status" class="result"></div>
+            <iframe id="bs-iframe" style="width:100%; height:60px; border:1px solid var(--current); margin-top:0.5rem; border-radius:4px; background:#111;"></iframe>
         </div>
 
-        {# Sync trigger #}
+        {# Server-side sync (fallback when server has connectivity) #}
         <div style="flex: 1;">
-            <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--text-secondary);">Run Sync</h4>
-            {% if acp_configured %}
+            <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--text-secondary);">Server-Side Sync</h4>
             <p class="text-comment" style="font-size: 0.8rem; margin-bottom: 0.5rem;">
-                Configured as: <span class="text-green">{{ acp_username }}</span>
-                {% if acp_last_sync %}
-                <br>Last sync: {{ acp_last_sync|format_time }}
-                {% endif %}
+                Uses the server's connection to JCink directly.
             </p>
-            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <form hx-post="/htmx/acp-credentials" hx-target="#acp-cred-result" hx-swap="innerHTML"
+                  style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.5rem;">
+                <input type="text" name="acp_username" class="form-input"
+                       placeholder="Admin username" value="{{ acp_username }}" required>
+                <input type="password" name="acp_password" class="form-input"
+                       placeholder="Admin password" required>
+                <button type="submit" class="btn btn-purple">Save Credentials</button>
+            </form>
+            <div id="acp-cred-result" class="result"></div>
+            {% if acp_configured %}
+            <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem;">
                 <button class="btn btn-green"
                         hx-post="/htmx/acp-sync"
                         hx-target="#acp-sync-result"
@@ -119,52 +144,294 @@
                         hx-post="/htmx/crawl"
                         hx-vals='{"crawl_type": "crawl-quotes"}'
                         hx-target="#acp-sync-result"
-                        hx-swap="innerHTML">Crawl Quotes Only</button>
+                        hx-swap="innerHTML">HTTP Quote Crawl (Long)</button>
             </div>
-            {% else %}
-            <p class="text-comment" style="font-size: 0.85rem;">
-                <span class="text-yellow">No credentials configured.</span>
-                Enter your JCink admin username and password, then save.
-            </p>
-            <button class="btn btn-ghost" disabled>Full ACP Sync</button>
             {% endif %}
             <div id="acp-sync-result" class="result"></div>
         </div>
     </div>
 </div>
 
-{# Crawl Schedule #}
-<div class="card" style="margin-top: 1.5rem;">
-    <h3 class="card-title" style="margin-bottom: 0.5rem;">Crawl Schedule</h3>
+{# Browser Sync Setup Instructions (hidden by default) #}
+<div id="browser-sync-setup" class="card" style="margin-top: 1.5rem; display: none;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Browser Sync Setup</h3>
     <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 1rem;">
-        Control how often each crawl type runs (in minutes). Used by the external crawl script.
+        One-time setup: create a board page on your JCink forum that the Watcher uses as a bridge.
     </p>
-    <form hx-post="/htmx/crawl-schedule" hx-target="#schedule-result" hx-swap="innerHTML">
-        <div class="admin-grid" style="margin-bottom: 0.75rem;">
-            <div style="flex: 1;">
-                <label style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">ACP Sync</label>
-                <input type="number" name="sync_interval" class="form-input"
-                       value="{{ schedule.sync_interval }}" min="1" style="margin-top: 0.25rem;">
-            </div>
-            <div style="flex: 1;">
-                <label style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Quotes</label>
-                <input type="number" name="quote_interval" class="form-input"
-                       value="{{ schedule.quote_interval }}" min="1" style="margin-top: 0.25rem;">
-            </div>
-            <div style="flex: 1;">
-                <label style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Profiles</label>
-                <input type="number" name="profile_interval" class="form-input"
-                       value="{{ schedule.profile_interval }}" min="1" style="margin-top: 0.25rem;">
-            </div>
-            <div style="flex: 1;">
-                <label style="font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Discovery</label>
-                <input type="number" name="discovery_interval" class="form-input"
-                       value="{{ schedule.discovery_interval }}" min="1" style="margin-top: 0.25rem;">
-            </div>
-        </div>
-        <button type="submit" class="btn btn-purple">Save Schedule</button>
+    <ol class="text-comment" style="font-size: 0.85rem; padding-left: 1.5rem; margin-bottom: 1rem; line-height: 1.8;">
+        <li>Go to your <strong>JCink ACP</strong> &rarr; <strong>Skins &amp; Templates</strong> &rarr; <strong>Manage Board Pages</strong></li>
+        <li>Click <strong>Create New Page</strong>, give it any name (e.g. "Watcher Sync")</li>
+        <li>Paste this into the HTML content:</li>
+    </ol>
+    <pre id="board-page-snippet" class="text-comment" style="font-size: 0.75rem; background: var(--bg-secondary); padding: 0.75rem; overflow-x: auto; margin-bottom: 0.5rem; border: 1px solid var(--current); user-select: all; line-height: 1.4;"></pre>
+    <p class="text-comment" style="font-size: 0.8rem; margin-bottom: 1rem;">
+        The template file is also in the repo at <code>app/static/browser_sync_board_page.html</code>
+    </p>
+    <script>
+        // Show the board page snippet with the actual server URL filled in
+        document.getElementById('board-page-snippet').textContent =
+            '<div id="watcher-sync" style="padding:20px;font-family:monospace;color:#888;">\n' +
+            '  Watcher Browser Sync bridge. Do not close this page.\n' +
+            '</div>\n' +
+            '<script src="' + window.location.origin + '/static/js/browser_sync.js"><\/script>';
+    </script>
+    <ol class="text-comment" start="4" style="font-size: 0.85rem; padding-left: 1.5rem; margin-bottom: 1rem; line-height: 1.8;">
+        <li>Save the page</li>
+        <li>Open the page in your browser — note the URL (it will look like <code>...?act=Pages&amp;pid=XX</code>)</li>
+        <li>Paste that URL into the <strong>Board page URL</strong> field above and click <strong>Save</strong></li>
+        <li>Done! The Browser Sync button will now work.</li>
+    </ol>
+    <button class="btn btn-ghost" onclick="this.parentElement.style.display='none'">Close</button>
+</div>
+
+<div id="bs-log-container" style="display:none; margin-top: 0.75rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.3rem;">
+        <span style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-secondary);">Sync Log</span>
+        <button class="btn btn-ghost" style="font-size:0.7rem; padding:0.15rem 0.5rem;" onclick="document.getElementById('bs-log').innerHTML=''">Clear</button>
+    </div>
+    <div id="bs-log" style="background:var(--bg-primary); border:1px solid var(--border); border-radius:6px; padding:0.5rem 0.75rem; max-height:300px; overflow-y:auto;"></div>
+</div>
+<script>
+const BS_SERVER_BASE = window.location.origin;
+let bsSyncRunning = false;
+
+// ── Verbose log panel ──
+function bsLog(level, msg, detail) {
+    const logEl = document.getElementById('bs-log');
+    if (!logEl) return;
+    const ts = new Date().toLocaleTimeString('en-US', {hour12: false, hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const colors = {info: 'var(--text-secondary)', ok: 'var(--green)', warn: 'var(--yellow)', err: 'var(--red)'};
+    const prefix = {info: 'INFO', ok: ' OK ', warn: 'WARN', err: ' ERR'}[level] || 'INFO';
+    const line = document.createElement('div');
+    line.style.cssText = 'font-family:monospace; font-size:0.78rem; line-height:1.5; color:' + (colors[level] || colors.info);
+    line.textContent = '[' + ts + '] ' + prefix + '  ' + msg + (detail ? '  — ' + detail : '');
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+function saveSyncUrl() {
+    const url = document.getElementById('bs-page-url').value.trim();
+    fetch('/htmx/save-sync-url', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'browser_sync_url=' + encodeURIComponent(url)
+    }).then(r => r.text()).then(html => {
+        const el = document.getElementById('bs-status');
+        el.innerHTML = url ? '<span class="text-green">Board page URL saved</span>'
+                           : '<span class="text-yellow">Board page URL cleared</span>';
+    });
+}
+
+function startBrowserSync() {
+    if (bsSyncRunning) return;
+
+    const pageUrl = document.getElementById('bs-page-url').value.trim();
+    const username = document.getElementById('bs-username').value.trim();
+    const password = document.getElementById('bs-password').value.trim();
+    const doAcp = document.getElementById('bs-do-acp').checked;
+    const doProfiles = document.getElementById('bs-do-profiles').checked;
+    const statusEl = document.getElementById('bs-status');
+    const btn = document.getElementById('bs-start');
+    const iframe = document.getElementById('bs-iframe');
+
+    if (!pageUrl) {
+        statusEl.innerHTML = '<span class="text-red">Enter the board page URL first. <a href="#browser-sync-setup" style="color:var(--purple);" onclick="document.getElementById(\'browser-sync-setup\').style.display=\'block\'">Setup instructions</a></span>';
+        return;
+    }
+    if (doAcp && (!username || !password)) {
+        statusEl.innerHTML = '<span class="text-red">Enter ACP credentials for ACP dump</span>';
+        return;
+    }
+    if (!doAcp && !doProfiles) {
+        statusEl.innerHTML = '<span class="text-red">Select at least one sync option</span>';
+        return;
+    }
+
+    bsSyncRunning = true;
+    btn.disabled = true;
+    btn.textContent = 'Syncing...';
+    statusEl.innerHTML = '<span class="text-yellow">Loading sync bridge...</span>';
+
+    // Show log panel and start logging
+    document.getElementById('bs-log-container').style.display = 'block';
+    document.getElementById('bs-log').innerHTML = '';
+    bsLog('info', 'Browser Sync started');
+    bsLog('info', 'Board page URL', pageUrl);
+    bsLog('info', 'Server base', BS_SERVER_BASE);
+    bsLog('info', 'Options', (doAcp ? 'ACP dump' : '') + (doProfiles ? ' Profiles' : ''));
+    if (doAcp) bsLog('info', 'ACP username', username);
+
+    // Load the iframe
+    bsLog('info', 'Loading iframe...');
+    iframe.src = pageUrl;
+
+    // Timeout if bridge never responds
+    const bridgeTimeout = setTimeout(function() {
+        if (bsSyncRunning && statusEl.innerHTML.includes('Loading sync bridge')) {
+            bsLog('err', 'Bridge timeout — no watcher-sync-ready received within 15s');
+            bsLog('err', 'Possible causes: board page missing JS, iframe blocked, wrong URL');
+            statusEl.innerHTML = '<span class="text-red">Bridge did not load. Check that the board page exists at:<br>' +
+                '<a href="' + pageUrl + '" target="_blank" style="color:var(--purple);">' + pageUrl + '</a><br>' +
+                'The iframe should be visible below — check for errors.</span>';
+            btn.disabled = false;
+            btn.textContent = 'Browser Sync';
+            bsSyncRunning = false;
+        }
+    }, 15000);
+
+    // Log ALL incoming postMessages for debugging
+    const debugAllMessages = function(event) {
+        if (event.data && typeof event.data === 'object' && event.data.type) {
+            bsLog('info', 'postMessage received', 'type=' + event.data.type + ' origin=' + event.origin);
+        }
+    };
+    window.addEventListener('message', debugAllMessages);
+
+    // Wait for iframe ready signal, then start sync
+    const onMessage = function(event) {
+        const data = event.data;
+        if (!data || !data.type) return;
+
+        if (data.type === 'watcher-sync-ready') {
+            clearTimeout(bridgeTimeout);
+            bsLog('ok', 'Bridge ready signal received', 'origin=' + event.origin);
+            statusEl.innerHTML = '<span class="text-yellow">Bridge loaded. Starting sync...</span>';
+
+            if (doProfiles) {
+                bsLog('info', 'Fetching character list from /api/characters...');
+                fetch('/api/characters')
+                    .then(r => {
+                        bsLog('info', 'Character API response', 'status=' + r.status);
+                        return r.json();
+                    })
+                    .then(characters => {
+                        const charIds = characters.map(c => c.id || c.character_id);
+                        bsLog('ok', 'Got ' + charIds.length + ' characters', 'IDs: ' + charIds.slice(0, 10).join(', ') + (charIds.length > 10 ? '...' : ''));
+                        sendSyncCommand(iframe, username, password, doAcp, charIds);
+                    })
+                    .catch(err => {
+                        bsLog('warn', 'Failed to fetch character list', err.message);
+                        sendSyncCommand(iframe, username, password, doAcp, []);
+                    });
+            } else {
+                sendSyncCommand(iframe, username, password, doAcp, []);
+            }
+        }
+
+        if (data.type === 'watcher-sync-status') {
+            const phase = data.phase === 'acp' ? 'ACP' : (data.phase || 'Sync');
+            const detail = data.detail ? ' (' + data.detail + ')' : '';
+            bsLog('info', phase + ': ' + data.message, data.detail || '');
+            statusEl.innerHTML = '<span class="text-yellow">' + phase + ': ' + data.message + detail + '</span>';
+            btn.textContent = data.message;
+        }
+
+        if (data.type === 'watcher-sync-complete') {
+            const s = data.summary || {};
+            let parts = [];
+            if (s.acp) parts.push('ACP: ' + s.acp.size_kb + ' KB uploaded');
+            if (s.profiles) parts.push('Profiles: ' + s.profiles.fetched + ' fetched');
+            if (s.errors && s.errors.length) {
+                parts.push('Errors: ' + s.errors.join(', '));
+                s.errors.forEach(e => bsLog('err', 'Sync error', e));
+            }
+
+            bsLog('ok', 'Sync complete', parts.join(' | '));
+            statusEl.innerHTML = '<span class="text-green">Sync complete. ' + parts.join(' | ') + '</span>';
+            cleanup('sync-complete');
+        }
+
+        if (data.type === 'watcher-sync-error') {
+            bsLog('err', 'Sync error', data.message);
+            statusEl.innerHTML = '<span class="text-red">Error: ' + data.message + '</span>';
+            cleanup('sync-error: ' + data.message);
+        }
+
+        // Bridge verbose logs → dashboard log panel
+        if (data.type === 'watcher-sync-log') {
+            bsLog(data.level || 'info', '[bridge] ' + data.message, data.detail);
+        }
+    };
+
+    function sendSyncCommand(iframe, username, password, doAcp, charIds) {
+        const targetOrigin = new URL(pageUrl).origin;
+        bsLog('info', 'Sending sync command to iframe', 'targetOrigin=' + targetOrigin + ' acp=' + doAcp + ' profiles=' + charIds.length);
+        try {
+            iframe.contentWindow.postMessage({
+                type: 'watcher-sync-start',
+                server_base: BS_SERVER_BASE,
+                acp_username: doAcp ? username : '',
+                acp_password: doAcp ? password : '',
+                character_ids: charIds,
+            }, targetOrigin);
+            bsLog('ok', 'Sync command sent to bridge');
+        } catch (e) {
+            bsLog('err', 'Failed to send postMessage', e.message);
+        }
+    }
+
+    function cleanup(reason) {
+        bsLog('info', 'Cleanup — sync session ended', 'reason=' + (reason || 'unknown'));
+        bsSyncRunning = false;
+        btn.disabled = false;
+        btn.textContent = 'Browser Sync';
+        iframe.src = 'about:blank';
+        window.removeEventListener('message', onMessage);
+        window.removeEventListener('message', debugAllMessages);
+    }
+
+    window.addEventListener('message', onMessage);
+
+    // Timeout after 10 minutes
+    setTimeout(function() {
+        if (bsSyncRunning) {
+            statusEl.innerHTML = '<span class="text-red">Sync timed out after 10 minutes</span>';
+            cleanup('timeout');
+        }
+    }, 600000);
+}
+</script>
+
+{# Bulk Approval Dates #}
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Bulk Approval Dates</h3>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 1rem;">
+        Paste tab-separated or comma-separated data: <code>Character Name, YYYY-MM-DD</code> (one per line).
+        Matches by character name.
+    </p>
+    <form hx-post="/htmx/bulk-approval-dates" hx-target="#approval-result" hx-swap="innerHTML">
+        <textarea name="csv_data" class="form-input" rows="8"
+                  placeholder="Aaron Fischer&#09;2025-04-08&#10;Agatha Harkness&#09;2025-04-18"
+                  style="width: 100%; font-family: monospace; font-size: 0.85rem; margin-bottom: 0.75rem;"></textarea>
+        <button type="submit" class="btn btn-purple">Import Dates</button>
     </form>
-    <div id="schedule-result" class="result"></div>
+    <div id="approval-result" class="result"></div>
+</div>
+
+{# Banner Album #}
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Banner Album</h3>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 1rem;">
+        ImageHut album URL to scrape for banner images. The API parses all pages and returns full-size image URLs
+        for the theme JS banner rotator.
+    </p>
+    <form hx-post="/htmx/banner-album" hx-target="#banner-result" hx-swap="innerHTML">
+        <input type="url" name="banner_album_url" class="form-input"
+               value="{{ banner_album_url }}"
+               placeholder="https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+               style="width: 100%; margin-bottom: 0.75rem;">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button type="submit" class="btn btn-purple">Save URL</button>
+            <button type="button" class="btn btn-ghost"
+                    hx-post="/htmx/banner-refresh"
+                    hx-target="#banner-result"
+                    hx-swap="innerHTML">Refresh Cache</button>
+            {% if banner_count %}
+            <span class="text-comment" style="font-size: 0.8rem;">{{ banner_count }} images loaded</span>
+            {% endif %}
+        </div>
+    </form>
+    <div id="banner-result" class="result"></div>
 </div>
 
 {# Purge & re-crawl #}

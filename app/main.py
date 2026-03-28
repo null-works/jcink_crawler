@@ -8,28 +8,31 @@ from app.config import APP_VERSION, settings
 from app.database import init_db
 from app.routes import character_router, dashboard_router, game_router
 from app.services.fetcher import close_client
-from app.services.scheduler import start_scheduler, stop_scheduler
+from app.services.scheduler import run_startup_tasks
+
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database and scheduler on startup, cleanup on shutdown."""
+    """Initialize database on startup, cleanup on shutdown."""
     if settings.dashboard_secret_key == "change-me-in-production":
         print("[WARNING] DASHBOARD_SECRET_KEY is set to the insecure default. "
               "Session cookies can be forged. Set a random secret in your .env file.")
     await init_db()
-    await start_scheduler()
+    await run_startup_tasks()
     yield
-    stop_scheduler()
     await close_client()
 
 
 app = FastAPI(title="The Watcher", version=APP_VERSION, lifespan=lifespan)
 
-# CORS for JCink embeds — scoped to the forum domain
+# CORS for JCink embeds — allow both http and https origins for the forum
 _cors_origins = [settings.forum_base_url]
+# Also allow http:// variant in case forum is accessed without TLS
+if settings.forum_base_url.startswith("https://"):
+    _cors_origins.append(settings.forum_base_url.replace("https://", "http://", 1))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,

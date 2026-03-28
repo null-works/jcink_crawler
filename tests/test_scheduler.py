@@ -1,4 +1,4 @@
-"""Tests for app/services/scheduler.py — APScheduler job management."""
+"""Tests for app/services/scheduler.py — manual crawl functions."""
 import os
 import pytest
 from unittest.mock import patch, AsyncMock
@@ -6,8 +6,6 @@ import aiosqlite
 
 from app.database import init_db, DATABASE_PATH
 from app.services.scheduler import (
-    start_scheduler,
-    stop_scheduler,
     _crawl_all_characters,
 )
 
@@ -21,33 +19,6 @@ async def fresh_db():
             os.unlink(DATABASE_PATH)
         except OSError:
             pass
-
-
-class TestStartStopScheduler:
-    async def test_start_creates_scheduler(self):
-        from app.services import scheduler
-        scheduler._scheduler = None
-        with patch("app.services.scheduler._crawl_all_characters", new_callable=AsyncMock):
-            await start_scheduler()
-        assert scheduler._scheduler is not None
-        stop_scheduler()
-        assert scheduler._scheduler is None
-
-    async def test_stop_when_not_started(self):
-        from app.services import scheduler
-        scheduler._scheduler = None
-        # Should not raise
-        stop_scheduler()
-
-    async def test_start_registers_jobs(self):
-        from app.services import scheduler
-        scheduler._scheduler = None
-        with patch("app.services.scheduler._crawl_all_characters", new_callable=AsyncMock):
-            await start_scheduler()
-        jobs = scheduler._scheduler.get_jobs()
-        job_ids = {j.id for j in jobs}
-        assert "crawl_all_characters" in job_ids
-        stop_scheduler()
 
 
 class TestCrawlAllCharacters:
@@ -88,9 +59,9 @@ class TestCrawlAllCharacters:
             # 5 misses + 1 valid + 100 misses = 106 checks
             assert mock_check.await_count == 106
 
-    async def test_skips_excluded_names(self):
-        """Excluded names should be skipped without crawling."""
-        # ID 1 = excluded, ID 2 = valid, then 20 misses
+    async def test_crawls_excluded_names(self):
+        """Excluded names should still be crawled (filtering is display-side only)."""
+        # ID 1 = admin account, ID 2 = regular, then misses
         side_effects = ["Watcher", "Alpha"] + [None] * 100
 
         with patch("app.services.scheduler.check_profile_exists", new_callable=AsyncMock, side_effect=side_effects), \
@@ -98,9 +69,9 @@ class TestCrawlAllCharacters:
              patch("app.services.scheduler.crawl_character_threads", new_callable=AsyncMock) as mock_threads, \
              patch("asyncio.sleep", new_callable=AsyncMock):
             await _crawl_all_characters()
-            # Only Alpha should be crawled, Watcher is excluded
-            assert mock_profile.await_count == 1
-            assert mock_threads.await_count == 1
+            # Both should be crawled — exclusion is display-side only
+            assert mock_profile.await_count == 2
+            assert mock_threads.await_count == 2
 
     async def test_continues_on_crawl_error(self):
         """If one character's crawl errors, should still continue to next."""

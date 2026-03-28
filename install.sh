@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ─────────────────────────────────────────────
-# jcink_crawler installer
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────
+# Watcher (JCink Analytics Platform) — Installer
+# ─────────────────────────────────────────────────────
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -53,6 +53,12 @@ if [ ! -f "$CERT_PATH" ] || [ ! -f "$KEY_PATH" ]; then
 fi
 
 info "All prerequisites found."
+
+# --- Configure git hooks ---
+
+info "Configuring git hooks..."
+git config core.hooksPath hooks
+info "Git hooks configured (hooks/ directory)."
 
 # --- Clone repository if needed ---
 

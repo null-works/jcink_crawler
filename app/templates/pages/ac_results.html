@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Results - The Watcher{% endblock %}
+{% block content %}
+
+<div class="page-header">
+    <h1>Activity Check</h1>
+    <p class="subtitle">Characters that missed the activity check</p>
+</div>
+
+<div class="ac-subtabs">
+    <a href="/activity-check" class="ac-subtab">Overview</a>
+    <a href="/ac-results" class="ac-subtab ac-subtab-active">Results</a>
+</div>
+
+{# Period toggle buttons #}
+<div class="card" style="padding: 0.75rem 1.25rem;">
+    <div class="ac-toolbar">
+        <div class="ac-results-toggles">
+            <a href="/ac-results?period=last{% if q %}&q={{ q }}{% endif %}"
+               class="btn {{ 'btn-primary' if period == 'last' else 'btn-ghost' }}">
+                Last Results
+            </a>
+            <a href="/ac-results?period=current{% if q %}&q={{ q }}{% endif %}"
+               class="btn {{ 'btn-primary' if period == 'current' else 'btn-ghost' }}">
+                Current Results
+            </a>
+        </div>
+        <div class="ac-search-wrap">
+            <svg class="ac-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="ac-search" class="form-input ac-search-input" placeholder="Search player or character..." value="{{ q }}">
+        </div>
+    </div>
+</div>
+
+{# Summary #}
+<div class="card" style="padding: 1rem 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="text-comment" style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em;">
+            {{ period_label }}
+        </span>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <span class="ac-badge ac-unsafe">{{ data.totals.danger }} danger</span>
+            <span class="ac-badge ac-warning">{{ data.totals.warning }} warning</span>
+            <span style="font-size: 0.85rem; color: var(--foreground);">{{ failed_total }} characters missed</span>
+        </div>
+    </div>
+</div>
+
+{# Player cards — only characters that failed #}
+<div class="ac-player-grid">
+{% for player in data.players %}
+<div class="card ac-player-card ac-player-danger"
+     data-player="{{ player.player_name|lower }}"
+     data-characters="{{ player.characters|map(attribute='name')|join(',')|lower }}">
+    <div class="ac-player-header">
+        <div class="ac-player-info">
+            <a href="/player/{{ player.player_name }}" class="ac-player-name">{{ player.player_name }}</a>
+            <div class="ac-player-counts">
+                {% set danger_count = player.characters|selectattr('ac_status', 'equalto', 'danger')|list|length %}
+                {% set warning_count = player.characters|selectattr('ac_status', 'equalto', 'warning')|list|length %}
+                {% if danger_count > 0 %}<span class="ac-badge ac-unsafe">{{ danger_count }} danger</span>{% endif %}
+                {% if warning_count > 0 %}<span class="ac-badge ac-warning">{{ warning_count }} warning</span>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="ac-char-grid">
+        {% for char in player.characters %}
+        <a href="/character/{{ char.id }}" class="ac-char-card ac-char-{{ char.ac_status }}">
+            <div class="ac-char-avatar">
+                {% if char.avatar_url %}
+                <img src="{{ char.avatar_url }}" alt="" loading="lazy">
+                {% else %}
+                <span class="avatar-placeholder">?</span>
+                {% endif %}
+            </div>
+            <div class="ac-char-info">
+                <div class="ac-char-name">{{ char.name }}</div>
+                <div class="ac-char-detail">
+                    {% if char.affiliation %}<span class="text-cyan">{{ char.affiliation }}</span>{% endif %}
+                    {% if char.approval_date %}<span class="text-comment"> &middot; {{ char.approval_date }}</span>{% endif %}
+                </div>
+                <div class="ac-char-posts">
+                    <span class="text-comment">{{ char.total_posts }} total</span>
+                    <span class="text-comment">&middot;</span>
+                    <span class="{% if char.monthly_posts == 1 %}text-orange{% else %}text-red{% endif %}">{{ char.monthly_posts }} this month</span>
+                </div>
+            </div>
+            <div class="ac-char-status">
+                {% if char.ac_status == 'warning' %}
+                <span class="ac-badge ac-warning">WARNING</span>
+                {% else %}
+                <span class="ac-badge ac-unsafe">DANGER</span>
+                {% endif %}
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+</div>
+
+{% if not data.players %}
+<div class="card" style="text-align: center; padding: 3rem;">
+    <p class="text-comment">No characters missed the AC for {{ period_label }}.</p>
+</div>
+{% endif %}
+
+<script>
+(function() {
+    var searchEl = document.getElementById('ac-search');
+
+    function applySearch() {
+        var q = searchEl.value.toLowerCase().trim();
+        document.querySelectorAll('.ac-player-card').forEach(function(card) {
+            var player = card.dataset.player || '';
+            var chars = card.dataset.characters || '';
+            card.style.display = (!q || player.includes(q) || chars.includes(q)) ? '' : 'none';
+        });
+        document.querySelectorAll('.ac-results-toggles a').forEach(function(a) {
+            var url = new URL(a.href);
+            if (q) { url.searchParams.set('q', searchEl.value.trim()); }
+            else { url.searchParams.delete('q'); }
+            a.href = url.toString();
+        });
+    }
+
+    searchEl.addEventListener('input', applySearch);
+    if (searchEl.value.trim()) { applySearch(); }
+})();
+</script>
+{% endblock %}
