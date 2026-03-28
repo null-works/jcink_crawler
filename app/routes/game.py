@@ -80,13 +80,17 @@ async def game_who_said_it(
     if len(characters) < choices:
         return JSONResponse({"error": "Not enough characters with quotes"}, status_code=400)
 
-    quote = await _random_quote(db)
-    if not quote:
+    # Pick a random character first, then get a quote from them
+    # (avoids "Character not found" when a quote belongs to a hidden/excluded character)
+    correct = random.choice(characters)
+    cursor = await db.execute(
+        "SELECT id, character_id, quote_text, source_thread_id, source_thread_title FROM quotes WHERE character_id = ? ORDER BY RANDOM() LIMIT 1",
+        (correct["id"],),
+    )
+    quote_row = await cursor.fetchone()
+    if not quote_row:
         return JSONResponse({"error": "No quotes found"}, status_code=400)
-
-    correct = next((c for c in characters if c["id"] == quote["character_id"]), None)
-    if not correct:
-        return JSONResponse({"error": "Character not found"}, status_code=400)
+    quote = dict(quote_row)
 
     wrong_pool = [c for c in characters if c["id"] != correct["id"]]
     wrong = random.sample(wrong_pool, min(choices - 1, len(wrong_pool)))

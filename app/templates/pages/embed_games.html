@@ -265,10 +265,9 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
     background: linear-gradient(135deg, var(--purple), #9580ff);
     color: #fff; cursor: pointer; font-size: 0.82rem; font-weight: 600; font-family: var(--font);
     box-shadow: 0 2px 6px rgba(189,147,249,0.2);
-    opacity: 0; transform: translateY(4px);
-    transition: opacity 0.2s 0.12s, transform 0.2s 0.12s, box-shadow 0.15s;
+    visibility: hidden;
 }
-.nb.show { opacity: 1; transform: translateY(0); }
+.nb.show { visibility: visible; }
 .nb:hover { box-shadow: 0 0 16px rgba(189,147,249,0.3); }
 
 /* ── Loading / Error ── */
