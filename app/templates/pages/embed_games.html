@@ -152,27 +152,33 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 
 /* ── Character picker ── */
 .char-picker {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-    gap: 0.3rem; flex: 1; min-height: 0; overflow-y: auto; margin-bottom: 0.3rem;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 0.25rem; flex: 1; min-height: 0; overflow-y: auto; margin-bottom: 0.3rem;
+    padding-right: 0.2rem;
 }
 .char-pick {
-    display: flex; flex-direction: column; align-items: center; gap: 0.2rem;
-    padding: 0.3rem; border-radius: var(--r); border: 1px solid transparent;
-    background: var(--bg-darker); cursor: pointer; transition: all 0.15s;
+    position: relative; aspect-ratio: 1; border-radius: var(--r); overflow: hidden;
+    cursor: pointer; border: 2px solid transparent;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    background: var(--bg-darker);
 }
-.char-pick:hover { border-color: var(--purple); background: var(--bg-light); }
+.char-pick:hover { border-color: var(--purple); box-shadow: 0 0 10px rgba(189,147,249,0.2); }
 .char-pick img {
-    width: 100%; aspect-ratio: 1; border-radius: var(--r); object-fit: cover;
-    border: 2px solid var(--current);
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    filter: brightness(0.8); transition: filter 0.15s;
 }
+.char-pick:hover img { filter: brightness(1); }
 .char-pick .cp-name {
-    font-size: 0.55rem; color: var(--comment); text-align: center;
-    line-height: 1.2; overflow: hidden; text-overflow: ellipsis;
-    white-space: nowrap; width: 100%;
+    position: absolute; bottom: 0; left: 0; right: 0;
+    font-size: 0.55rem; font-weight: 600; text-align: center;
+    padding: 0.15rem 0.2rem; line-height: 1.15;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.5);
+    background: linear-gradient(transparent, rgba(0,0,0,0.7));
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .char-pick .cp-noimg {
-    width: 100%; aspect-ratio: 1; border-radius: var(--r); background: var(--current);
-    display: flex; align-items: center; justify-content: center;
+    width: 100%; height: 100%; display: flex; align-items: center;
+    justify-content: center; background: var(--current);
     font-size: 1.4rem; font-weight: 700; color: var(--comment);
 }
 
@@ -696,9 +702,11 @@ function loadQC(){
         h+='<button class="qm-next" id="qc-random" style="margin-bottom:0.3rem;visibility:visible">Random Character</button>';
         h+='<div class="char-picker">';
         chars.forEach(function(c){
-            var img = c.image ? '<img src="'+esc(c.image)+'" onerror="this.outerHTML=\'<div class=cp-noimg>'+esc(c.name.charAt(0))+'</div>\'">' : '<div class="cp-noimg">'+esc(c.name.charAt(0))+'</div>';
             var nc = groupColor(c.group);
-            h+='<div class="char-pick" data-cid="'+esc(c.id)+'">'+img+'<div class="cp-name" style="color:'+nc+'">'+esc(c.name)+'</div></div>';
+            h+='<div class="char-pick" data-cid="'+esc(c.id)+'">';
+            if(c.image) h+='<img src="'+esc(c.image)+'" onerror="this.outerHTML=\'<div class=cp-noimg>'+esc(c.name.charAt(0))+'</div>\'">';
+            else h+='<div class="cp-noimg">'+esc(c.name.charAt(0))+'</div>';
+            h+='<div class="cp-name" style="color:'+nc+'">'+esc(c.name)+'</div></div>';
         });
         h+='</div></div>';
         $ga.innerHTML=h;
