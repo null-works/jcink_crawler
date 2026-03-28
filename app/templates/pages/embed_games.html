@@ -441,54 +441,59 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
     display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem;
     flex: 1; min-height: 0;
 }
+
+/* Each card is a self-contained stacking context */
 .dash-card {
     position: relative; border-radius: var(--r); overflow: hidden;
-    border: 1px solid var(--current); background: var(--bg-darker);
-    cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
-    display: flex; flex-direction: column; justify-content: flex-end;
-    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--current); cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    isolation: isolate; /* forces new stacking context */
 }
-.dash-card::after {
-    content: ''; position: absolute; inset: 0; z-index: 1;
-    background: linear-gradient(to bottom, transparent 20%, rgba(0,0,0,0.85) 100%);
-    pointer-events: none;
-}
+.dash-card:hover { border-color: var(--purple); box-shadow: 0 0 15px rgba(189,147,249,0.15); }
+
+/* Layer 1: background images (crossfade pair) */
 .dash-card-bg {
     position: absolute; inset: 0; background-size: cover; background-position: center;
-    transition: opacity 1.5s ease-in-out;
-    opacity: 0; z-index: 0;
+    transition: opacity 1.5s ease-in-out; opacity: 0;
 }
 .dash-card-bg.active { opacity: 1; }
-.dash-card:hover { border-color: var(--purple); box-shadow: 0 0 15px rgba(189,147,249,0.15); }
+
+/* Layer 2: dark gradient scrim over the image */
+.dash-card-scrim {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.8) 100%);
+}
+
+/* Layer 3: all text content */
+.dash-card-content {
+    position: relative; display: flex; flex-direction: column;
+    justify-content: flex-end; height: 100%; padding: 0.6rem 0.7rem;
+    text-shadow: 0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.6);
+}
 .dash-card-stats {
-    position: absolute; top: 0.4rem; right: 0.5rem; z-index: 2;
-    text-align: right;
-    text-shadow: 0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.7);
+    position: absolute; top: 0.5rem; right: 0.6rem; text-align: right;
 }
 .dash-card-stats .stat-big {
     font-family: 'Bebas Neue', Impact, sans-serif; font-size: 2.5rem;
     line-height: 1; letter-spacing: 0.02em; color: #fff;
 }
 .dash-card-stats .stat-label {
-    font-size: 0.7rem; color: #fff; opacity: 0.9; text-transform: uppercase;
+    font-size: 0.7rem; color: #fff; text-transform: uppercase;
     letter-spacing: 0.05em; font-weight: 600;
 }
 .dash-card-stats .stat-row {
     display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.15rem;
 }
-.dash-card-stats .stat-row .stat-mini {
-    font-size: 0.75rem; color: #fff; opacity: 0.9; text-align: center; font-weight: 600;
+.dash-card-stats .stat-mini {
+    font-size: 0.75rem; color: #fff; text-align: center; font-weight: 600;
 }
-.dash-card-stats .stat-row .stat-mini b { display: block; font-size: 1.15rem; }
-.dash-card-bottom {
-    flex-shrink: 0; position: relative; z-index: 2;
-    text-shadow: 0 2px 8px rgba(0,0,0,1), 0 0 30px rgba(0,0,0,0.7);
-}
+.dash-card-stats .stat-mini b { display: block; font-size: 1.15rem; }
+
 .dash-card-icon { font-size: 1.8rem; margin-bottom: 0.2rem; }
 .dash-card-title {
     font-family: 'Bebas Neue', Impact, sans-serif;
     font-size: 2.2rem; letter-spacing: 0.04em; line-height: 1;
-    margin-bottom: 0.2rem;
+    margin-bottom: 0.2rem; color: #fff;
 }
 .dash-card-desc { font-size: 0.85rem; color: #fff; line-height: 1.35; }
 .dash-card:nth-child(1) .dash-card-title { color: var(--purple); }
@@ -1124,8 +1129,13 @@ function loadDash() {
         var gs=getScore(g.id);
         var clr = cardColors[g.id];
         h += '<div class="dash-card" data-game="'+g.id+'">';
+        // Layer 1: bg images
         h += '<div class="dash-card-bg active" id="dbg-'+g.id+'-a"></div>';
         h += '<div class="dash-card-bg" id="dbg-'+g.id+'-b"></div>';
+        // Layer 2: scrim
+        h += '<div class="dash-card-scrim"></div>';
+        // Layer 3: all text
+        h += '<div class="dash-card-content">';
         if(gs.played>0) {
             h += '<div class="dash-card-stats">';
             if(g.id==='ml') {
@@ -1142,7 +1152,7 @@ function loadDash() {
         h += '<div class="dash-card-icon">'+g.icon+'</div>';
         h += '<div class="dash-card-title">'+g.title+'</div>';
         h += '<div class="dash-card-desc">'+g.desc+'</div>';
-        h += '</div>';
+        h += '</div></div>';
     });
     h += '</div></div>';
     $ga.innerHTML = h;
