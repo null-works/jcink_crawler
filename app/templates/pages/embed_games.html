@@ -77,13 +77,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
    METRO TILES — 2x2 grid, big images, bold names
    ════════════════════════════════════════════ */
 .tiles {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 0.3rem; margin: 0 4rem 0.3rem;
+    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+    gap: 0.3rem; flex: 1; min-height: 0; overflow: hidden;
 }
 .tile {
     position: relative; border-radius: var(--r); overflow: hidden;
     cursor: pointer; border: 2px solid transparent;
-    width: 100%; aspect-ratio: 16/9;
+    min-height: 0;
     transition: border-color 0.18s, box-shadow 0.18s, opacity 0.18s;
     background: var(--bg-light); min-height: 0;
 }
@@ -505,6 +505,55 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 .dash-card:nth-child(3) .dash-card-title { color: var(--green); }
 .dash-card:nth-child(4) .dash-card-title { color: var(--orange); }
 
+/* ── Glass bottom sheet overlay ── */
+.bottom-sheet {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 900;
+    transform: translateY(100%);
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+}
+.bottom-sheet.open {
+    transform: translateY(0);
+    pointer-events: auto;
+}
+.bottom-sheet-glass {
+    background: rgba(30, 31, 41, 0.85);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px 16px 0 0;
+    padding: 0.8rem 1rem 1rem;
+    box-shadow: 0 -4px 30px rgba(0,0,0,0.5);
+}
+.bs-handle {
+    width: 36px; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.2); margin: 0 auto 0.6rem;
+}
+.bs-result {
+    text-align: center; margin-bottom: 0.5rem;
+}
+.bs-result .bs-verdict {
+    font-size: 1.2rem; font-weight: 700;
+    font-family: 'Bebas Neue', Impact, sans-serif;
+    letter-spacing: 0.03em;
+}
+.bs-result .bs-verdict.ok { color: var(--green); }
+.bs-result .bs-verdict.no { color: var(--red); }
+.bs-result .bs-detail {
+    font-size: 0.8rem; color: var(--comment); margin-top: 0.15rem;
+}
+.bs-result .bs-detail a { color: var(--cyan); text-decoration: none; }
+.bs-result .bs-detail a:hover { text-decoration: underline; }
+.bs-result .bs-streak {
+    font-size: 0.75rem; font-weight: 600; color: var(--orange); margin-top: 0.15rem;
+}
+.bs-next {
+    display: block; width: 100%; padding: 0.55rem; border-radius: var(--r); border: none;
+    background: linear-gradient(135deg, var(--purple), #9580ff);
+    color: #fff; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+    font-family: var(--font); box-shadow: 0 2px 8px rgba(189,147,249,0.25);
+}
+.bs-next:hover { box-shadow: 0 0 16px rgba(189,147,249,0.35); }
+
 /* Reveal image after answer */
 .ml-reveal-img {
     width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
@@ -523,6 +572,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 <canvas id="confetti-canvas"></canvas>
 <div class="wrap">
     <div id="ga"><div class="ld">Loading<span class="ld-d"></span></div></div>
+</div>
+<div class="bottom-sheet" id="bsheet">
+    <div class="bottom-sheet-glass">
+        <div class="bs-handle"></div>
+        <div class="bs-result" id="bs-result"></div>
+        <button class="bs-next" id="bs-next">Next Round</button>
+    </div>
 </div>
 <script>
 (function(){
@@ -578,6 +634,30 @@ function apiRetry(p,fallbackMsg){
     });
 }
 function upd(ok){var s=recordResult(_gm,ok);updateScoreBar(s);}
+
+// ── Bottom sheet ──
+var $bs = document.getElementById('bsheet');
+var $bsResult = document.getElementById('bs-result');
+var $bsNext = document.getElementById('bs-next');
+var _bsNextFn = null;
+
+function openSheet(ok, detailHtml, nextFn) {
+    var h = '<div class="bs-verdict '+(ok?'ok':'no')+'">'+(ok?'Correct!':'Nope!')+'</div>';
+    if (detailHtml) h += '<div class="bs-detail">'+detailHtml+'</div>';
+    if (ok && _streak >= 3) {
+        var ms = ['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!','Beyond mortal comprehension!'];
+        h += '<div class="bs-streak">'+_streak+' in a row! '+(ms[_streak]||_streak+'-streak!')+'</div>';
+        boom(_streak >= 5 ? 50 : 25);
+    } else if (ok) boom(10);
+    $bsResult.innerHTML = h;
+    _bsNextFn = nextFn;
+    $bs.classList.add('open');
+}
+function closeSheet() { $bs.classList.remove('open'); }
+$bsNext.addEventListener('click', function() {
+    closeSheet();
+    if (_bsNextFn) _bsNextFn();
+});
 function sRes(ok,det,detHtml){
     var ra=document.querySelector('.ra'),m=ra.querySelector('.rm'),d=ra.querySelector('.rd'),s=ra.querySelector('.sk');
     m.textContent=ok?'Correct!':'Nope!'; m.className='rm show '+(ok?'ok':'no');
@@ -634,9 +714,10 @@ function tileHtml(id, name, imgUrl, group, dataAttr) {
     return '<div class="tile" '+dataAttr+'>' + inner + '<div class="tile-name"'+nameStyle+'>'+esc(name)+'</div></div>';
 }
 
-/* ── WHO SAID IT — Metro tiles ── */
+/* ── WHO SAID IT — Metro tiles + bottom sheet ── */
 function loadWSI(){
-    _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
+    _lk=false; closeSheet();
+    $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
     apiRetry('/api/game/who-said-it?choices=4').then(function(d){
         var h='<div class="gi">';
         h+=backHtml();
@@ -646,7 +727,7 @@ function loadWSI(){
             var img = o.rectangle_gif || o.square_image || o.avatar_url;
             h += tileHtml(o.id, o.name, img, o.group, 'data-id="'+esc(o.id)+'"');
         });
-        h+='</div>'+rfHtml()+'</div>';
+        h+='</div></div>';
         $ga.innerHTML=h;
         var aid=d.answer_id;
         $ga.querySelectorAll('.tile').forEach(function(t){
@@ -660,16 +741,15 @@ function loadWSI(){
                 });
                 upd(ok);
                 var who=d.options.find(function(o){return o.id===aid;});
-                var detText=ok?null:'It was '+who.name;
-                var detHtml=null;
+                var det='';
+                if(!ok) det+=esc('It was '+who.name);
                 if(d.source_thread_title&&d.source_thread_url){
                     var src='from <a href="'+esc(d.source_thread_url)+'" target="_blank">'+esc(d.source_thread_title)+'</a>';
-                    detHtml=ok?src:esc('It was '+who.name)+' &mdash; '+src;
+                    det+=(det?' &mdash; ':'')+src;
                 }
-                sRes(ok,detText,detHtml);
+                openSheet(ok, det, function(){ _gm='wsi'; loadRound(); });
             });
         });
-        document.querySelector('.nb').addEventListener('click',loadRound);
     }).catch(function(){});
 }
 
@@ -1205,7 +1285,7 @@ function loadDash() {
 var _dashTimer = null;
 
 /* ── Round Router ── */
-window.goHome = function() { _gm = 'dash'; loadRound(); };
+window.goHome = function() { closeSheet(); _gm = 'dash'; loadRound(); };
 window.loadRound = function() {
     _streak=0; _sessionScore=0;
     if (_gm === 'dash') loadDash();
