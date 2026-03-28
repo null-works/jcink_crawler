@@ -971,10 +971,15 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         forums = extract_forum_records(raw, schema=schema)
         log_debug(f"── Phase 2: Schema ── {len(topics)} topics, {len(posts)} posts, {len(forums)} forums")
 
-        if not topics and not posts:
+        if not topics:
             clear_activity()
-            log_debug("ACP sync FAILED: 0 topics and 0 posts extracted", level="error")
-            return {"error": "ACP dump contained no topic or post data"}
+            log_debug("ACP sync FAILED: 0 topics extracted — dump may be incomplete (CF Worker 502?)", level="error")
+            return {"error": "ACP dump contained no topic data — try again"}
+
+        if not posts:
+            clear_activity()
+            log_debug("ACP sync FAILED: 0 posts extracted", level="error")
+            return {"error": "ACP dump contained no post data"}
 
         # Sanity-check: log sample data to verify schema detection
         if topics:
@@ -1022,14 +1027,14 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                 if new_chars:
                     log_debug(f"ACP sync: auto-registered {new_chars} characters from member dump")
 
-        log_debug(f"── Phase 3: Match ── {len(tracked_chars)} characters, {len(topics)} topics")
-        set_activity(f"Matching {len(posts)} posts to {len(tracked_chars)} characters")
-
         # Load tracked character IDs (now includes auto-registered members)
         async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT id FROM characters")
             tracked_chars = {row["id"] for row in await cursor.fetchall()}
+
+        log_debug(f"── Phase 3: Match ── {len(tracked_chars)} characters, {len(topics)} topics")
+        set_activity(f"Matching {len(posts)} posts to {len(tracked_chars)} characters")
 
         # Excluded forum IDs
         excluded_forums = settings.excluded_forum_ids

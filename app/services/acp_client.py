@@ -978,22 +978,24 @@ class ACPClient:
 
             url = self._rewrite_url(f"{base}/admin.php?act=mysql&adsess={self._token}&code=dump&line={line}&part={part}")
             page_ok = False
-            for retry in range(3):
+            for retry in range(5):
                 try:
                     resp = await client.get(url, follow_redirects=True)
+                    if resp.status_code != 200:
+                        log_debug(f"ACP: dump page error (part={part} line={line}): HTTP {resp.status_code}, retry {retry + 1}/5", level="warn")
+                        await asyncio.sleep(2 ** retry)
+                        continue
                     html = resp.text
                     page_ok = True
                     break
-                except (httpx.ConnectError, httpx.ConnectTimeout) as e:
-                    if retry < 2:
-                        log_debug(f"ACP: dump page retry {retry + 1} (part={part} line={line}): {e}", level="warn")
-                        await asyncio.sleep(2 ** retry)
-                    else:
-                        log_debug(f"ACP: dump page failed after retries (part={part} line={line}): {e}", level="error")
+                except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+                    log_debug(f"ACP: dump page retry {retry + 1}/5 (part={part} line={line}): {e}", level="warn")
+                    await asyncio.sleep(2 ** retry)
                 except Exception as e:
                     log_debug(f"ACP: dump page failed (part={part} line={line}): {e}", level="error")
                     break
             if not page_ok:
+                log_debug(f"ACP: dump aborted — page failed after 5 retries (part={part} line={line})", level="error")
                 break
 
             total_pages += 1
