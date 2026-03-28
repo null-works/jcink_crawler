@@ -866,13 +866,21 @@ function mlUse8Ball() {
     // Remove any previous 8-ball response
     var prev = document.getElementById('ml-8ball');
     if (prev) prev.remove();
-    // Insert into the question block after the quote text
+    // Wrap the qblock content in a flex row with the 8-ball on the right
     var qblock = $ga.querySelector('.qblock');
     if (qblock) {
+        // Wrap existing content if not already wrapped
+        if (!qblock.querySelector('#ml-qwrap')) {
+            var inner = qblock.innerHTML;
+            qblock.innerHTML = '<div id="ml-qwrap" style="flex:1;min-width:0;transition:flex 0.3s">' + inner + '</div>';
+        }
+        qblock.style.display = 'flex';
+        qblock.style.alignItems = 'center';
+        qblock.style.gap = '0.6rem';
         qblock.insertAdjacentHTML('beforeend',
-            '<div id="ml-8ball" style="display:flex;align-items:center;gap:0.4rem;margin-top:0.3rem;padding-top:0.3rem;border-top:1px solid var(--current);animation:fi 0.3s ease-out">'
-            + '<span style="font-size:1.3rem;flex-shrink:0">&#x1F3B1;</span>'
-            + '<span style="font-size:0.8rem;color:var(--comment);font-style:italic">' + esc(msg) + '</span></div>');
+            '<div id="ml-8ball" style="flex-shrink:0;text-align:center;animation:fi 0.3s ease-out">'
+            + '<div style="font-size:1.8rem;line-height:1">&#x1F3B1;</div>'
+            + '<div style="font-size:0.65rem;color:var(--comment);font-style:italic;max-width:90px;margin-top:0.15rem">' + esc(msg) + '</div></div>');
     }
 }
 
