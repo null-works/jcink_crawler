@@ -584,7 +584,7 @@ function sRes(ok,det,detHtml){
     m.textContent=ok?'Correct!':'Nope!'; m.className='rm show '+(ok?'ok':'no');
     if(detHtml){d.innerHTML=detHtml;d.className='rd show';}
     else if(det){d.textContent=det;d.className='rd show';}
-    if(ok&&_sk>=3){var ms=['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!','Beyond mortal comprehension!'];s.textContent=_sk+' in a row! '+(ms[_sk]||_sk+'-streak!');s.className='sk show';boom(_sk>=5?50:25);}else if(ok)boom(10);
+    if(ok&&_streak>=3){var ms=['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!','Beyond mortal comprehension!'];s.textContent=_streak+' in a row! '+(ms[_streak]||_streak+'-streak!');s.className='sk show';boom(_streak>=5?50:25);}else if(ok)boom(10);
     document.querySelector('.nb').classList.add('show');
 }
 function backHtml(){
