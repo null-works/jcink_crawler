@@ -179,6 +179,13 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 
 /* ── Quote Match buttons + next ── */
 .qm-footer { flex-shrink: 0; }
+.qm-next {
+    display: block; width: 100%; padding: 0.5rem; border-radius: var(--r); border: none;
+    background: linear-gradient(135deg, var(--purple), #9580ff);
+    color: #fff; cursor: pointer; font-size: 0.82rem; font-weight: 600;
+    font-family: var(--font); box-shadow: 0 2px 6px rgba(189,147,249,0.2);
+}
+.qm-next:hover { box-shadow: 0 0 16px rgba(189,147,249,0.3); }
 
 /* ── Result footer (pushed to bottom) ── */
 .rf { margin-top: auto; flex-shrink: 0; }
@@ -596,7 +603,7 @@ function loadQM(){
         h+='<div class="qm-footer">';
         h+='<div class="bins"><button class="bin" data-g="same">Same Character</button><button class="bin" data-g="different">Different</button></div>';
         h+='<div class="ra" style="height:2.5rem"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div>';
-        h+='<button class="nb">Next Round</button>';
+        h+='<button class="qm-next" id="qm-next" style="visibility:hidden">Next Round</button>';
         h+='</div></div>';
         $ga.innerHTML=h;
         $ga.querySelectorAll('.bin').forEach(function(b){
@@ -624,10 +631,10 @@ function loadQM(){
                 rm.textContent=ok?'Correct!':'Nope!'; rm.className='rm show '+(ok?'ok':'no');
                 rd.textContent=detail; rd.className='rd show';
                 if(ok&&_streak>=3){var ms=['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!'];sk.textContent=_streak+' in a row! '+(ms[_streak]||_streak+'-streak!');sk.className='sk show';boom(_streak>=5?50:25);}else if(ok)boom(10);
-                $ga.querySelector('.nb').classList.add('show');
+                document.getElementById('qm-next').style.visibility='visible';
             });
         });
-        $ga.querySelector('.nb').addEventListener('click',function(){_gm='qm';loadRound();});
+        document.getElementById('qm-next').addEventListener('click',function(){_gm='qm';loadRound();});
     }).catch(function(){});
 }
 
