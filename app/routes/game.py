@@ -243,6 +243,7 @@ async def game_characters(db: aiosqlite.Connection = Depends(get_db)):
         {
             "id": c["id"], "name": c["name"],
             "image": c.get("square_image") or c.get("avatar_url"),
+            "rectangle_gif": c.get("rectangle_gif"),
             "group": c.get("group_name"),
         }
         for c in characters

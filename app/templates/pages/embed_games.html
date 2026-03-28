@@ -1147,7 +1147,7 @@ function loadDash() {
 
     // Fetch character images and rotate backgrounds
     api('/api/game/characters').then(function(chars) {
-        var images = chars.map(function(c){return c.image;}).filter(Boolean);
+        var images = chars.map(function(c){return c.rectangle_gif || c.image;}).filter(Boolean);
         if (!images.length) return;
         var cards = ['wsi','qm','qc','ml'];
         var slots = {}; // track which layer is active per card
