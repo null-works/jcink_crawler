@@ -203,6 +203,12 @@ async def game_quote_chain(
 # Embeddable pages (DOHTML-ready, fully self-contained)
 # ---------------------------------------------------------------------------
 
+@router.get("/embed/games", response_class=HTMLResponse)
+async def embed_games_combined(request: Request):
+    """Combined embeddable game page with all three quote games and tab switching."""
+    return templates.TemplateResponse("pages/embed_games.html", {"request": request})
+
+
 @router.get("/embed/who-said-it", response_class=HTMLResponse)
 async def embed_who_said_it(request: Request):
     return templates.TemplateResponse("pages/embed_who_said_it.html", {"request": request})
