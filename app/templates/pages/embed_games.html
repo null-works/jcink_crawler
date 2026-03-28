@@ -450,7 +450,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 }
 .dash-card-bg {
     position: absolute; inset: 0; background-size: cover; background-position: center;
-    filter: brightness(0.45); transition: opacity 1.5s ease-in-out;
+    transition: opacity 1.5s ease-in-out;
     opacity: 0;
 }
 .dash-card-bg.active { opacity: 1; }
@@ -458,37 +458,37 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 .dash-card-stats {
     position: absolute; top: 0.4rem; right: 0.5rem; z-index: 2;
     text-align: right;
-    text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.5);
+    text-shadow: 0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.7);
 }
 .dash-card-stats .stat-big {
-    font-family: 'Bebas Neue', Impact, sans-serif; font-size: 2rem;
-    line-height: 1; letter-spacing: 0.02em;
+    font-family: 'Bebas Neue', Impact, sans-serif; font-size: 2.5rem;
+    line-height: 1; letter-spacing: 0.02em; color: #fff;
 }
 .dash-card-stats .stat-label {
-    font-size: 0.6rem; color: var(--fg); opacity: 0.8; text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: 0.7rem; color: #fff; opacity: 0.9; text-transform: uppercase;
+    letter-spacing: 0.05em; font-weight: 600;
 }
 .dash-card-stats .stat-row {
-    display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.1rem;
+    display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.15rem;
 }
 .dash-card-stats .stat-row .stat-mini {
-    font-size: 0.65rem; color: var(--fg); opacity: 0.8; text-align: center;
+    font-size: 0.75rem; color: #fff; opacity: 0.9; text-align: center; font-weight: 600;
 }
-.dash-card-stats .stat-row .stat-mini b { display: block; font-size: 1rem; }
+.dash-card-stats .stat-row .stat-mini b { display: block; font-size: 1.15rem; }
 .dash-card-bottom {
     flex-shrink: 0; position: relative; z-index: 2;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.95), 0 0 20px rgba(0,0,0,0.5);
-    padding-top: 1.5rem;
-    background: linear-gradient(transparent, rgba(0,0,0,0.6));
+    text-shadow: 0 2px 8px rgba(0,0,0,1), 0 0 30px rgba(0,0,0,0.7);
+    padding-top: 2.5rem;
+    background: linear-gradient(transparent, rgba(0,0,0,0.85));
     margin: 0 -0.7rem -0.6rem; padding-left: 0.7rem; padding-right: 0.7rem; padding-bottom: 0.6rem;
 }
-.dash-card-icon { font-size: 1.6rem; margin-bottom: 0.15rem; }
+.dash-card-icon { font-size: 1.8rem; margin-bottom: 0.2rem; }
 .dash-card-title {
     font-family: 'Bebas Neue', Impact, sans-serif;
-    font-size: 1.8rem; letter-spacing: 0.04em; line-height: 1;
-    margin-bottom: 0.15rem;
+    font-size: 2.2rem; letter-spacing: 0.04em; line-height: 1;
+    margin-bottom: 0.2rem;
 }
-.dash-card-desc { font-size: 0.75rem; color: var(--fg); line-height: 1.35; opacity: 0.85; }
+.dash-card-desc { font-size: 0.85rem; color: #fff; line-height: 1.35; }
 .dash-card:nth-child(1) .dash-card-title { color: var(--purple); }
 .dash-card:nth-child(2) .dash-card-title { color: var(--cyan); }
 .dash-card:nth-child(3) .dash-card-title { color: var(--green); }
