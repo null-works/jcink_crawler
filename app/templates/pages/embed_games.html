@@ -751,7 +751,7 @@ function loadQCRound(){
         h+='<div class="ra" style="height:2rem"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div>';
         h+='<div style="display:flex;gap:0.3rem">';
         h+='<button class="qm-next" id="qc-next" style="visibility:hidden;flex:1">Next Round</button>';
-        h+='<button class="qm-next" id="qc-pick" style="visibility:hidden;flex:0 0 auto;background:var(--current);color:var(--fg)">Change Character</button>';
+        h+='<button class="qm-next" id="qc-pick" style="visibility:hidden;flex:1;background:var(--current);color:var(--fg)">Change Character</button>';
         h+='</div></div></div>';
         $ga.innerHTML=h;
         $ga.querySelectorAll('.qc-card').forEach(function(c){
