@@ -256,7 +256,27 @@ function tck(){cx.clearRect(0,0,cv.width,cv.height);for(var i=pp.length;i--;){va
 
 // Helpers
 function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
-function api(p){return fetch(API+p).then(function(r){if(!r.ok)throw 0;return r.json();});}
+var _retries=0, MAX_RETRY=3, RETRY_DELAY=1500;
+function api(p){
+    return fetch(API+p).then(function(r){
+        if(r.status===400)return r.json().then(function(d){var e=new Error(d.error||'Bad request');e.status=400;throw e;});
+        if(!r.ok){var e2=new Error('HTTP '+r.status);e2.status=r.status;throw e2;}
+        _retries=0; return r.json();
+    });
+}
+function apiRetry(p,fallbackMsg){
+    return api(p).catch(function(e){
+        if(e.status===400){$ga.innerHTML=erHtml(e.message);throw e;}
+        if(_retries<MAX_RETRY){
+            _retries++;
+            $ga.innerHTML='<div class="ld">Reconnecting ('+_retries+'/'+MAX_RETRY+')<span class="ld-d"></span></div>';
+            return new Promise(function(res){setTimeout(res,RETRY_DELAY);}).then(function(){return apiRetry(p,fallbackMsg);});
+        }
+        _retries=0;
+        $ga.innerHTML=erHtml('Connection lost. Check your network and try again.');
+        throw e;
+    });
+}
 function upd(ok){if(ok){_sc++;_sk++;}else _sk=0;if(_sk>_bs)_bs=_sk;$sc.textContent=_sc;$sk.textContent=_sk;$bs.textContent=_bs;if(_sk>0&&ok){$sk.classList.remove('fire');void $sk.offsetWidth;$sk.classList.add('fire');}}
 function sRes(ok,det){
     var ra=document.querySelector('.ra'),m=ra.querySelector('.rm'),d=ra.querySelector('.rd'),s=ra.querySelector('.sk');
@@ -282,7 +302,7 @@ function tileHtml(id, name, imgUrl, dataAttr) {
 /* ── WHO SAID IT — Metro tiles ── */
 function loadWSI(){
     _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
-    api('/api/game/who-said-it?choices=4').then(function(d){
+    apiRetry('/api/game/who-said-it?choices=4').then(function(d){
         var h='<div class="gi">';
         h+='<div class="qblock"><div class="qlabel">Who said this?</div><div class="qtext">'+esc(d.quote)+'</div></div>';
         h+='<div class="tiles">';
@@ -308,13 +328,13 @@ function loadWSI(){
             });
         });
         document.querySelector('.nb').addEventListener('click',loadRound);
-    }).catch(function(){$ga.innerHTML=erHtml('Need at least 4 characters with quotes.');});
+    }).catch(function(){});
 }
 
 /* ── QUOTE MATCH — side-by-side panels ── */
 function loadQM(){
     _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
-    api('/api/game/quote-match').then(function(d){
+    apiRetry('/api/game/quote-match').then(function(d){
         var h='<div class="gi">';
         h+='<div class="qpair">';
         h+='<div class="qpanel"><div class="qlabel">Quote A</div><div class="qtext">'+esc(d.quote_a)+'</div></div>';
@@ -338,13 +358,13 @@ function loadQM(){
             });
         });
         document.querySelector('.nb').addEventListener('click',loadRound);
-    }).catch(function(){$ga.innerHTML=erHtml('Need at least 2 characters with quotes.');});
+    }).catch(function(){});
 }
 
 /* ── QUOTE CHAIN — anchor + text options ── */
 function loadQC(){
     _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
-    api('/api/game/quote-chain?choices=4').then(function(d){
+    apiRetry('/api/game/quote-chain?choices=4').then(function(d){
         var h='<div class="gi">';
         h+='<div class="qblock"><div class="qlabel">Find another quote by '+esc(d.anchor_character)+'</div><div class="qtext">'+esc(d.anchor_quote)+'</div></div>';
         h+='<div class="qlist">';
@@ -364,7 +384,7 @@ function loadQC(){
             });
         });
         document.querySelector('.nb').addEventListener('click',loadRound);
-    }).catch(function(){$ga.innerHTML=erHtml('Need characters with 2+ quotes.');});
+    }).catch(function(){});
 }
 
 window.loadRound=function(){if(_gm==='wsi')loadWSI();else if(_gm==='qm')loadQM();else loadQC();};
