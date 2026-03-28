@@ -344,23 +344,13 @@ async def game_millionaire(
         if len(with_code) < 4:
             return None
         correct = random.choice(with_code)
-        correct_code = correct["codename"].strip()
-        # Exclude characters with the same codename to avoid duplicate option text
-        wrong = [c for c in with_code if c["id"] != correct["id"] and c["codename"].strip() != correct_code]
-        # Also deduplicate by codename text
-        seen_codes = {correct_code}
-        deduped = []
-        for w in wrong:
-            wc = w["codename"].strip()
-            if wc not in seen_codes:
-                seen_codes.add(wc)
-                deduped.append(w)
-        if len(deduped) < 3:
+        wrong = [c for c in with_code if c["id"] != correct["id"]]
+        if len(wrong) < 3:
             return None
-        random.shuffle(deduped)
-        opts = [{"id": correct["id"], "text": correct_code}]
-        for w in deduped[:3]:
-            opts.append({"id": w["id"], "text": w["codename"].strip()})
+        random.shuffle(wrong)
+        opts = [{"id": correct["id"], "text": correct["codename"]}]
+        for w in wrong[:3]:
+            opts.append({"id": w["id"], "text": w["codename"]})
         random.shuffle(opts)
         return {"question": f"What is {correct['name']}'s codename?", "options": opts, "answer_id": correct["id"], "level": level, "char_image": _img(correct)}
 
