@@ -460,7 +460,7 @@ function sRes(ok,det,detHtml){
 function backHtml(){
     var s=getScore(_gm);
     return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;flex-shrink:0">'
-        +'<button class="back-btn" style="margin-bottom:0" onclick="_gm=\'dash\';loadRound()">&#x2190; Games</button>'
+        +'<button class="back-btn" style="margin-bottom:0" onclick="goHome()">&#x2190; Games</button>'
         +'<div class="score-bar" id="score-bar"><span class="sb-item">Score <b style="color:var(--green)">'+s.score+'</b></span>'
         +'<span class="sb-item">Streak <b style="color:var(--orange)">'+_streak+'</b></span>'
         +'<span class="sb-item">Best <b style="color:var(--pink)">'+s.best+'</b></span></div></div>';
@@ -927,6 +927,7 @@ function loadDash() {
 }
 
 /* ── Round Router ── */
+window.goHome = function() { _gm = 'dash'; loadRound(); };
 window.loadRound = function() {
     _streak=0;
     if (_gm === 'dash') loadDash();
