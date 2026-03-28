@@ -159,11 +159,26 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 }
 .qpanel .qlabel { font-size: 0.58rem; }
 .qpanel .qtext { font-size: 0.82rem; padding-left: 0.8rem; flex: 1; }
+.qpanel-reveal {
+    display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem;
+    padding-top: 0.35rem; border-top: 1px solid var(--current);
+    animation: fi 0.3s ease-out;
+}
+.qpanel-reveal img {
+    width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--green); flex-shrink: 0;
+}
+.qpanel-reveal .reveal-name {
+    font-size: 0.75rem; font-weight: 600; color: var(--green);
+}
 .vs {
     align-self: center; font-size: 0.6rem; color: var(--comment);
     text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700;
     flex-shrink: 0; margin: 0 -0.1rem;
 }
+
+/* ── Quote Match buttons + next ── */
+.qm-footer { flex-shrink: 0; }
 
 /* ── Result footer (pushed to bottom) ── */
 .rf { margin-top: auto; flex-shrink: 0; }
@@ -574,12 +589,15 @@ function loadQM(){
         var h='<div class="gi">';
         h+=backHtml();
         h+='<div class="qpair">';
-        h+='<div class="qpanel"><div class="qlabel">Quote A</div><div class="qtext">'+esc(d.quote_a)+'</div></div>';
+        h+='<div class="qpanel" id="qp-a"><div class="qlabel">Quote A</div><div class="qtext">'+esc(d.quote_a)+'</div></div>';
         h+='<div class="vs">vs</div>';
-        h+='<div class="qpanel"><div class="qlabel">Quote B</div><div class="qtext">'+esc(d.quote_b)+'</div></div>';
+        h+='<div class="qpanel" id="qp-b"><div class="qlabel">Quote B</div><div class="qtext">'+esc(d.quote_b)+'</div></div>';
         h+='</div>';
+        h+='<div class="qm-footer">';
         h+='<div class="bins"><button class="bin" data-g="same">Same Character</button><button class="bin" data-g="different">Different</button></div>';
-        h+=rfHtml()+'</div>';
+        h+='<div class="ra" style="height:2.5rem"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div>';
+        h+='<button class="nb" style="opacity:0">Next Round</button>';
+        h+='</div></div>';
         $ga.innerHTML=h;
         $ga.querySelectorAll('.bin').forEach(function(b){
             b.addEventListener('click',function(){
@@ -591,10 +609,25 @@ function loadQM(){
                     else if(x===b&&!ok)x.classList.add('wrong');
                 });
                 upd(ok);
-                sRes(ok,d.same_character?'Both by '+d.character_a:d.character_a+' & '+d.character_b);
+                // Reveal character faces in the panels
+                var revA='<div class="qpanel-reveal">';
+                if(d.image_a)revA+='<img src="'+esc(d.image_a)+'" onerror="this.style.display=\'none\'">';
+                revA+='<span class="reveal-name">'+esc(d.character_a)+'</span></div>';
+                document.getElementById('qp-a').insertAdjacentHTML('beforeend',revA);
+                var revB='<div class="qpanel-reveal">';
+                if(d.image_b)revB+='<img src="'+esc(d.image_b)+'" onerror="this.style.display=\'none\'">';
+                revB+='<span class="reveal-name">'+esc(d.character_b)+'</span></div>';
+                document.getElementById('qp-b').insertAdjacentHTML('beforeend',revB);
+
+                var detail=d.same_character?'Both by '+d.character_a:d.character_a+' & '+d.character_b;
+                var ra=$ga.querySelector('.ra'),rm=ra.querySelector('.rm'),rd=ra.querySelector('.rd'),sk=ra.querySelector('.sk');
+                rm.textContent=ok?'Correct!':'Nope!'; rm.className='rm show '+(ok?'ok':'no');
+                rd.textContent=detail; rd.className='rd show';
+                if(ok&&_streak>=3){var ms=['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!'];sk.textContent=_streak+' in a row! '+(ms[_streak]||_streak+'-streak!');sk.className='sk show';boom(_streak>=5?50:25);}else if(ok)boom(10);
+                $ga.querySelector('.nb').classList.add('show');
             });
         });
-        document.querySelector('.nb').addEventListener('click',loadRound);
+        $ga.querySelector('.nb').addEventListener('click',function(){_gm='qm';loadRound();});
     }).catch(function(){});
 }
 
