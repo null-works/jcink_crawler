@@ -1043,7 +1043,9 @@ class ACPClient:
             return {}
 
         log_debug("ACP: parsing SQL dump")
-        raw = parse_sql_dump(sql_content)
+        # Run parser in a thread to avoid blocking the async event loop
+        # (parse_sql_dump is CPU-bound and processes 28K+ lines)
+        raw = await asyncio.get_event_loop().run_in_executor(None, parse_sql_dump, sql_content)
         row_counts = {k: len(v) for k, v in raw.items()}
         log_debug(f"ACP: tables parsed — {row_counts}")
 

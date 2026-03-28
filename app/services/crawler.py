@@ -942,7 +942,8 @@ async def process_acp_sql_dump(sql_text: str, db_path: str) -> dict:
     set_activity("Processing uploaded ACP dump")
     log_debug(f"Processing browser-uploaded SQL dump ({len(sql_text):,} bytes)")
 
-    raw = parse_sql_dump(sql_text)
+    import asyncio
+    raw = await asyncio.get_event_loop().run_in_executor(None, parse_sql_dump, sql_text)
     if not raw:
         clear_activity()
         return {"error": "No valid SQL data found in upload"}
@@ -1285,7 +1286,9 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                         quotes_added += 1
 
                 processed += 1
-                if processed % 2000 == 0:
+                if processed % 500 == 0:
+                    # Yield to event loop so dashboard stays responsive
+                    await asyncio.sleep(0)
                     log_debug(f"ACP sync: quote extraction progress — {processed}/{posts_with_body} posts, {quotes_added} new quotes")
 
             await db.commit()
