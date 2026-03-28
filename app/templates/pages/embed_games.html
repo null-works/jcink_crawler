@@ -77,14 +77,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
    METRO TILES — 2x2 grid, big images, bold names
    ════════════════════════════════════════════ */
 .tiles {
-    display: grid; grid-template-columns: 1fr 1fr;
+    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
     gap: 0.3rem; flex: 1; min-height: 0; margin-bottom: 0.3rem;
-    overflow: hidden; align-content: center;
+    overflow: hidden;
 }
 .tile {
     position: relative; border-radius: var(--r); overflow: hidden;
     cursor: pointer; border: 2px solid transparent;
-    aspect-ratio: 4/3;
+    min-height: 0;
     transition: border-color 0.18s, box-shadow 0.18s, opacity 0.18s;
     background: var(--bg-light); min-height: 0;
 }
