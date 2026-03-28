@@ -363,17 +363,37 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
     position: relative; border-radius: var(--r); overflow: hidden;
     border: 1px solid var(--current); background: var(--bg-darker);
     cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
-    display: flex; flex-direction: column; justify-content: flex-end;
+    display: flex; flex-direction: column;
     padding: 0.6rem 0.7rem;
 }
 .dash-card:hover { border-color: var(--purple); box-shadow: 0 0 15px rgba(189,147,249,0.15); }
-.dash-card-icon { font-size: 1.8rem; margin-bottom: 0.3rem; }
+.dash-card-stats {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; padding: 0.3rem 0;
+}
+.dash-card-stats .stat-big {
+    font-family: 'Bebas Neue', Impact, sans-serif; font-size: 2.2rem;
+    line-height: 1; letter-spacing: 0.02em;
+}
+.dash-card-stats .stat-label {
+    font-size: 0.6rem; color: var(--comment); text-transform: uppercase;
+    letter-spacing: 0.05em; margin-top: 0.1rem;
+}
+.dash-card-stats .stat-row {
+    display: flex; gap: 1rem; margin-top: 0.2rem;
+}
+.dash-card-stats .stat-row .stat-mini {
+    font-size: 0.7rem; color: var(--comment); text-align: center;
+}
+.dash-card-stats .stat-row .stat-mini b { display: block; font-size: 1.1rem; }
+.dash-card-bottom { flex-shrink: 0; }
+.dash-card-icon { font-size: 1.4rem; margin-bottom: 0.15rem; }
 .dash-card-title {
     font-family: 'Bebas Neue', Impact, sans-serif;
     font-size: 1.3rem; letter-spacing: 0.03em; line-height: 1.1;
-    margin-bottom: 0.15rem;
+    margin-bottom: 0.1rem;
 }
-.dash-card-desc { font-size: 0.65rem; color: var(--comment); line-height: 1.3; }
+.dash-card-desc { font-size: 0.6rem; color: var(--comment); line-height: 1.3; }
 .dash-card:nth-child(1) .dash-card-title { color: var(--purple); }
 .dash-card:nth-child(2) .dash-card-title { color: var(--cyan); }
 .dash-card:nth-child(3) .dash-card-title { color: var(--green); }
@@ -931,17 +951,33 @@ function loadDash() {
     var h = '<div class="dash">';
     h += '<div style="text-align:center;margin-bottom:0.4rem;flex-shrink:0"><div style="font-family:Bebas Neue,Impact,sans-serif;font-size:1.5rem;letter-spacing:0.03em;color:var(--fg)">How Well Do You <span style="color:var(--purple)">Really</span> Know Our Cast?</div><div style="font-size:0.68rem;color:var(--comment)">The Watcher sees all. But do you?</div></div>';
     h += '<div class="dash-grid">';
+    var cardColors = {wsi:'var(--purple)',qm:'var(--cyan)',qc:'var(--green)',ml:'var(--orange)'};
     games.forEach(function(g) {
         var gs=getScore(g.id);
+        var clr = cardColors[g.id];
         h += '<div class="dash-card" data-game="'+g.id+'">';
+        // Stats area — big and centered
+        h += '<div class="dash-card-stats">';
+        if(gs.played>0) {
+            if(g.id==='ml') {
+                h += '<div class="stat-big" style="color:'+clr+'">'+(gs.topPrize||'$0')+'</div>';
+                h += '<div class="stat-label">Top Prize</div>';
+                h += '<div class="stat-row"><div class="stat-mini"><b style="color:var(--green)">'+gs.played+'</b>games</div></div>';
+            } else {
+                h += '<div class="stat-big" style="color:'+clr+'">'+gs.score+'</div>';
+                h += '<div class="stat-label">Score</div>';
+                h += '<div class="stat-row"><div class="stat-mini"><b style="color:var(--orange)">'+gs.best+'</b>best streak</div><div class="stat-mini"><b style="color:var(--green)">'+gs.played+'</b>played</div></div>';
+            }
+        } else {
+            h += '<div style="font-size:0.75rem;color:var(--comment);opacity:0.4">Not played yet</div>';
+        }
+        h += '</div>';
+        // Bottom info
+        h += '<div class="dash-card-bottom">';
         h += '<div class="dash-card-icon">'+g.icon+'</div>';
         h += '<div class="dash-card-title">'+g.title+'</div>';
         h += '<div class="dash-card-desc">'+g.desc+'</div>';
-        if(gs.played>0) {
-            if(g.id==='ml') h += '<div style="font-size:0.58rem;color:var(--comment);margin-top:0.2rem">Games: <b style="color:var(--green)">'+gs.played+'</b> &middot; Top prize: <b style="color:var(--orange)">'+(gs.topPrize||'$0')+'</b></div>';
-            else h += '<div style="font-size:0.58rem;color:var(--comment);margin-top:0.2rem">Score: <b style="color:var(--green)">'+gs.score+'</b> &middot; Best streak: <b style="color:var(--pink)">'+gs.best+'</b></div>';
-        }
-        h += '</div>';
+        h += '</div></div>';
     });
     h += '</div></div>';
     $ga.innerHTML = h;
