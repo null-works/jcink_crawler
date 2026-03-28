@@ -643,7 +643,7 @@ function loadWSI(){
         h+='<div class="qblock"><div class="qlabel">Who said this?</div><div class="qtext">'+esc(d.quote)+'</div></div>';
         h+='<div class="tiles">';
         d.options.forEach(function(o){
-            var img = o.square_image || o.rectangle_gif || o.avatar_url;
+            var img = o.rectangle_gif || o.square_image || o.avatar_url;
             h += tileHtml(o.id, o.name, img, o.group, 'data-id="'+esc(o.id)+'"');
         });
         h+='</div>'+rfHtml()+'</div>';
