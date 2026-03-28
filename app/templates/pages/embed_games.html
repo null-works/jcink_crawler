@@ -358,6 +358,34 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 }
 .ml-play-btn:hover { box-shadow: 0 0 16px rgba(189,147,249,0.3); }
 
+/* ════════════════════════════════════════════
+   DASHBOARD — game picker landing
+   ════════════════════════════════════════════ */
+.dash { flex: 1; display: flex; flex-direction: column; animation: fi 0.3s ease-out; }
+.dash-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem;
+    flex: 1; min-height: 0;
+}
+.dash-card {
+    position: relative; border-radius: var(--r); overflow: hidden;
+    border: 1px solid var(--current); background: var(--bg-darker);
+    cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 0.6rem 0.7rem;
+}
+.dash-card:hover { border-color: var(--purple); box-shadow: 0 0 15px rgba(189,147,249,0.15); }
+.dash-card-icon { font-size: 1.8rem; margin-bottom: 0.3rem; }
+.dash-card-title {
+    font-family: 'Bebas Neue', Impact, sans-serif;
+    font-size: 1.3rem; letter-spacing: 0.03em; line-height: 1.1;
+    margin-bottom: 0.15rem;
+}
+.dash-card-desc { font-size: 0.65rem; color: var(--comment); line-height: 1.3; }
+.dash-card:nth-child(1) .dash-card-title { color: var(--purple); }
+.dash-card:nth-child(2) .dash-card-title { color: var(--cyan); }
+.dash-card:nth-child(3) .dash-card-title { color: var(--green); }
+.dash-card:nth-child(4) .dash-card-title { color: var(--orange); }
+
 /* Reveal image after answer */
 .ml-reveal-img {
     width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
@@ -385,7 +413,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
         </div>
     </div>
     <div class="tabs">
-        <button class="tab on" data-g="wsi">Who Said It?</button>
+        <button class="tab" data-g="wsi">Who Said It?</button>
         <button class="tab" data-g="qm">Quote Match</button>
         <button class="tab" data-g="qc">Quote Chain</button>
         <button class="tab" data-g="ml">Millionaire</button>
@@ -397,7 +425,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 (function(){
 'use strict';
 var API = window.QUOTE_GAME_API || 'https://imagehut.ch:8943';
-var _sc=0,_sk=0,_bs=0,_lk=false,_gm='wsi';
+var _sc=0,_sk=0,_bs=0,_lk=false,_gm='dash';
 var $sc=document.getElementById('sc'),$sk=document.getElementById('sk'),$bs=document.getElementById('bs');
 var $ga=document.getElementById('ga');
 
@@ -827,9 +855,43 @@ function mlCheat() {
     setTimeout(function() { mlReveal(); }, 300);
 }
 
+/* ── Dashboard ── */
+function loadDash() {
+    var games = [
+        {id:'wsi', icon:'&#x1F50D;', title:'Who Said It?', desc:'Read a quote, guess which character said it. Big image tiles, four choices.', color:'purple'},
+        {id:'qm',  icon:'&#x2194;&#xFE0F;',  title:'Quote Match',   desc:'Two quotes side by side — same character or different?', color:'cyan'},
+        {id:'qc',  icon:'&#x1F517;', title:'Quote Chain',   desc:'Given a quote, find another by the same character.', color:'green'},
+        {id:'ml',  icon:'&#x1F4B0;', title:'Millionaire',   desc:'15 questions to $1M. Lifelines, rising difficulty. How far can you go?', color:'orange'}
+    ];
+    var h = '<div class="dash"><div class="dash-grid">';
+    games.forEach(function(g) {
+        h += '<div class="dash-card" data-game="'+g.id+'">';
+        h += '<div class="dash-card-icon">'+g.icon+'</div>';
+        h += '<div class="dash-card-title">'+g.title+'</div>';
+        h += '<div class="dash-card-desc">'+g.desc+'</div>';
+        h += '</div>';
+    });
+    h += '</div></div>';
+    $ga.innerHTML = h;
+    // Remove active tab highlight
+    document.querySelectorAll('.tab').forEach(function(x) { x.classList.remove('on'); });
+    // Card clicks
+    $ga.querySelectorAll('.dash-card').forEach(function(card) {
+        card.addEventListener('click', function() {
+            _gm = card.dataset.game;
+            // Highlight the matching tab
+            document.querySelectorAll('.tab').forEach(function(x) {
+                x.classList.toggle('on', x.dataset.g === _gm);
+            });
+            loadRound();
+        });
+    });
+}
+
 /* ── Round Router ── */
 window.loadRound = function() {
-    if (_gm === 'wsi') loadWSI();
+    if (_gm === 'dash') loadDash();
+    else if (_gm === 'wsi') loadWSI();
     else if (_gm === 'qm') loadQM();
     else if (_gm === 'qc') loadQC();
     else if (_gm === 'ml') mlStartGame();
