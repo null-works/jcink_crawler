@@ -21,40 +21,21 @@ html, body { height: 100%; overflow: hidden; }
 body { font-family: var(--font); background: var(--bg); color: var(--fg); line-height: 1.4; }
 #confetti-canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1000; }
 
-/* ── Full-height flex layout ── */
+/* ── Full-height flex layout — fills entire frame ── */
 .wrap {
-    max-width: 620px; margin: 0 auto; height: 100vh;
-    display: flex; flex-direction: column; padding: 0.4rem 0.5rem;
+    height: 100vh; display: flex; flex-direction: column;
+    padding: 0.4rem 0.5rem;
 }
 
-/* ── Top bar ── */
-.top {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 0.3rem; flex-shrink: 0;
+/* ── Back button ── */
+.back-btn {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    padding: 0.2rem 0.5rem; border-radius: var(--r); border: 1px solid var(--current);
+    background: var(--bg-light); color: var(--comment); cursor: pointer;
+    font-size: 0.65rem; font-weight: 600; font-family: var(--font);
+    transition: all 0.15s; flex-shrink: 0; margin-bottom: 0.3rem; align-self: flex-start;
 }
-.top h1 { font-size: 0.95rem; font-weight: 700; }
-.top h1 .a { color: var(--purple); }
-.scores { display: flex; gap: 0.6rem; font-size: 0.72rem; flex-shrink: 0; }
-.scores .l { color: var(--comment); }
-.scores .v { font-weight: 700; margin-left: 0.1rem; }
-.v-s { color: var(--green); } .v-k { color: var(--orange); } .v-b { color: var(--pink); }
-.v.fire { animation: pop 0.5s ease; }
-@keyframes pop { 50% { transform: scale(1.5); text-shadow: 0 0 6px var(--orange); } }
-
-/* ── Tabs ── */
-.tabs {
-    display: flex; gap: 2px; flex-shrink: 0;
-    background: var(--bg-darker); border-radius: var(--r); padding: 2px;
-    margin-bottom: 0.3rem; border: 1px solid var(--current);
-}
-.tab {
-    flex: 1; padding: 0.22rem 0; border: none; border-radius: 5px;
-    background: transparent; color: var(--comment); cursor: pointer;
-    font-size: 0.7rem; font-weight: 600; font-family: var(--font);
-    transition: all 0.15s; text-align: center;
-}
-.tab:hover { color: var(--fg); }
-.tab.on { background: var(--current); color: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+.back-btn:hover { border-color: var(--purple); color: var(--fg); }
 
 /* ── Game area: flex-fills remaining space ── */
 #ga { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -395,38 +376,21 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 @keyframes mlRevealPop { 0%{transform:scale(0);opacity:0} 100%{transform:scale(1);opacity:1} }
 
 @media (max-width: 480px) {
-    .wrap { padding: 0.4rem 0.5rem; }
-    .top h1 { font-size: 0.82rem; }
-    .tile-name { font-size: 0.75rem; }
+    .wrap { padding: 0.3rem 0.4rem; }
+    .tile-name { font-size: 1rem; }
 }
 </style>
 </head>
 <body>
 <canvas id="confetti-canvas"></canvas>
 <div class="wrap">
-    <div class="top">
-        <h1>How Well Do You <span class="a">Really</span> Know Them?</h1>
-        <div class="scores">
-            <span><span class="l">Score</span> <span class="v v-s" id="sc">0</span></span>
-            <span><span class="l">Streak</span> <span class="v v-k" id="sk">0</span></span>
-            <span><span class="l">Best</span> <span class="v v-b" id="bs">0</span></span>
-        </div>
-    </div>
-    <div class="tabs">
-        <button class="tab" data-g="wsi">Who Said It?</button>
-        <button class="tab" data-g="qm">Quote Match</button>
-        <button class="tab" data-g="qc">Quote Chain</button>
-        <button class="tab" data-g="ml">Millionaire</button>
-    </div>
     <div id="ga"><div class="ld">Loading<span class="ld-d"></span></div></div>
-    <div class="ft">The Watcher &mdash; therewasanidea.jcink.net</div>
 </div>
 <script>
 (function(){
 'use strict';
 var API = window.QUOTE_GAME_API || 'https://imagehut.ch:8943';
 var _sc=0,_sk=0,_bs=0,_lk=false,_gm='dash';
-var $sc=document.getElementById('sc'),$sk=document.getElementById('sk'),$bs=document.getElementById('bs');
 var $ga=document.getElementById('ga');
 
 // Confetti
@@ -459,7 +423,7 @@ function apiRetry(p,fallbackMsg){
         throw e;
     });
 }
-function upd(ok){if(ok){_sc++;_sk++;}else _sk=0;if(_sk>_bs)_bs=_sk;$sc.textContent=_sc;$sk.textContent=_sk;$bs.textContent=_bs;if(_sk>0&&ok){$sk.classList.remove('fire');void $sk.offsetWidth;$sk.classList.add('fire');}}
+function upd(ok){if(ok){_sc++;_sk++;}else _sk=0;if(_sk>_bs)_bs=_sk;}
 function sRes(ok,det,detHtml){
     var ra=document.querySelector('.ra'),m=ra.querySelector('.rm'),d=ra.querySelector('.rd'),s=ra.querySelector('.sk');
     m.textContent=ok?'Correct!':'Nope!'; m.className='rm show '+(ok?'ok':'no');
@@ -468,6 +432,7 @@ function sRes(ok,det,detHtml){
     if(ok&&_sk>=3){var ms=['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!','Beyond mortal comprehension!'];s.textContent=_sk+' in a row! '+(ms[_sk]||_sk+'-streak!');s.className='sk show';boom(_sk>=5?50:25);}else if(ok)boom(10);
     document.querySelector('.nb').classList.add('show');
 }
+function backHtml(){return '<button class="back-btn" onclick="_gm=\'dash\';loadRound()">&#x2190; Games</button>';}
 function rfHtml(){return '<div class="rf"><div class="ra"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div><button class="nb">Next Round</button></div>';}
 function erHtml(m){return '<div class="er"><div class="ei">&#x1F50C;</div><div class="et">'+esc(m)+'</div><button class="rb" onclick="loadRound()">Try Again</button></div>';}
 
@@ -497,6 +462,7 @@ function loadWSI(){
     _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
     apiRetry('/api/game/who-said-it?choices=4').then(function(d){
         var h='<div class="gi">';
+        h+=backHtml();
         h+='<div class="qblock"><div class="qlabel">Who said this?</div><div class="qtext">'+esc(d.quote)+'</div></div>';
         h+='<div class="tiles">';
         d.options.forEach(function(o){
@@ -535,6 +501,7 @@ function loadQM(){
     _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
     apiRetry('/api/game/quote-match').then(function(d){
         var h='<div class="gi">';
+        h+=backHtml();
         h+='<div class="qpair">';
         h+='<div class="qpanel"><div class="qlabel">Quote A</div><div class="qtext">'+esc(d.quote_a)+'</div></div>';
         h+='<div class="vs">vs</div>';
@@ -565,6 +532,7 @@ function loadQC(){
     _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
     apiRetry('/api/game/quote-chain?choices=4').then(function(d){
         var h='<div class="gi">';
+        h+=backHtml();
         h+='<div class="qblock"><div class="qlabel">Find another quote by '+esc(d.anchor_character)+'</div><div class="qtext">'+esc(d.anchor_quote)+'</div></div>';
         h+='<div class="qlist">';
         d.options.forEach(function(o,i){h+='<button class="qopt" data-i="'+i+'">'+esc(o.quote_text)+'</button>';});
@@ -630,6 +598,7 @@ function mlLoadQuestion() {
         h += '<div class="ml-layout">';
         // Main area
         h += '<div class="ml-main">';
+        h += backHtml();
         h += '<div class="ml-lifelines" id="ml-ll">' + mlLifelineHtml() + '</div>';
         // Show character image if the question is about a specific character
         var qLabel = 'Question ' + (_mlLevel+1) + ' &mdash; ' + ML_PRIZES[_mlLevel];
@@ -863,7 +832,9 @@ function loadDash() {
         {id:'qc',  icon:'&#x1F517;', title:'Quote Chain',   desc:'Given a quote, find another by the same character.', color:'green'},
         {id:'ml',  icon:'&#x1F4B0;', title:'Millionaire',   desc:'15 questions to $1M. Lifelines, rising difficulty. How far can you go?', color:'orange'}
     ];
-    var h = '<div class="dash"><div class="dash-grid">';
+    var h = '<div class="dash">';
+    h += '<div style="text-align:center;margin-bottom:0.4rem;flex-shrink:0"><div style="font-family:Bebas Neue,Impact,sans-serif;font-size:1.5rem;letter-spacing:0.03em;color:var(--fg)">How Well Do You <span style="color:var(--purple)">Really</span> Know Them?</div><div style="font-size:0.68rem;color:var(--comment)">The Watcher sees all. But do you?</div></div>';
+    h += '<div class="dash-grid">';
     games.forEach(function(g) {
         h += '<div class="dash-card" data-game="'+g.id+'">';
         h += '<div class="dash-card-icon">'+g.icon+'</div>';
@@ -873,16 +844,9 @@ function loadDash() {
     });
     h += '</div></div>';
     $ga.innerHTML = h;
-    // Remove active tab highlight
-    document.querySelectorAll('.tab').forEach(function(x) { x.classList.remove('on'); });
-    // Card clicks
     $ga.querySelectorAll('.dash-card').forEach(function(card) {
         card.addEventListener('click', function() {
             _gm = card.dataset.game;
-            // Highlight the matching tab
-            document.querySelectorAll('.tab').forEach(function(x) {
-                x.classList.toggle('on', x.dataset.g === _gm);
-            });
             loadRound();
         });
     });
@@ -896,12 +860,6 @@ window.loadRound = function() {
     else if (_gm === 'qc') loadQC();
     else if (_gm === 'ml') mlStartGame();
 };
-document.querySelectorAll('.tab').forEach(function(t) {
-    t.addEventListener('click', function() {
-        document.querySelectorAll('.tab').forEach(function(x) { x.classList.remove('on'); });
-        t.classList.add('on'); _gm = t.dataset.g; loadRound();
-    });
-});
 loadRound();
 })();
 </script>
