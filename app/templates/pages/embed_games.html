@@ -167,7 +167,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 
 /* ── Result footer (pushed to bottom) ── */
 .rf { margin-top: auto; flex-shrink: 0; }
-.ra { text-align: center; min-height: 1.2rem; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 0.2rem; }
+.ra { text-align: center; height: 3rem; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 0.2rem; overflow: hidden; }
 .rm { font-size: 0.85rem; font-weight: 700; opacity: 0; transition: opacity 0.2s; }
 .rm.show { opacity: 1; } .rm.ok { color: var(--green); } .rm.no { color: var(--red); }
 .rd { font-size: 0.7rem; color: var(--comment); margin-top: 0.05rem; opacity: 0; transition: opacity 0.2s 0.05s; }
@@ -301,9 +301,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 }
 .ml-ata-pct { margin-top: 0.1rem; font-weight: 700; }
 
-/* Confirm bar */
+/* Confirm bar — always takes space, visibility toggled */
 .ml-confirm {
     display: flex; gap: 0.3rem; margin-bottom: 0.25rem; flex-shrink: 0;
+    visibility: hidden;
 }
 .ml-confirm-btn {
     flex: 1; padding: 0.5rem; border-radius: var(--r); border: none;
@@ -655,11 +656,11 @@ function mlLoadQuestion() {
             h += '<button class="ml-opt" data-id="' + esc(o.id) + '" data-i="' + i + '"><span class="ml-letter">' + letters[i] + ':</span> ' + esc(o.text) + '</button>';
         });
         h += '</div>';
-        h += '<div class="ml-confirm" id="ml-confirm" style="display:none">';
+        h += '<div class="ml-confirm" id="ml-confirm" style="visibility:hidden">';
         h += '<button class="ml-confirm-btn ml-final" id="ml-final-btn">Final Answer</button>';
         h += '<button class="ml-confirm-btn ml-walk" id="ml-walk-btn">Walk Away (' + ((_mlLevel > 0) ? ML_PRIZES[_mlLevel-1] : '$0') + ')</button>';
         h += '</div>';
-        h += '<div class="rf" id="ml-rf" style="display:none"><div class="ra"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div></div>';
+        h += '<div class="rf" id="ml-rf" style="visibility:hidden"><div class="ra"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div></div>';
         h += '</div>';
         // Ladder
         h += '<div class="ml-ladder" id="ml-ladder">' + mlLadderHtml(_mlLevel) + '</div>';
@@ -673,7 +674,7 @@ function mlLoadQuestion() {
                 _mlSelected = btn.dataset.id;
                 $ga.querySelectorAll('.ml-opt').forEach(function(x) { x.classList.remove('selected'); });
                 btn.classList.add('selected');
-                document.getElementById('ml-confirm').style.display = 'flex';
+                document.getElementById('ml-confirm').style.visibility = 'visible';
             });
         });
 
@@ -681,7 +682,7 @@ function mlLoadQuestion() {
         document.getElementById('ml-final-btn').addEventListener('click', function() {
             if (_lk || !_mlSelected) return;
             _lk = true;
-            document.getElementById('ml-confirm').style.display = 'none';
+            document.getElementById('ml-confirm').style.visibility = 'hidden';
             // Dramatic pause — blink all options
             $ga.querySelectorAll('.ml-opt').forEach(function(x) { x.classList.add('locked', 'ml-thinking'); });
             setTimeout(function() {
@@ -720,7 +721,7 @@ function mlReveal() {
     var aid = _mlData.answer_id;
     var ok = _mlSelected === aid;
     var rf = document.getElementById('ml-rf');
-    rf.style.display = 'block';
+    rf.style.visibility = 'visible';
     var rm = rf.querySelector('.rm'), rd = rf.querySelector('.rd');
 
     $ga.querySelectorAll('.ml-opt').forEach(function(x) {
@@ -787,7 +788,7 @@ function mlUse5050() {
         var sel = $ga.querySelector('.ml-opt.selected');
         if (sel && sel.classList.contains('hidden-5050')) {
             sel.classList.remove('selected'); _mlSelected = null;
-            document.getElementById('ml-confirm').style.display = 'none';
+            document.getElementById('ml-confirm').style.visibility = 'hidden';
         }
     }
 }
@@ -877,7 +878,7 @@ function mlCheat() {
         x.classList.add('locked');
         if (x.dataset.id === _mlData.answer_id) { x.classList.add('selected'); x.classList.add('correct'); }
     });
-    document.getElementById('ml-confirm').style.display = 'none';
+    document.getElementById('ml-confirm').style.visibility = 'hidden';
     setTimeout(function() { mlReveal(); }, 300);
 }
 
