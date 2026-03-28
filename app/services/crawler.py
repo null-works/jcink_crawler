@@ -1262,9 +1262,12 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
 
         set_activity("Extracting quotes from post bodies")
         quotes_added = 0
+        posts_with_body = sum(1 for p in posts if p.get("post_body") and isinstance(p["post_body"], str) and len(p["post_body"]) >= 20)
+        log_debug(f"ACP sync: extracting quotes from {posts_with_body} posts with bodies")
 
         async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
+            processed = 0
             for p in posts:
                 cid = p["character_id"]
                 if cid not in tracked_chars:
@@ -1281,10 +1284,13 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                     if added:
                         quotes_added += 1
 
+                processed += 1
+                if processed % 2000 == 0:
+                    log_debug(f"ACP sync: quote extraction progress — {processed}/{posts_with_body} posts, {quotes_added} new quotes")
+
             await db.commit()
 
-        if quotes_added:
-            log_debug(f"ACP sync: extracted {quotes_added} new quotes from post bodies")
+        log_debug(f"ACP sync: quote extraction complete — {quotes_added} new quotes from {processed} posts")
 
         # Record last sync time
         async with connect_db(db_path) as db:

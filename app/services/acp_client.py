@@ -190,8 +190,12 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
         e.g. {"posts": [[col0, col1, ...], ...], "topics": [...]}
     """
     raw: dict[str, list[list]] = {}
+    total_rows = 0
 
-    for line in sql_text.split("\n"):
+    lines = sql_text.split("\n")
+    log_debug(f"ACP: parsing {len(lines):,} lines ({len(sql_text):,} bytes)")
+
+    for line in lines:
         line = line.strip()
         if not line.startswith("REPLACE"):
             continue
@@ -216,6 +220,9 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
                     val = val.replace("&quot;", '"')
                 cleaned.append(val)
             raw.setdefault(table_name, []).append(cleaned)
+            total_rows += 1
+            if total_rows % 5000 == 0:
+                log_debug(f"ACP: parsed {total_rows:,} rows so far...")
 
     # Diagnostic: check for rows with wrong column counts
     for tbl_name in ("posts", "topics"):
@@ -977,15 +984,19 @@ class ACPClient:
             log_debug(f"ACP: waiting {wait_secs}s for SQL file")
             await asyncio.sleep(wait_secs)
             try:
+                log_debug("ACP: fetching SQL file...")
                 resp = await client.get(self._rewrite_url(sql_url), follow_redirects=True)
+                log_debug(f"ACP: SQL file response — status={resp.status_code}, size={len(resp.text):,}")
                 if resp.status_code == 200 and len(resp.text) > 100:
                     sql_content = resp.text
                     log_debug(f"ACP: SQL file retrieved ({len(sql_content):,} bytes)")
                     break
                 else:
                     log_debug(f"ACP: SQL file not ready (status={resp.status_code}, size={len(resp.text)})")
+            except httpx.ReadTimeout:
+                log_debug(f"ACP: SQL file fetch timed out (attempt after {wait_secs}s wait)", level="warn")
             except Exception as e:
-                log_debug(f"ACP: SQL file fetch error: {e}", level="warn")
+                log_debug(f"ACP: SQL file fetch error: {type(e).__name__}: {e}", level="warn")
 
         if not sql_content:
             log_debug("ACP: failed to retrieve SQL file after all retries", level="error")
