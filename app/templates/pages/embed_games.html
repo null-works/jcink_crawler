@@ -162,7 +162,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 }
 .char-pick:hover { border-color: var(--purple); background: var(--bg-light); }
 .char-pick img {
-    width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+    width: 100%; aspect-ratio: 1; border-radius: var(--r); object-fit: cover;
     border: 2px solid var(--current);
 }
 .char-pick .cp-name {
@@ -171,9 +171,9 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
     white-space: nowrap; width: 100%;
 }
 .char-pick .cp-noimg {
-    width: 44px; height: 44px; border-radius: 50%; background: var(--current);
+    width: 100%; aspect-ratio: 1; border-radius: var(--r); background: var(--current);
     display: flex; align-items: center; justify-content: center;
-    font-size: 1.2rem; font-weight: 700; color: var(--comment);
+    font-size: 1.4rem; font-weight: 700; color: var(--comment);
 }
 
 /* ── Binary buttons (Quote Match) ── */
