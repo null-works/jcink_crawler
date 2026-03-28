@@ -75,13 +75,8 @@ _REPLACE_RE = re.compile(
 def _parse_sql_values(values_str: str) -> list | None:
     """Parse the VALUES portion of a REPLACE INTO statement.
 
-    Tries JSON parsing first (fast path), falls back to an index-based
-    parser that handles:
-    - Backslash-escaped quotes: \\'
-    - SQL doubled quotes: ''
-    - Unescaped single quotes in HTML content (JCink-specific bug):
-      detected by checking whether what follows the quote looks like
-      a value separator (, or end of statement) vs. more string content.
+    Tries JSON parsing first (fast path), falls back to manual
+    CSV-style parsing for SQL with single-quoted strings.
     """
     # Try JSON array parse: wrap in brackets
     json_str = f"[{values_str}]"
@@ -90,81 +85,55 @@ def _parse_sql_values(values_str: str) -> list | None:
     except (json.JSONDecodeError, ValueError):
         pass
 
-    # Index-based parser with proper quote handling
+    # Fallback: manual CSV-style parse handling quoted strings
     result = []
-    i = 0
-    length = len(values_str)
+    current = ""
+    in_quote = False
+    escape_next = False
 
-    while i < length:
-        # Skip whitespace between values
-        while i < length and values_str[i] in " \t\r\n":
-            i += 1
-        if i >= length:
-            break
-
-        if values_str[i] == "'":
-            # ── Quoted string value ──
-            i += 1  # skip opening quote
-            parts = []
-            while i < length:
-                ch = values_str[i]
-                if ch == "\\" and i + 1 < length:
-                    # Backslash escape: keep the escaped character only
-                    parts.append(values_str[i + 1])
-                    i += 2
-                    continue
-                if ch == "'":
-                    # Could be: end of string, doubled quote '', or unescaped HTML quote
-                    if i + 1 < length and values_str[i + 1] == "'":
-                        # Doubled quote '' → literal single quote
-                        parts.append("'")
-                        i += 2
-                        continue
-                    # Check if this is really the end of the value:
-                    # scan past whitespace — next meaningful char should be , or ) or end
-                    j = i + 1
-                    while j < length and values_str[j] in " \t":
-                        j += 1
-                    if j >= length or values_str[j] in ",)":
-                        # Real end of string
-                        break
-                    # Not end — unescaped quote in HTML content (JCink bug)
-                    parts.append("'")
-                    i += 1
-                    continue
-                parts.append(ch)
-                i += 1
-            result.append("".join(parts))
-            i += 1  # skip closing quote
-            # Skip past separator
-            while i < length and values_str[i] in " \t":
-                i += 1
-            if i < length and values_str[i] == ",":
-                i += 1
-
-        elif values_str[i:i + 4] == "NULL":
-            result.append(None)
-            i += 4
-            while i < length and values_str[i] in " \t":
-                i += 1
-            if i < length and values_str[i] == ",":
-                i += 1
-
-        else:
-            # ── Numeric or unquoted value ──
-            start = i
-            while i < length and values_str[i] not in ",)":
-                i += 1
-            val = values_str[start:i].strip()
-            try:
-                result.append(int(val))
-            except ValueError:
+    for char in values_str:
+        if escape_next:
+            current += char
+            escape_next = False
+            continue
+        if char == "\\":
+            escape_next = True
+            current += char
+            continue
+        if char == "'" and not in_quote:
+            in_quote = True
+            continue
+        if char == "'" and in_quote:
+            in_quote = False
+            continue
+        if char == "," and not in_quote:
+            val = current.strip()
+            if val == "NULL":
+                result.append(None)
+            else:
                 try:
-                    result.append(float(val))
+                    result.append(int(val))
                 except ValueError:
-                    result.append(val)
-            if i < length and values_str[i] == ",":
-                i += 1
+                    try:
+                        result.append(float(val))
+                    except ValueError:
+                        result.append(val)
+            current = ""
+            continue
+        current += char
+
+    # Last value
+    val = current.strip()
+    if val == "NULL":
+        result.append(None)
+    else:
+        try:
+            result.append(int(val))
+        except ValueError:
+            try:
+                result.append(float(val))
+            except ValueError:
+                result.append(val)
 
     return result
 
@@ -215,6 +184,7 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
             cleaned = []
             for val in row:
                 if isinstance(val, str):
+                    val = val.replace("\\'", "'")
                     val = val.replace("&amp;", "&")
                     val = val.replace("&lt;", "<")
                     val = val.replace("&gt;", ">")
@@ -605,6 +575,11 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
 
     Returns list of dicts with: character_id, thread_id, post_date, forum_id, author_name
     When include_body=True, also includes post_body (HTML content) for quote extraction.
+
+    Handles mis-parsed rows where the post body (column 10) contains unescaped
+    single quotes that split it into extra columns.  For these rows, columns
+    before the body (0-9) are intact but columns after are shifted.  We read
+    topic_id and forum_id by counting from the END of the row.
     """
     s = schema or {}
     col_author = s.get("post_author_id", 3)
@@ -614,8 +589,20 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
     col_topic = s.get("post_topic_id", 12)
     col_forum = s.get("post_forum_id", 13)
 
-    min_col = max(col_author, col_date, col_topic, col_forum)
+    # Determine expected column count from first valid row
     posts_rows = raw.get("posts", [])
+    expected_cols = 21  # IPB default
+    if posts_rows:
+        from collections import Counter
+        counts = Counter(len(r) for r in posts_rows[:200])
+        if counts:
+            expected_cols = counts.most_common(1)[0][0]
+
+    # How far topic_id and forum_id are from the END of a correctly-parsed row
+    topic_from_end = expected_cols - col_topic
+    forum_from_end = expected_cols - col_forum
+
+    min_col = max(col_author, col_date)
     records = []
 
     for row in posts_rows:
@@ -626,16 +613,34 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
         if author_id is None:
             continue
 
+        # For rows with the right column count, use direct indexing.
+        # For rows with extra columns (body split), count from the end.
+        if len(row) == expected_cols:
+            topic_val = row[col_topic] if col_topic < len(row) else None
+            forum_val = row[col_forum] if col_forum < len(row) else None
+        else:
+            topic_idx = len(row) - topic_from_end
+            forum_idx = len(row) - forum_from_end
+            topic_val = row[topic_idx] if 0 <= topic_idx < len(row) else None
+            forum_val = row[forum_idx] if 0 <= forum_idx < len(row) else None
+
         record = {
             "character_id": str(author_id),
-            "thread_id": str(row[col_topic]) if row[col_topic] is not None else None,
+            "thread_id": str(topic_val) if topic_val is not None else None,
             "post_date": _unix_to_iso(row[col_date]),
-            "forum_id": str(row[col_forum]) if row[col_forum] is not None else None,
+            "forum_id": str(forum_val) if forum_val is not None else None,
             "author_name": row[col_author_name] if col_author_name < len(row) else None,
         }
 
-        if include_body and col_body < len(row):
-            body = row[col_body]
+        if include_body:
+            if len(row) == expected_cols:
+                body = row[col_body] if col_body < len(row) else None
+            else:
+                # Body spans from col_body to (end - columns_after_body)
+                cols_after_body = expected_cols - col_body - 1
+                body_end = len(row) - cols_after_body
+                body_parts = row[col_body:body_end]
+                body = ",".join(str(p) for p in body_parts) if body_parts else None
             record["post_body"] = body if isinstance(body, str) else None
 
         records.append(record)
@@ -648,6 +653,8 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
 
     Returns list of dicts with: thread_id, title, forum_id, state,
     last_poster_id, last_poster_name, last_post_date
+
+    Handles rows with wrong column counts by reading from the end.
     """
     s = schema or {}
     col_title = s.get("topic_title", 1)
@@ -659,8 +666,18 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
     topics_rows = raw.get("topics", [])
     records = []
 
-    min_cols = max(_TOPIC_COL_ID, col_title, col_forum,
-                   col_last_post, col_poster_id, col_poster_name) + 1
+    expected_cols = 22
+    if topics_rows:
+        from collections import Counter
+        counts = Counter(len(r) for r in topics_rows[:200])
+        if counts:
+            expected_cols = counts.most_common(1)[0][0]
+
+    forum_from_end = expected_cols - col_forum
+    poster_id_from_end = expected_cols - col_poster_id
+    poster_name_from_end = expected_cols - col_poster_name
+
+    min_cols = max(_TOPIC_COL_ID, col_title) + 1
 
     for row in topics_rows:
         if len(row) < min_cols:
@@ -676,14 +693,28 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
         if isinstance(title, str) and title.startswith("From:"):
             continue
 
+        if len(row) == expected_cols:
+            forum_id = row[col_forum]
+            poster_id = row[col_poster_id]
+            poster_name = row[col_poster_name]
+            last_post = row[col_last_post]
+        else:
+            forum_idx = len(row) - forum_from_end
+            poster_id_idx = len(row) - poster_id_from_end
+            poster_name_idx = len(row) - poster_name_from_end
+            forum_id = row[forum_idx] if 0 <= forum_idx < len(row) else None
+            poster_id = row[poster_id_idx] if 0 <= poster_id_idx < len(row) else None
+            poster_name = row[poster_name_idx] if 0 <= poster_name_idx < len(row) else None
+            last_post = row[col_last_post] if col_last_post < len(row) else None
+
         records.append({
             "thread_id": str(topic_id),
             "title": title,
-            "forum_id": str(row[col_forum]) if row[col_forum] is not None else None,
+            "forum_id": str(forum_id) if forum_id is not None else None,
             "state": row[3] if len(row) > 3 else None,
-            "last_poster_id": str(row[col_poster_id]) if row[col_poster_id] else None,
-            "last_poster_name": row[col_poster_name] if isinstance(row[col_poster_name], str) else None,
-            "last_post_date": _unix_to_iso(row[col_last_post]),
+            "last_poster_id": str(poster_id) if poster_id else None,
+            "last_poster_name": poster_name if isinstance(poster_name, str) else None,
+            "last_post_date": _unix_to_iso(last_post),
         })
 
     return records

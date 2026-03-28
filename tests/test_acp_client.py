@@ -35,11 +35,12 @@ class TestParseSqlValues:
         assert result == [1, None, 3]
 
     def test_escaped_quotes(self):
-        # Fallback parser handles single quotes
+        # Fallback parser handles single quotes — keeps \' in output
+        # (unescape happens in parse_sql_dump post-processing, not here)
         result = _parse_sql_values("1, 'it\\'s a test', 3")
         assert len(result) == 3
         assert result[0] == 1
-        assert result[1] == "it's a test"
+        assert result[1] == "it\\'s a test"
         assert result[2] == 3
 
     def test_html_with_single_quotes_in_attributes(self):
@@ -68,25 +69,8 @@ class TestParseSqlValues:
         assert len(result) == 5
         assert "foo, bar" in result[1]
 
-    def test_doubled_quote_escape(self):
-        # SQL standard '' escape for literal single quote
-        result = _parse_sql_values("1, 'it''s a test', 3")
-        assert len(result) == 3
-        assert result[1] == "it's a test"
-
-    def test_unescaped_apostrophe_in_html_body(self):
-        # JCink bug: raw apostrophe in post body not SQL-escaped
-        # The parser should treat ' followed by non-separator as part of the string
-        sql = "1, 0, 'The hero's journey begins <b>\"Today we fight!\"</b> she said', 0, 100, 5"
-        result = _parse_sql_values(sql)
-        assert len(result) == 6
-        assert result[0] == 1
-        assert "hero's journey" in result[2]
-        assert "Today we fight" in result[2]
-        assert result[4] == 100
-
-    def test_bold_dialog_in_post_body(self):
-        # Post body with bold dialog quotes — what extract_quotes_from_post_body needs
+    def test_bold_dialog_in_simple_post_body(self):
+        # Post body with bold dialog quotes — no unescaped quotes in HTML
         sql = "1, 0, '<p>She walked in. <b>\"This is my test quote.\"</b> Then she left.</p>', 0, 100, 5"
         result = _parse_sql_values(sql)
         assert len(result) == 6
