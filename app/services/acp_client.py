@@ -193,9 +193,10 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
     total_rows = 0
 
     lines = sql_text.split("\n")
-    log_debug(f"ACP: parsing {len(lines):,} lines ({len(sql_text):,} bytes)")
+    total_lines = len(lines)
+    log_debug(f"ACP parse: {total_lines:,} lines ({len(sql_text):,} bytes)")
 
-    for line in lines:
+    for line_num, line in enumerate(lines):
         line = line.strip()
         if not line.startswith("REPLACE"):
             continue
@@ -221,8 +222,9 @@ def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
                 cleaned.append(val)
             raw.setdefault(table_name, []).append(cleaned)
             total_rows += 1
-            if total_rows % 5000 == 0:
-                log_debug(f"ACP: parsed {total_rows:,} rows so far...")
+            if total_rows % 2000 == 0:
+                pct = int(line_num / total_lines * 100)
+                log_debug(f"ACP parse: {pct}% — {total_rows:,} rows ({table_name})")
 
     # Diagnostic: check for rows with wrong column counts
     for tbl_name in ("posts", "topics"):
@@ -907,7 +909,7 @@ class ACPClient:
         await asyncio.sleep(1)
 
         # Step 2: Start the full dump — step1=1 begins at page 1
-        log_debug("ACP: starting full database dump")
+        log_debug("── Phase 1: ACP Dump ──")
         try:
             init_resp = await client.get(
                 self._rewrite_url(f"{base}/admin.php?act=mysql&code=dump&step1=1&adsess={self._token}"),
@@ -968,7 +970,7 @@ class ACPClient:
 
             # Brief pause every 10 pages to be polite
             if total_pages % 10 == 0:
-                log_debug(f"ACP: dump progress — {total_pages} pages, parts seen: {sorted(parts_seen)}")
+                log_debug(f"ACP dump: {total_pages} pages fetched")
                 await asyncio.sleep(0.3)
 
         log_debug(

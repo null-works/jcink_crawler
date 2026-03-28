@@ -909,7 +909,7 @@ async def sync_posts_from_acp(db_path: str, username: str | None = None, passwor
     if not username or not password:
         return {"error": "No admin credentials configured — set them in Admin > ACP Settings"}
 
-    log_debug("Starting ACP full sync")
+    log_debug("═══ ACP Sync Started ═══")
     set_activity("Syncing from ACP")
 
     client = ACPClient(username=username, password=password)
@@ -969,7 +969,7 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         topics = extract_topic_records(raw, schema=schema)
         posts = acp_extract_posts(raw, include_body=True, schema=schema)
         forums = extract_forum_records(raw, schema=schema)
-        log_debug(f"ACP dump: {len(topics)} topics, {len(posts)} posts, {len(forums)} forums")
+        log_debug(f"── Phase 2: Schema ── {len(topics)} topics, {len(posts)} posts, {len(forums)} forums")
 
         if not topics and not posts:
             clear_activity()
@@ -1022,7 +1022,8 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                 if new_chars:
                     log_debug(f"ACP sync: auto-registered {new_chars} characters from member dump")
 
-        set_activity(f"Processing {len(topics)} topics, {len(posts)} posts from ACP")
+        log_debug(f"── Phase 3: Match ── {len(tracked_chars)} characters, {len(topics)} topics")
+        set_activity(f"Matching {len(posts)} posts to {len(tracked_chars)} characters")
 
         # Load tracked character IDs (now includes auto-registered members)
         async with connect_db(db_path) as db:
@@ -1150,7 +1151,9 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                     avatar_cache[poster_id] = None
 
         # ── Phase 4: Write everything to DB ──
-        set_activity("Writing ACP data to database")
+        total_relevant = len(relevant_thread_ids)
+        log_debug(f"── Phase 4: DB Write ── {total_relevant} threads to process")
+        set_activity(f"Writing {total_relevant} threads to database")
         threads_upserted = 0
         links_created = 0
         posts_stored = 0
@@ -1170,9 +1173,15 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                 )
                 await db.execute("DELETE FROM threads WHERE title LIKE 'From:%'")
                 await db.commit()
-                log_debug(f"ACP sync: cleaned up {junk_count} move-redirect stub threads")
+                log_debug(f"DB write: cleaned up {junk_count} redirect stubs")
 
+            thread_idx = 0
             for tid in relevant_thread_ids:
+                thread_idx += 1
+                if thread_idx % 200 == 0:
+                    pct = int(thread_idx / total_relevant * 100)
+                    log_debug(f"DB write: {pct}% — {threads_upserted} threads, {links_created} links, {posts_stored} posts")
+                    await asyncio.sleep(0)
                 topic = topic_map.get(tid)
                 if not topic:
                     # Thread exists in posts but not in topics — skip thread upsert
@@ -1261,10 +1270,10 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         # dialog quotes directly instead of fetching thread pages via HTTP.
         from app.services.parser import extract_quotes_from_post_body
 
-        set_activity("Extracting quotes from post bodies")
-        quotes_added = 0
         posts_with_body = sum(1 for p in posts if p.get("post_body") and isinstance(p["post_body"], str) and len(p["post_body"]) >= 20)
-        log_debug(f"ACP sync: extracting quotes from {posts_with_body} posts with bodies")
+        log_debug(f"── Phase 5: Quotes ── {posts_with_body} posts with bodies")
+        set_activity(f"Extracting quotes from {posts_with_body} posts")
+        quotes_added = 0
 
         async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
@@ -1287,13 +1296,13 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
 
                 processed += 1
                 if processed % 500 == 0:
-                    # Yield to event loop so dashboard stays responsive
+                    pct = int(processed / posts_with_body * 100) if posts_with_body else 0
+                    log_debug(f"Quote extraction: {pct}% — {processed}/{posts_with_body} posts, {quotes_added} new quotes")
                     await asyncio.sleep(0)
-                    log_debug(f"ACP sync: quote extraction progress — {processed}/{posts_with_body} posts, {quotes_added} new quotes")
 
             await db.commit()
 
-        log_debug(f"ACP sync: quote extraction complete — {quotes_added} new quotes from {processed} posts")
+        log_debug(f"Quote extraction: 100% — {quotes_added} new quotes from {processed} posts")
 
         # Record last sync time
         async with connect_db(db_path) as db:
@@ -1308,7 +1317,12 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
             "posts_stored": posts_stored,
             "quotes_added": quotes_added,
         }
-        log_debug(f"ACP sync complete: {summary}", level="done")
+        log_debug(
+            f"═══ ACP Sync Complete ═══ "
+            f"threads={threads_upserted} links={links_created} "
+            f"posts={posts_stored} quotes={quotes_added}",
+            level="done",
+        )
 
         return summary
 
