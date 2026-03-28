@@ -532,6 +532,7 @@ function mlLifelineHtml() {
         var used = _mlLifelines[l[0]];
         h += '<button class="ml-life' + (used ? ' used' : '') + '" data-ll="' + l[0] + '"' + (used ? ' disabled' : '') + '>' + l[1] + '</button>';
     });
+    h += '<button class="ml-life" data-ll="cheat" style="color:var(--green);border-color:var(--green);font-size:0.55rem">&#x2714; CHEAT</button>';
     return h;
 }
 
@@ -615,6 +616,7 @@ function mlLoadQuestion() {
                 _mlLifelines[ll] = true;
                 btn.classList.add('used');
                 btn.disabled = true;
+                if (ll === 'cheat') { mlCheat(); return; }
                 if (ll === '5050') mlUse5050();
                 else if (ll === 'ata') mlUseATA();
                 else if (ll === 'paf') mlUsePAF();
@@ -747,6 +749,18 @@ function mlUsePAF() {
     var msg = phrases[Math.random() * phrases.length | 0];
     var optsEl = document.getElementById('ml-opts');
     optsEl.insertAdjacentHTML('beforebegin', '<div class="qblock" style="margin-bottom:0.25rem;border-color:var(--cyan)"><div class="qlabel" style="color:var(--cyan)">Phone a Friend</div><div class="qtext" style="font-size:0.8rem">' + esc(msg) + '</div></div>');
+}
+
+function mlCheat() {
+    if (_lk) return;
+    _lk = true;
+    _mlSelected = _mlData.answer_id;
+    $ga.querySelectorAll('.ml-opt').forEach(function(x) {
+        x.classList.add('locked');
+        if (x.dataset.id === _mlData.answer_id) { x.classList.add('selected'); x.classList.add('correct'); }
+    });
+    document.getElementById('ml-confirm').style.display = 'none';
+    setTimeout(function() { mlReveal(); }, 300);
 }
 
 /* ── Round Router ── */
