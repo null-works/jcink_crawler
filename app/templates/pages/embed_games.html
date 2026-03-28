@@ -456,7 +456,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 .dash-card-bg {
     position: absolute; inset: 0; background-size: cover; background-position: center;
     transition: opacity 1.5s ease-in-out;
-    opacity: 0;
+    opacity: 0; z-index: 0;
 }
 .dash-card-bg.active { opacity: 1; }
 .dash-card:hover { border-color: var(--purple); box-shadow: 0 0 15px rgba(189,147,249,0.15); }
