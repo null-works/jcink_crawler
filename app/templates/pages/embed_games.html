@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>How Well Do You Know Your Characters?</title>
+<title>How Well Do You Really Know Our Cast?</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
@@ -36,6 +36,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
     transition: all 0.15s; flex-shrink: 0; margin-bottom: 0.3rem; align-self: flex-start;
 }
 .back-btn:hover { border-color: var(--purple); color: var(--fg); }
+.score-bar {
+    display: flex; gap: 0.6rem; font-size: 0.68rem; color: var(--comment);
+}
+.sb-item b { margin-left: 0.1rem; }
 
 /* ── Game area: flex-fills remaining space ── */
 #ga { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -45,7 +49,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 /* ── Quote block ── */
 .qblock {
     background: var(--bg-darker); border: 1px solid var(--current);
-    border-radius: var(--r); padding: 0.4rem 0.7rem; margin-bottom: 0.3rem;
+    border-radius: var(--r); padding: 0.5rem 0.75rem; margin-bottom: 0.3rem;
     position: relative; flex-shrink: 0;
 }
 .qblock::before {
@@ -54,12 +58,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
     font-family: Georgia, serif;
 }
 .qlabel {
-    font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.06em;
+    font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em;
     color: var(--comment); margin-bottom: 0.1rem; font-weight: 700;
 }
 .qtext {
-    font-size: 0.88rem; font-style: italic; color: var(--fg);
-    padding-left: 0.9rem; line-height: 1.35;
+    font-size: 1rem; font-style: italic; color: var(--fg);
+    padding-left: 0.9rem; line-height: 1.4;
 }
 
 /* ════════════════════════════════════════════
@@ -202,13 +206,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 .ml-layout { flex: 1; display: flex; gap: 0.35rem; min-height: 0; }
 .ml-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .ml-ladder {
-    width: 105px; flex-shrink: 0; display: flex; flex-direction: column;
+    width: 110px; flex-shrink: 0; display: flex; flex-direction: column;
+    justify-content: center;
     background: var(--bg-darker); border: 1px solid var(--current);
-    border-radius: var(--r); padding: 0.2rem; overflow-y: auto;
+    border-radius: var(--r); padding: 0.25rem; overflow-y: auto;
 }
 .ml-rung {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 0.12rem 0.3rem; font-size: 0.58rem; border-radius: 3px;
+    padding: 0.2rem 0.35rem; font-size: 0.65rem; border-radius: 3px;
     color: var(--comment); transition: all 0.2s;
 }
 .ml-rung .ml-num { opacity: 0.5; }
@@ -227,25 +232,28 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 
 /* Lifelines */
 .ml-lifelines {
-    display: flex; gap: 0.25rem; margin-bottom: 0.3rem; flex-shrink: 0;
+    display: flex; gap: 0.3rem; margin-bottom: 0.3rem; flex-shrink: 0;
 }
 .ml-life {
-    flex: 1; padding: 0.25rem; border-radius: var(--r);
+    flex: 1; padding: 0.4rem; border-radius: var(--r);
     border: 1px solid var(--current); background: var(--bg-light);
-    color: var(--fg); cursor: pointer; font-size: 0.65rem; font-weight: 600;
+    color: var(--fg); cursor: pointer; font-size: 0.75rem; font-weight: 600;
     font-family: var(--font); text-align: center; transition: all 0.15s;
 }
 .ml-life:hover:not(.used):not([disabled]) { border-color: var(--purple); }
 .ml-life.used { opacity: 0.25; cursor: default; text-decoration: line-through; pointer-events: none; }
 .ml-life[disabled] { opacity: 0.4; cursor: default; }
 
-/* Millionaire option buttons — diamond-inspired */
-.ml-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; flex-shrink: 0; margin-bottom: 0.25rem; }
+/* Millionaire option buttons */
+.ml-opts {
+    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+    gap: 0.3rem; flex: 1; min-height: 0; margin-bottom: 0.3rem;
+}
 .ml-opt {
-    display: flex; align-items: center; gap: 0.4rem;
-    padding: 0.4rem 0.55rem; border-radius: 20px;
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 0.75rem; border-radius: 20px;
     border: 1px solid var(--current); background: linear-gradient(135deg, var(--bg-light), var(--bg-darker));
-    color: var(--fg); cursor: pointer; font-size: 0.78rem; font-weight: 500;
+    color: var(--fg); cursor: pointer; font-size: 0.95rem; font-weight: 500;
     font-family: var(--font); transition: all 0.2s; text-align: left;
     opacity: 0; transform: translateY(8px);
     animation: mlOptIn 0.3s ease-out forwards;
@@ -256,7 +264,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 .ml-opt:nth-child(4) { animation-delay: 0.26s; }
 @keyframes mlOptIn { to { opacity: 1; transform: translateY(0); } }
 .ml-opt .ml-letter {
-    font-weight: 700; color: var(--orange); font-size: 0.72rem; flex-shrink: 0;
+    font-weight: 700; color: var(--orange); font-size: 0.9rem; flex-shrink: 0;
 }
 .ml-opt:hover:not(.locked) { border-color: var(--orange); background: linear-gradient(135deg, rgba(255,184,108,0.12), rgba(255,184,108,0.04)); }
 .ml-opt.selected {
@@ -298,8 +306,8 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
     display: flex; gap: 0.3rem; margin-bottom: 0.25rem; flex-shrink: 0;
 }
 .ml-confirm-btn {
-    flex: 1; padding: 0.35rem; border-radius: var(--r); border: none;
-    font-size: 0.78rem; font-weight: 600; font-family: var(--font);
+    flex: 1; padding: 0.5rem; border-radius: var(--r); border: none;
+    font-size: 0.88rem; font-weight: 600; font-family: var(--font);
     cursor: pointer; transition: all 0.15s;
 }
 .ml-final { background: var(--orange); color: var(--bg); }
@@ -390,8 +398,24 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 (function(){
 'use strict';
 var API = window.QUOTE_GAME_API || 'https://imagehut.ch:8943';
-var _sc=0,_sk=0,_bs=0,_lk=false,_gm='dash';
+var _lk=false,_gm='dash',_streak=0;
 var $ga=document.getElementById('ga');
+
+// ── Per-game localStorage scores ──
+var STORE_KEY='watcher_game_scores';
+function loadScores(){try{return JSON.parse(localStorage.getItem(STORE_KEY))||{};}catch(e){return {};}}
+function saveScores(s){try{localStorage.setItem(STORE_KEY,JSON.stringify(s));}catch(e){}}
+function getScore(gm){var s=loadScores();return s[gm]||{score:0,best:0,streak:0,played:0};}
+function setScore(gm,data){var s=loadScores();s[gm]=data;saveScores(s);}
+function recordResult(gm,correct){
+    var s=getScore(gm);
+    if(correct){s.score++;_streak++;} else {_streak=0;}
+    s.streak=_streak;
+    if(_streak>s.best)s.best=_streak;
+    s.played++;
+    setScore(gm,s);
+    return s;
+}
 
 // Confetti
 var cv=document.getElementById('confetti-canvas'),cx=cv.getContext('2d'),pp=[],
@@ -423,7 +447,7 @@ function apiRetry(p,fallbackMsg){
         throw e;
     });
 }
-function upd(ok){if(ok){_sc++;_sk++;}else _sk=0;if(_sk>_bs)_bs=_sk;}
+function upd(ok){var s=recordResult(_gm,ok);updateScoreBar(s);}
 function sRes(ok,det,detHtml){
     var ra=document.querySelector('.ra'),m=ra.querySelector('.rm'),d=ra.querySelector('.rd'),s=ra.querySelector('.sk');
     m.textContent=ok?'Correct!':'Nope!'; m.className='rm show '+(ok?'ok':'no');
@@ -432,7 +456,21 @@ function sRes(ok,det,detHtml){
     if(ok&&_sk>=3){var ms=['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!','Beyond mortal comprehension!'];s.textContent=_sk+' in a row! '+(ms[_sk]||_sk+'-streak!');s.className='sk show';boom(_sk>=5?50:25);}else if(ok)boom(10);
     document.querySelector('.nb').classList.add('show');
 }
-function backHtml(){return '<button class="back-btn" onclick="_gm=\'dash\';loadRound()">&#x2190; Games</button>';}
+function backHtml(){
+    var s=getScore(_gm);
+    return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;flex-shrink:0">'
+        +'<button class="back-btn" style="margin-bottom:0" onclick="_gm=\'dash\';loadRound()">&#x2190; Games</button>'
+        +'<div class="score-bar" id="score-bar"><span class="sb-item">Score <b style="color:var(--green)">'+s.score+'</b></span>'
+        +'<span class="sb-item">Streak <b style="color:var(--orange)">'+_streak+'</b></span>'
+        +'<span class="sb-item">Best <b style="color:var(--pink)">'+s.best+'</b></span></div></div>';
+}
+function updateScoreBar(s){
+    var bar=document.getElementById('score-bar');
+    if(!bar)return;
+    bar.innerHTML='<span class="sb-item">Score <b style="color:var(--green)">'+s.score+'</b></span>'
+        +'<span class="sb-item">Streak <b style="color:var(--orange)">'+s.streak+'</b></span>'
+        +'<span class="sb-item">Best <b style="color:var(--pink)">'+s.best+'</b></span>';
+}
 function rfHtml(){return '<div class="rf"><div class="ra"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div><button class="nb">Next Round</button></div>';}
 function erHtml(m){return '<div class="er"><div class="ei">&#x1F50C;</div><div class="et">'+esc(m)+'</div><button class="rb" onclick="loadRound()">Try Again</button></div>';}
 
@@ -575,7 +613,7 @@ function mlLadderHtml(current) {
 
 function mlLifelineHtml() {
     var h = '';
-    var ll = [['5050','50:50'], ['ata','Ask Audience'], ['paf','Phone Friend']];
+    var ll = [['5050','50:50'], ['ata','Ask Audience'], ['paf','Phone Friend'], ['m8b','&#x1F3B1; 8-Ball']];
     ll.forEach(function(l) {
         var used = _mlLifelines[l[0]];
         h += '<button class="ml-life' + (used ? ' used' : '') + '" data-ll="' + l[0] + '"' + (used ? ' disabled' : '') + '>' + l[1] + '</button>';
@@ -585,7 +623,7 @@ function mlLifelineHtml() {
 }
 
 function mlStartGame() {
-    _mlLevel = 0; _mlLifelines = {5050: false, ata: false, paf: false}; _mlOver = false;
+    _mlLevel = 0; _mlLifelines = {5050: false, ata: false, paf: false, m8b: false}; _mlOver = false;
     mlLoadQuestion();
 }
 
@@ -672,6 +710,7 @@ function mlLoadQuestion() {
                 if (ll === '5050') mlUse5050();
                 else if (ll === 'ata') mlUseATA();
                 else if (ll === 'paf') mlUsePAF();
+                else if (ll === 'm8b') mlUse8Ball();
             });
         });
     }).catch(function() {});
@@ -812,6 +851,24 @@ function mlUsePAF() {
     optsEl.insertAdjacentHTML('beforebegin', '<div class="qblock" style="margin-bottom:0.25rem;border-color:var(--cyan)"><div class="qlabel" style="color:var(--cyan)">Phone a Friend</div><div class="qtext" style="font-size:0.8rem">' + esc(msg) + '</div></div>');
 }
 
+function mlUse8Ball() {
+    var responses = [
+        'It is certain.', 'It is decidedly so.', 'Without a doubt.',
+        'Yes, definitely.', 'You may rely on it.', 'As I see it, yes.',
+        'Most likely.', 'Outlook good.', 'Yes.', 'Signs point to yes.',
+        'Reply hazy, try again.', 'Ask again later.', 'Better not tell you now.',
+        'Cannot predict now.', 'Concentrate and ask again.',
+        'Don\'t count on it.', 'My reply is no.', 'My sources say no.',
+        'Outlook not so good.', 'Very doubtful.'
+    ];
+    var msg = responses[Math.random() * responses.length | 0];
+    var optsEl = document.getElementById('ml-opts');
+    optsEl.insertAdjacentHTML('beforebegin',
+        '<div class="qblock" style="margin-bottom:0.25rem;border-color:var(--comment);text-align:center">'
+        + '<div style="font-size:1.8rem;margin-bottom:0.15rem">&#x1F3B1;</div>'
+        + '<div class="qtext" style="padding:0;font-size:0.85rem;font-style:normal;text-align:center">' + esc(msg) + '</div></div>');
+}
+
 function mlCheat() {
     if (_lk) return;
     _lk = true;
@@ -833,13 +890,15 @@ function loadDash() {
         {id:'ml',  icon:'&#x1F4B0;', title:'Millionaire',   desc:'15 questions to $1M. Lifelines, rising difficulty. How far can you go?', color:'orange'}
     ];
     var h = '<div class="dash">';
-    h += '<div style="text-align:center;margin-bottom:0.4rem;flex-shrink:0"><div style="font-family:Bebas Neue,Impact,sans-serif;font-size:1.5rem;letter-spacing:0.03em;color:var(--fg)">How Well Do You <span style="color:var(--purple)">Really</span> Know Them?</div><div style="font-size:0.68rem;color:var(--comment)">The Watcher sees all. But do you?</div></div>';
+    h += '<div style="text-align:center;margin-bottom:0.4rem;flex-shrink:0"><div style="font-family:Bebas Neue,Impact,sans-serif;font-size:1.5rem;letter-spacing:0.03em;color:var(--fg)">How Well Do You <span style="color:var(--purple)">Really</span> Know Our Cast?</div><div style="font-size:0.68rem;color:var(--comment)">The Watcher sees all. But do you?</div></div>';
     h += '<div class="dash-grid">';
     games.forEach(function(g) {
+        var gs=getScore(g.id);
         h += '<div class="dash-card" data-game="'+g.id+'">';
         h += '<div class="dash-card-icon">'+g.icon+'</div>';
         h += '<div class="dash-card-title">'+g.title+'</div>';
         h += '<div class="dash-card-desc">'+g.desc+'</div>';
+        if(gs.played>0) h += '<div style="font-size:0.58rem;color:var(--comment);margin-top:0.2rem">Score: <b style="color:var(--green)">'+gs.score+'</b> &middot; Best streak: <b style="color:var(--pink)">'+gs.best+'</b></div>';
         h += '</div>';
     });
     h += '</div></div>';
@@ -854,6 +913,7 @@ function loadDash() {
 
 /* ── Round Router ── */
 window.loadRound = function() {
+    _streak=0;
     if (_gm === 'dash') loadDash();
     else if (_gm === 'wsi') loadWSI();
     else if (_gm === 'qm') loadQM();
