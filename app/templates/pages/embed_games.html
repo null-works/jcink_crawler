@@ -622,7 +622,7 @@ function mlLifelineHtml() {
     return h;
 }
 
-function mlStartGame() {
+window.mlStartGame = function() {
     _mlLevel = 0; _mlLifelines = {5050: false, ata: false, paf: false, m8b: false}; _mlOver = false;
     mlLoadQuestion();
 }
