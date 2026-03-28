@@ -228,50 +228,288 @@ async def game_millionaire(
 ):
     """Return a Millionaire-style question scaled to difficulty level.
 
-    Levels 1-5 (easy): wrong options from different groups.
-    Levels 6-10 (medium): some wrong options share the correct character's group.
-    Levels 11-15 (hard): all wrong options from the same group as correct answer.
+    Randomly selects from multiple question types using all available
+    character data: quotes, groups, codenames, face claims, affiliations,
+    species, power grid stats, and thread/quote counts.
+
+    Returns a unified format regardless of question type:
+    {question, options: [{id, text, image?}], answer_id, level, source?}
     """
-    characters = await _characters_with_quotes(db)
-    if len(characters) < 4:
+    excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
+
+    # ── Load all character data with profile fields ──
+    cursor = await db.execute("""
+        SELECT c.id, c.name, c.avatar_url, c.group_name,
+               pf_sq.field_value AS square_image,
+               pf_aff.field_value AS affiliation,
+               pf_code.field_value AS codename,
+               pf_face.field_value AS face_claim,
+               pf_spec.field_value AS species,
+               pf_int.field_value AS pg_int,
+               pf_str.field_value AS pg_str,
+               pf_spd.field_value AS pg_spd,
+               pf_dur.field_value AS pg_dur,
+               pf_pwr.field_value AS pg_pwr,
+               pf_cmb.field_value AS pg_cmb
+        FROM characters c
+        LEFT JOIN profile_fields pf_sq ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
+        LEFT JOIN profile_fields pf_aff ON pf_aff.character_id = c.id AND pf_aff.field_key = 'affiliation'
+        LEFT JOIN profile_fields pf_code ON pf_code.character_id = c.id AND pf_code.field_key = 'codename'
+        LEFT JOIN profile_fields pf_face ON pf_face.character_id = c.id AND pf_face.field_key = 'face claim'
+        LEFT JOIN profile_fields pf_spec ON pf_spec.character_id = c.id AND pf_spec.field_key = 'species'
+        LEFT JOIN profile_fields pf_int ON pf_int.character_id = c.id AND pf_int.field_key = 'power grid - int'
+        LEFT JOIN profile_fields pf_str ON pf_str.character_id = c.id AND pf_str.field_key = 'power grid - str'
+        LEFT JOIN profile_fields pf_spd ON pf_spd.character_id = c.id AND pf_spd.field_key = 'power grid - spd'
+        LEFT JOIN profile_fields pf_dur ON pf_dur.character_id = c.id AND pf_dur.field_key = 'power grid - dur'
+        LEFT JOIN profile_fields pf_pwr ON pf_pwr.character_id = c.id AND pf_pwr.field_key = 'power grid - pwr'
+        LEFT JOIN profile_fields pf_cmb ON pf_cmb.character_id = c.id AND pf_cmb.field_key = 'power grid - cmb'
+        WHERE COALESCE(c.hidden, 0) = 0
+        ORDER BY c.name
+    """)
+    rows = await cursor.fetchall()
+    all_chars = [dict(r) for r in rows if r["name"].lower() not in excluded and r["id"] not in excluded_ids]
+
+    if len(all_chars) < 4:
+        return JSONResponse({"error": "Not enough characters"}, status_code=400)
+
+    # Load quote counts per character
+    cursor = await db.execute(
+        "SELECT character_id, COUNT(*) as cnt FROM quotes GROUP BY character_id"
+    )
+    quote_counts = {r["character_id"]: r["cnt"] for r in await cursor.fetchall()}
+
+    # Load thread counts per character
+    cursor = await db.execute(
+        "SELECT character_id, COUNT(*) as cnt FROM character_threads WHERE category = 'ongoing' GROUP BY character_id"
+    )
+    thread_counts = {r["character_id"]: r["cnt"] for r in await cursor.fetchall()}
+
+    # Attach counts
+    for c in all_chars:
+        c["quote_count"] = quote_counts.get(c["id"], 0)
+        c["thread_count"] = thread_counts.get(c["id"], 0)
+
+    # ── Question generators ──
+    # Each returns {question, options:[{id,text,image?}], answer_id, source?} or None
+
+    def _img(c):
+        return c.get("square_image") or c.get("avatar_url")
+
+    def _pick_wrong(correct, pool, n=3):
+        others = [c for c in pool if c["id"] != correct["id"]]
+        if len(others) < n:
+            return others
+        return random.sample(others, n)
+
+    def _make(question, correct, wrong_list, source=None, show_image=False):
+        opts = [{"id": correct["id"], "text": correct["name"], "image": _img(correct) if show_image else None}]
+        for w in wrong_list[:3]:
+            opts.append({"id": w["id"], "text": w["name"], "image": _img(w) if show_image else None})
+        random.shuffle(opts)
+        r = {"question": question, "options": opts, "answer_id": correct["id"], "level": level}
+        if source:
+            r["source"] = source
+        return r
+
+    def q_who_said():
+        """Classic: who said this quote?"""
+        chars_with_q = [c for c in all_chars if c["quote_count"] > 0]
+        if len(chars_with_q) < 4:
+            return None
+        correct = random.choice(chars_with_q)
+        cursor_holder = [None]
+        return ("quote", correct)
+
+    def q_group():
+        """What group is this character in?"""
+        with_group = [c for c in all_chars if c.get("group_name")]
+        if len(with_group) < 1:
+            return None
+        char = random.choice(with_group)
+        groups = list({c["group_name"] for c in with_group if c["group_name"]})
+        if len(groups) < 4:
+            return None
+        correct_group = char["group_name"]
+        wrong_groups = [g for g in groups if g != correct_group]
+        random.shuffle(wrong_groups)
+        opts = [{"id": correct_group, "text": correct_group}]
+        for g in wrong_groups[:3]:
+            opts.append({"id": g, "text": g})
+        random.shuffle(opts)
+        return {"question": f"What group is {char['name']} in?", "options": opts, "answer_id": correct_group, "level": level, "char_image": _img(char)}
+
+    def q_codename():
+        """What is this character's codename?"""
+        with_code = [c for c in all_chars if c.get("codename")]
+        if len(with_code) < 4:
+            return None
+        correct = random.choice(with_code)
+        wrong = [c for c in with_code if c["id"] != correct["id"]]
+        random.shuffle(wrong)
+        opts = [{"id": correct["id"], "text": correct["codename"]}]
+        for w in wrong[:3]:
+            opts.append({"id": w["id"], "text": w["codename"]})
+        random.shuffle(opts)
+        return {"question": f"What is {correct['name']}'s codename?", "options": opts, "answer_id": correct["id"], "level": level, "char_image": _img(correct)}
+
+    def q_codename_reverse():
+        """Which character has this codename?"""
+        with_code = [c for c in all_chars if c.get("codename")]
+        if len(with_code) < 4:
+            return None
+        correct = random.choice(with_code)
+        wrong = _pick_wrong(correct, with_code)
+        return _make(f"Which character's codename is \"{correct['codename']}\"?", correct, wrong, show_image=True)
+
+    def q_face_claim():
+        """Who is played by [actor]?"""
+        with_fc = [c for c in all_chars if c.get("face_claim")]
+        if len(with_fc) < 4:
+            return None
+        correct = random.choice(with_fc)
+        wrong = _pick_wrong(correct, with_fc)
+        return _make(f"Which character is played by {correct['face_claim']}?", correct, wrong, show_image=True)
+
+    def q_affiliation():
+        """What is this character's affiliation?"""
+        with_aff = [c for c in all_chars if c.get("affiliation")]
+        if len(with_aff) < 4:
+            return None
+        correct = random.choice(with_aff)
+        affs = list({c["affiliation"] for c in with_aff if c["affiliation"]})
+        if len(affs) < 4:
+            return None
+        wrong_affs = [a for a in affs if a != correct["affiliation"]]
+        random.shuffle(wrong_affs)
+        opts = [{"id": correct["affiliation"], "text": correct["affiliation"]}]
+        for a in wrong_affs[:3]:
+            opts.append({"id": a, "text": a})
+        random.shuffle(opts)
+        return {"question": f"What is {correct['name']}'s affiliation?", "options": opts, "answer_id": correct["affiliation"], "level": level, "char_image": _img(correct)}
+
+    def q_species():
+        """What species is this character?"""
+        with_sp = [c for c in all_chars if c.get("species")]
+        if len(with_sp) < 4:
+            return None
+        correct = random.choice(with_sp)
+        species_list = list({c["species"] for c in with_sp if c["species"]})
+        if len(species_list) < 4:
+            return None
+        wrong_sp = [s for s in species_list if s != correct["species"]]
+        random.shuffle(wrong_sp)
+        opts = [{"id": correct["species"], "text": correct["species"]}]
+        for s in wrong_sp[:3]:
+            opts.append({"id": s, "text": s})
+        random.shuffle(opts)
+        return {"question": f"What species is {correct['name']}?", "options": opts, "answer_id": correct["species"], "level": level, "char_image": _img(correct)}
+
+    def q_most_quotes():
+        """Who has the most/fewest quotes among these characters?"""
+        with_q = [c for c in all_chars if c["quote_count"] > 0]
+        if len(with_q) < 4:
+            return None
+        sample = random.sample(with_q, 4)
+        most = max(sample, key=lambda c: c["quote_count"])
+        question = "Which of these characters has the most quotes?"
+        opts = [{"id": c["id"], "text": f"{c['name']} ({c['quote_count']})" if False else c["name"], "image": _img(c)} for c in sample]
+        random.shuffle(opts)
+        return {"question": question, "options": opts, "answer_id": most["id"], "level": level}
+
+    def q_most_threads():
+        """Who has the most ongoing threads?"""
+        with_t = [c for c in all_chars if c["thread_count"] > 0]
+        if len(with_t) < 4:
+            return None
+        sample = random.sample(with_t, min(4, len(with_t)))
+        if len(sample) < 4:
+            return None
+        most = max(sample, key=lambda c: c["thread_count"])
+        opts = [{"id": c["id"], "text": c["name"], "image": _img(c)} for c in sample]
+        random.shuffle(opts)
+        return {"question": "Which of these characters has the most ongoing threads?", "options": opts, "answer_id": most["id"], "level": level}
+
+    def q_power_grid():
+        """Who has the highest [stat]?"""
+        stat_map = {"pg_int": "Intelligence", "pg_str": "Strength", "pg_spd": "Speed", "pg_dur": "Durability", "pg_pwr": "Energy Projection", "pg_cmb": "Fighting Skills"}
+        stat_key = random.choice(list(stat_map.keys()))
+        stat_label = stat_map[stat_key]
+        with_stat = [c for c in all_chars if c.get(stat_key) and c[stat_key] not in (None, "", "0")]
+        if len(with_stat) < 4:
+            return None
+        sample = random.sample(with_stat, 4)
+        highest = max(sample, key=lambda c: int(c[stat_key] or 0))
+        opts = [{"id": c["id"], "text": c["name"], "image": _img(c)} for c in sample]
+        random.shuffle(opts)
+        return {"question": f"Who has the highest {stat_label} on the Power Grid?", "options": opts, "answer_id": highest["id"], "level": level}
+
+    # ── Select question type based on level ──
+    # Easy levels (1-5): simpler questions (who said it, group, affiliation)
+    # Medium (6-10): codenames, face claims, species, superlatives
+    # Hard (11-15): power grid, reverse lookups, most/fewest
+    easy_types = [q_group, q_affiliation, q_species]
+    medium_types = [q_codename, q_codename_reverse, q_face_claim, q_most_quotes]
+    hard_types = [q_power_grid, q_most_threads, q_most_quotes]
+
+    if level <= 5:
+        pool = easy_types + [None]  # None = quote question
+    elif level <= 10:
+        pool = easy_types + medium_types + [None]
+    else:
+        pool = medium_types + hard_types + [None]
+
+    # Try generators until one works, fall back to quote question
+    random.shuffle(pool)
+    result = None
+    for gen in pool:
+        if gen is None:
+            break  # Fall through to quote question below
+        try:
+            result = gen()
+            if result:
+                return result
+        except Exception:
+            continue
+
+    # ── Fallback: quote-based question (always works if quotes exist) ──
+    chars_with_q = [c for c in all_chars if c["quote_count"] > 0]
+    if len(chars_with_q) < 4:
         return JSONResponse({"error": "Not enough characters with quotes"}, status_code=400)
 
-    quote = await _random_quote(db)
-    if not quote:
+    correct = random.choice(chars_with_q)
+    # Fetch a random quote for this character
+    cursor = await db.execute(
+        "SELECT quote_text, source_thread_id, source_thread_title FROM quotes WHERE character_id = ? ORDER BY RANDOM() LIMIT 1",
+        (correct["id"],),
+    )
+    quote_row = await cursor.fetchone()
+    if not quote_row:
         return JSONResponse({"error": "No quotes found"}, status_code=400)
 
-    correct = next((c for c in characters if c["id"] == quote["character_id"]), None)
-    if not correct:
-        return JSONResponse({"error": "Character not found"}, status_code=400)
-
+    # Difficulty scaling for wrong options
     correct_group = correct.get("group_name")
-    others = [c for c in characters if c["id"] != correct["id"]]
-
-    # Difficulty scaling: higher levels prefer same-group wrong options
+    others = [c for c in chars_with_q if c["id"] != correct["id"]]
     same_group = [c for c in others if c.get("group_name") == correct_group] if correct_group else []
     diff_group = [c for c in others if c.get("group_name") != correct_group or not correct_group]
 
     wrong = []
     if level >= 11 and len(same_group) >= 3:
-        # Hard: all same group
         wrong = random.sample(same_group, 3)
     elif level >= 6 and same_group and diff_group:
-        # Medium: 1-2 from same group
         sg_count = min(2, len(same_group))
-        dg_count = 3 - sg_count
         wrong = random.sample(same_group, sg_count)
-        if len(diff_group) >= dg_count:
-            wrong += random.sample(diff_group, dg_count)
+        need = 3 - len(wrong)
+        if len(diff_group) >= need:
+            wrong += random.sample(diff_group, need)
         else:
-            wrong += diff_group[:dg_count]
+            wrong += diff_group
     else:
-        # Easy: different groups preferred
         if len(diff_group) >= 3:
             wrong = random.sample(diff_group, 3)
         else:
             wrong = random.sample(others, min(3, len(others)))
 
-    # Pad if we don't have enough
     if len(wrong) < 3:
         remaining = [c for c in others if c not in wrong]
         wrong += random.sample(remaining, min(3 - len(wrong), len(remaining)))
@@ -279,19 +517,18 @@ async def game_millionaire(
     options = [correct] + wrong[:3]
     random.shuffle(options)
 
-    thread_id = quote.get("source_thread_id")
-    thread_title = quote.get("source_thread_title")
+    thread_id = quote_row["source_thread_id"]
+    thread_title = quote_row["source_thread_title"]
     thread_url = f"{settings.forum_base_url}/index.php?showtopic={thread_id}" if thread_id else None
 
     return {
-        "quote": quote["quote_text"],
+        "question": f"Who said: \"{quote_row['quote_text']}\"",
         "source_thread_title": thread_title,
         "source_thread_url": thread_url,
         "options": [
             {
-                "id": c["id"], "name": c["name"],
-                "group": c.get("group_name"),
-                "square_image": c.get("square_image") or c.get("rectangle_gif") or c.get("avatar_url"),
+                "id": c["id"], "text": c["name"],
+                "image": c.get("square_image") or c.get("avatar_url"),
             }
             for c in options
         ],

@@ -550,11 +550,21 @@ function mlLoadQuestion() {
         // Main area
         h += '<div class="ml-main">';
         h += '<div class="ml-lifelines" id="ml-ll">' + mlLifelineHtml() + '</div>';
-        h += '<div class="qblock"><div class="qlabel">Question ' + (_mlLevel+1) + ' &mdash; ' + ML_PRIZES[_mlLevel] + '</div><div class="qtext">' + esc(d.quote) + '</div></div>';
+        // Show character image if the question is about a specific character
+        var qLabel = 'Question ' + (_mlLevel+1) + ' &mdash; ' + ML_PRIZES[_mlLevel];
+        h += '<div class="qblock">';
+        if (d.char_image) {
+            h += '<div style="display:flex;gap:0.5rem;align-items:center">';
+            h += '<img src="' + esc(d.char_image) + '" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--current);flex-shrink:0" onerror="this.style.display=\'none\'">';
+            h += '<div>';
+        }
+        h += '<div class="qlabel">' + qLabel + '</div><div class="qtext">' + esc(d.question) + '</div>';
+        if (d.char_image) h += '</div></div>';
+        h += '</div>';
         h += '<div class="ml-opts" id="ml-opts">';
         var letters = ['A','B','C','D'];
         d.options.forEach(function(o, i) {
-            h += '<button class="ml-opt" data-id="' + esc(o.id) + '" data-i="' + i + '"><span class="ml-letter">' + letters[i] + ':</span> ' + esc(o.name) + '</button>';
+            h += '<button class="ml-opt" data-id="' + esc(o.id) + '" data-i="' + i + '"><span class="ml-letter">' + letters[i] + ':</span> ' + esc(o.text) + '</button>';
         });
         h += '</div>';
         h += '<div class="ml-confirm" id="ml-confirm" style="display:none">';
@@ -642,7 +652,7 @@ function mlReveal() {
     } else {
         rm.textContent = 'Wrong!'; rm.className = 'rm show no';
         var who = _mlData.options.find(function(o) { return o.id === aid; });
-        rd.textContent = 'It was ' + who.name; rd.className = 'rd show';
+        rd.textContent = 'It was ' + who.text; rd.className = 'rd show';
         _mlOver = true;
         var safePrize = '$0';
         for (var i = ML_SAFE.length - 1; i >= 0; i--) {
@@ -722,10 +732,10 @@ function mlUsePAF() {
     // Friend is right 70% of the time at high levels, 90% at low
     var confidence = _mlLevel < 5 ? 0.9 : (_mlLevel < 10 ? 0.75 : 0.6);
     var friendRight = Math.random() < confidence;
-    var friendPick = who.name;
+    var friendPick = who.text;
     if (!friendRight) {
         var wrongs = _mlData.options.filter(function(o) { return o.id !== aid; });
-        friendPick = wrongs[Math.random() * wrongs.length | 0].name;
+        friendPick = wrongs[Math.random() * wrongs.length | 0].text;
     }
     var phrases = [
         "I'm pretty sure it's " + friendPick + ".",
