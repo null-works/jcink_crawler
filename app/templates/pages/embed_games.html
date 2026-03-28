@@ -448,9 +448,15 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
     display: flex; flex-direction: column; justify-content: flex-end;
     padding: 0.6rem 0.7rem;
 }
+.dash-card-bg {
+    position: absolute; inset: 0; background-size: cover; background-position: center;
+    filter: brightness(0.35); transition: opacity 1.5s ease-in-out;
+    opacity: 0;
+}
+.dash-card-bg.active { opacity: 1; }
 .dash-card:hover { border-color: var(--purple); box-shadow: 0 0 15px rgba(189,147,249,0.15); }
 .dash-card-stats {
-    position: absolute; top: 0.4rem; right: 0.5rem;
+    position: absolute; top: 0.4rem; right: 0.5rem; z-index: 2;
     text-align: right;
 }
 .dash-card-stats .stat-big {
@@ -468,7 +474,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
     font-size: 0.55rem; color: var(--comment); text-align: center;
 }
 .dash-card-stats .stat-row .stat-mini b { display: block; font-size: 0.85rem; }
-.dash-card-bottom { flex-shrink: 0; }
+.dash-card-bottom { flex-shrink: 0; position: relative; z-index: 2; }
 .dash-card-icon { font-size: 1.4rem; margin-bottom: 0.15rem; }
 .dash-card-title {
     font-family: 'Bebas Neue', Impact, sans-serif;
@@ -1109,7 +1115,8 @@ function loadDash() {
         var gs=getScore(g.id);
         var clr = cardColors[g.id];
         h += '<div class="dash-card" data-game="'+g.id+'">';
-        // Stats area — big and centered
+        h += '<div class="dash-card-bg active" id="dbg-'+g.id+'-a"></div>';
+        h += '<div class="dash-card-bg" id="dbg-'+g.id+'-b"></div>';
         if(gs.played>0) {
             h += '<div class="dash-card-stats">';
             if(g.id==='ml') {
@@ -1132,11 +1139,42 @@ function loadDash() {
     $ga.innerHTML = h;
     $ga.querySelectorAll('.dash-card').forEach(function(card) {
         card.addEventListener('click', function() {
+            if (_dashTimer) clearInterval(_dashTimer);
             _gm = card.dataset.game;
             loadRound();
         });
     });
+
+    // Fetch character images and rotate backgrounds
+    api('/api/game/characters').then(function(chars) {
+        var images = chars.map(function(c){return c.image;}).filter(Boolean);
+        if (!images.length) return;
+        var cards = ['wsi','qm','qc','ml'];
+        var slots = {}; // track which layer is active per card
+        // Initial: set a random image on each card's "a" layer
+        cards.forEach(function(id) {
+            var imgA = document.getElementById('dbg-'+id+'-a');
+            if (imgA) {
+                imgA.style.backgroundImage = 'url('+images[Math.random()*images.length|0]+')';
+                slots[id] = 'a';
+            }
+        });
+        // Rotate one random card every 4 seconds (each card changes ~every 16s)
+        _dashTimer = setInterval(function() {
+            var id = cards[Math.random()*cards.length|0];
+            var cur = slots[id] || 'a';
+            var nxt = cur === 'a' ? 'b' : 'a';
+            var elCur = document.getElementById('dbg-'+id+'-'+cur);
+            var elNxt = document.getElementById('dbg-'+id+'-'+nxt);
+            if (!elCur || !elNxt) return;
+            elNxt.style.backgroundImage = 'url('+images[Math.random()*images.length|0]+')';
+            elNxt.classList.add('active');
+            elCur.classList.remove('active');
+            slots[id] = nxt;
+        }, 4000);
+    }).catch(function(){});
 }
+var _dashTimer = null;
 
 /* ── Round Router ── */
 window.goHome = function() { _gm = 'dash'; loadRound(); };
