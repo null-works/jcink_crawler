@@ -114,23 +114,67 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 .tile.shake { animation: shake 0.35s ease; }
 @keyframes shake { 20%{transform:translateX(-5px)} 40%{transform:translateX(5px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)} }
 
-/* ── Quote Chain: list options (text, not images) ── */
-.qlist {
-    display: flex; flex-direction: column; gap: 0.25rem;
-    margin-bottom: 0.35rem; flex-shrink: 0;
+/* ── Quote Chain: 2x2 quote card grid ── */
+.qc-anchor {
+    display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.3rem; flex-shrink: 0;
 }
-.qopt {
-    padding: 0.4rem 0.65rem; border-radius: var(--r);
-    border: 1px solid var(--current); background: var(--bg-light);
-    color: var(--fg); cursor: pointer; font-size: 0.8rem; font-weight: 500;
-    font-family: var(--font); text-align: left; width: 100%;
-    transition: all 0.15s; line-height: 1.35;
+.qc-anchor-img {
+    width: 50px; height: 50px; border-radius: 50%; object-fit: cover;
+    flex-shrink: 0;
 }
-.qopt:hover:not(.locked) { border-color: var(--purple); background: rgba(68,71,90,0.6); }
-.qopt.correct { border-color: var(--green); background: rgba(80,250,123,0.1); color: var(--green); box-shadow: 0 0 12px rgba(80,250,123,0.2); }
-.qopt.wrong { border-color: var(--red); background: rgba(255,85,85,0.08); color: var(--red); opacity: 0.6; }
-.qopt.locked { cursor: default; pointer-events: none; }
-.qopt.shake { animation: shake 0.35s ease; }
+.qc-anchor-info { flex: 1; min-width: 0; }
+.qc-anchor-name {
+    font-family: 'Bebas Neue', Impact, sans-serif; font-size: 1.1rem;
+    letter-spacing: 0.03em; line-height: 1.1;
+}
+.qc-anchor-quote {
+    font-size: 0.8rem; font-style: italic; color: var(--comment);
+    line-height: 1.35; margin-top: 0.1rem;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.qc-grid {
+    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+    gap: 0.3rem; flex: 1; min-height: 0; margin-bottom: 0.3rem; overflow: hidden;
+}
+.qc-card {
+    background: var(--bg-darker); border: 1px solid var(--current);
+    border-radius: var(--r); padding: 0.5rem 0.6rem; cursor: pointer;
+    font-size: 0.78rem; font-style: italic; color: var(--fg);
+    line-height: 1.35; transition: all 0.18s; overflow: hidden;
+    display: flex; align-items: center;
+}
+.qc-card:hover:not(.locked) { border-color: var(--purple); background: rgba(68,71,90,0.5); }
+.qc-card.correct { border-color: var(--green); background: rgba(80,250,123,0.1); color: var(--green); box-shadow: 0 0 12px rgba(80,250,123,0.2); }
+.qc-card.wrong { border-color: var(--red); background: rgba(255,85,85,0.08); color: var(--red); opacity: 0.6; }
+.qc-card.locked { cursor: default; pointer-events: none; }
+.qc-card.shake { animation: shake 0.35s ease; }
+.qc-footer { flex-shrink: 0; }
+
+/* ── Character picker ── */
+.char-picker {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 0.3rem; flex: 1; min-height: 0; overflow-y: auto; margin-bottom: 0.3rem;
+}
+.char-pick {
+    display: flex; flex-direction: column; align-items: center; gap: 0.2rem;
+    padding: 0.3rem; border-radius: var(--r); border: 1px solid transparent;
+    background: var(--bg-darker); cursor: pointer; transition: all 0.15s;
+}
+.char-pick:hover { border-color: var(--purple); background: var(--bg-light); }
+.char-pick img {
+    width: 44px; height: 44px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--current);
+}
+.char-pick .cp-name {
+    font-size: 0.55rem; color: var(--comment); text-align: center;
+    line-height: 1.2; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; width: 100%;
+}
+.char-pick .cp-noimg {
+    width: 44px; height: 44px; border-radius: 50%; background: var(--current);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; font-weight: 700; color: var(--comment);
+}
 
 /* ── Binary buttons (Quote Match) ── */
 .bins { display: flex; gap: 0.4rem; margin-bottom: 0.35rem; flex-shrink: 0; }
@@ -638,30 +682,80 @@ function loadQM(){
     }).catch(function(){});
 }
 
-/* ── QUOTE CHAIN — anchor + text options ── */
+/* ── QUOTE CHAIN — character picker + 2x2 grid ── */
+var _qcCharId = null;
+
 function loadQC(){
-    _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
-    apiRetry('/api/game/quote-chain?choices=4').then(function(d){
+    // Show character picker first
+    _lk=false;
+    $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
+    apiRetry('/api/game/characters').then(function(chars){
         var h='<div class="gi">';
         h+=backHtml();
-        h+='<div class="qblock"><div class="qlabel">Find another quote by '+esc(d.anchor_character)+'</div><div class="qtext">'+esc(d.anchor_quote)+'</div></div>';
-        h+='<div class="qlist">';
-        d.options.forEach(function(o,i){h+='<button class="qopt" data-i="'+i+'">'+esc(o.quote_text)+'</button>';});
-        h+='</div>'+rfHtml()+'</div>';
+        h+='<div class="qlabel" style="margin-bottom:0.25rem">Choose a character — or</div>';
+        h+='<button class="qm-next" id="qc-random" style="margin-bottom:0.3rem;visibility:visible">Random Character</button>';
+        h+='<div class="char-picker">';
+        chars.forEach(function(c){
+            var img = c.image ? '<img src="'+esc(c.image)+'" onerror="this.outerHTML=\'<div class=cp-noimg>'+esc(c.name.charAt(0))+'</div>\'">' : '<div class="cp-noimg">'+esc(c.name.charAt(0))+'</div>';
+            var nc = groupColor(c.group);
+            h+='<div class="char-pick" data-cid="'+esc(c.id)+'">'+img+'<div class="cp-name" style="color:'+nc+'">'+esc(c.name)+'</div></div>';
+        });
+        h+='</div></div>';
         $ga.innerHTML=h;
-        $ga.querySelectorAll('.qopt').forEach(function(b){
-            b.addEventListener('click',function(){
+        document.getElementById('qc-random').addEventListener('click',function(){ _qcCharId=null; loadQCRound(); });
+        $ga.querySelectorAll('.char-pick').forEach(function(p){
+            p.addEventListener('click',function(){ _qcCharId=p.dataset.cid; loadQCRound(); });
+        });
+    }).catch(function(){});
+}
+
+function loadQCRound(){
+    _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
+    var url='/api/game/quote-chain?choices=4';
+    if(_qcCharId) url+='&character_id='+encodeURIComponent(_qcCharId);
+    apiRetry(url).then(function(d){
+        var nc = groupColor(d.anchor_group);
+        var h='<div class="gi">';
+        h+=backHtml();
+        // Anchor: character image + name + quote
+        h+='<div class="qc-anchor">';
+        if(d.anchor_image) h+='<img class="qc-anchor-img" src="'+esc(d.anchor_image)+'" style="border:2px solid '+nc+'" onerror="this.style.display=\'none\'">';
+        h+='<div class="qc-anchor-info"><div class="qc-anchor-name" style="color:'+nc+'">'+esc(d.anchor_character)+'</div>';
+        h+='<div class="qc-anchor-quote">&ldquo;'+esc(d.anchor_quote)+'&rdquo;</div></div></div>';
+        // 2x2 quote cards
+        h+='<div class="qc-grid">';
+        d.options.forEach(function(o,i){
+            h+='<div class="qc-card" data-i="'+i+'">'+esc(o.quote_text)+'</div>';
+        });
+        h+='</div>';
+        // Footer
+        h+='<div class="qc-footer">';
+        h+='<div class="ra" style="height:2rem"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div>';
+        h+='<div style="display:flex;gap:0.3rem">';
+        h+='<button class="qm-next" id="qc-next" style="visibility:hidden;flex:1">Next Round</button>';
+        h+='<button class="qm-next" id="qc-pick" style="visibility:hidden;flex:0 0 auto;background:var(--current);color:var(--fg)">Change Character</button>';
+        h+='</div></div></div>';
+        $ga.innerHTML=h;
+        $ga.querySelectorAll('.qc-card').forEach(function(c){
+            c.addEventListener('click',function(){
                 if(_lk)return;_lk=true;
-                var idx=+b.dataset.i,pk=d.options[idx],ok=pk.correct;
-                $ga.querySelectorAll('.qopt').forEach(function(x){
+                var idx=+c.dataset.i,pk=d.options[idx],ok=pk.correct;
+                $ga.querySelectorAll('.qc-card').forEach(function(x){
                     x.classList.add('locked');
                     if(d.options[+x.dataset.i].correct)x.classList.add('correct');
-                    else if(x===b&&!ok){x.classList.add('wrong','shake');}
+                    else if(x===c&&!ok){x.classList.add('wrong','shake');}
                 });
-                upd(ok);sRes(ok,ok?null:'That was '+pk.character_name);
+                upd(ok);
+                var ra=$ga.querySelector('.ra'),rm=ra.querySelector('.rm'),rd=ra.querySelector('.rd');
+                rm.textContent=ok?'Correct!':'Nope!'; rm.className='rm show '+(ok?'ok':'no');
+                if(!ok){rd.textContent='That was '+pk.character_name;rd.className='rd show';}
+                if(ok)boom(_streak>=3?30:10);
+                document.getElementById('qc-next').style.visibility='visible';
+                document.getElementById('qc-pick').style.visibility='visible';
             });
         });
-        document.querySelector('.nb').addEventListener('click',loadRound);
+        document.getElementById('qc-next').addEventListener('click',loadQCRound);
+        document.getElementById('qc-pick').addEventListener('click',loadQC);
     }).catch(function(){});
 }
 

@@ -171,22 +171,34 @@ async def game_quote_match(db: aiosqlite.Connection = Depends(get_db)):
 async def game_quote_chain(
     db: aiosqlite.Connection = Depends(get_db),
     choices: int = Query(4, ge=2, le=6),
+    character_id: str | None = Query(None, description="Optional: pick a specific character"),
 ):
     """Return a starting quote + multiple quotes to pick from (one is same character)."""
     characters = await _characters_with_quotes(db)
     if len(characters) < choices:
         return JSONResponse({"error": "Not enough characters with quotes"}, status_code=400)
 
-    random.shuffle(characters)
     anchor_char = None
-    for c in characters:
-        cursor = await db.execute(
-            "SELECT COUNT(*) as cnt FROM quotes WHERE character_id = ?", (c["id"],)
-        )
-        row = await cursor.fetchone()
-        if row["cnt"] >= 2:
-            anchor_char = c
-            break
+    if character_id:
+        anchor_char = next((c for c in characters if c["id"] == character_id), None)
+        if anchor_char:
+            cursor = await db.execute(
+                "SELECT COUNT(*) as cnt FROM quotes WHERE character_id = ?", (anchor_char["id"],)
+            )
+            row = await cursor.fetchone()
+            if row["cnt"] < 2:
+                anchor_char = None
+
+    if not anchor_char:
+        random.shuffle(characters)
+        for c in characters:
+            cursor = await db.execute(
+                "SELECT COUNT(*) as cnt FROM quotes WHERE character_id = ?", (c["id"],)
+            )
+            row = await cursor.fetchone()
+            if row["cnt"] >= 2:
+                anchor_char = c
+                break
 
     if not anchor_char:
         return JSONResponse({"error": "No character has enough quotes"}, status_code=400)
@@ -216,9 +228,25 @@ async def game_quote_chain(
         "anchor_quote": anchor_quote["quote_text"],
         "anchor_character": anchor_char["name"],
         "anchor_avatar": anchor_char["avatar_url"],
-        "anchor_square_image": anchor_char.get("square_image"),
+        "anchor_image": anchor_char.get("square_image") or anchor_char.get("rectangle_gif") or anchor_char.get("avatar_url"),
+        "anchor_group": anchor_char.get("group_name"),
+        "anchor_id": anchor_char["id"],
         "options": option_list,
     }
+
+
+@router.get("/api/game/characters")
+async def game_characters(db: aiosqlite.Connection = Depends(get_db)):
+    """Return characters that have quotes, for game character pickers."""
+    characters = await _characters_with_quotes(db)
+    return [
+        {
+            "id": c["id"], "name": c["name"],
+            "image": c.get("square_image") or c.get("avatar_url"),
+            "group": c.get("group_name"),
+        }
+        for c in characters
+    ]
 
 
 @router.get("/api/game/millionaire")
