@@ -960,13 +960,13 @@ function loadDash() {
         if(gs.played>0) {
             h += '<div class="dash-card-stats">';
             if(g.id==='ml') {
+                h += '<div class="stat-row"><div class="stat-mini"><b style="color:var(--green)">'+gs.played+'</b>games</div></div>';
                 h += '<div class="stat-big" style="color:'+clr+'">'+(gs.topPrize||'$0')+'</div>';
                 h += '<div class="stat-label">Top Prize</div>';
-                h += '<div class="stat-row"><div class="stat-mini"><b style="color:var(--green)">'+gs.played+'</b>games</div></div>';
             } else {
+                h += '<div class="stat-row"><div class="stat-mini"><b style="color:var(--orange)">'+gs.best+'</b>best</div><div class="stat-mini"><b style="color:var(--green)">'+gs.played+'</b>played</div></div>';
                 h += '<div class="stat-big" style="color:'+clr+'">'+gs.score+'</div>';
                 h += '<div class="stat-label">Score</div>';
-                h += '<div class="stat-row"><div class="stat-mini"><b style="color:var(--orange)">'+gs.best+'</b>best</div><div class="stat-mini"><b style="color:var(--green)">'+gs.played+'</b>played</div></div>';
             }
             h += '</div>';
         }
