@@ -11,445 +11,368 @@
     --cyan: #8be9fd; --green: #50fa7b; --orange: #ffb86c;
     --pink: #ff79c6; --purple: #bd93f9; --red: #ff5555; --yellow: #f1fa8c;
     --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-    --r: 6px;
-    --glow-green: 0 0 16px rgba(80,250,123,0.25);
+    --r: 8px;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; overflow: hidden; }
-body {
-    font-family: var(--font); background: var(--bg); color: var(--fg);
-    line-height: 1.45;
-}
-#confetti-canvas {
-    position: fixed; inset: 0; width: 100%; height: 100%;
-    pointer-events: none; z-index: 1000;
+body { font-family: var(--font); background: var(--bg); color: var(--fg); line-height: 1.4; }
+#confetti-canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1000; }
+
+/* ── Full-height flex layout ── */
+.wrap {
+    max-width: 620px; margin: 0 auto; height: 100vh;
+    display: flex; flex-direction: column; padding: 0.5rem 0.6rem;
 }
 
-/* ── Layout: fill viewport, no scroll ── */
-.game-wrap {
-    max-width: 580px; margin: 0 auto;
-    height: 100vh; display: flex; flex-direction: column;
-    padding: 0.6rem 0.75rem;
-}
-
-/* ── Top Bar: title + score in one row ── */
-.top-bar {
+/* ── Top bar ── */
+.top {
     display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 0.45rem; flex-shrink: 0;
+    margin-bottom: 0.4rem; flex-shrink: 0;
 }
-.top-bar h1 {
-    font-size: 1rem; font-weight: 700; color: var(--fg);
-    white-space: nowrap;
-}
-.top-bar h1 .accent { color: var(--purple); }
-.top-bar .april-badge {
-    display: inline-block; font-size: 0.5rem; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.06em;
+.top h1 { font-size: 0.95rem; font-weight: 700; }
+.top h1 .a { color: var(--purple); }
+.top .badge {
+    font-size: 0.48rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
     background: linear-gradient(135deg, var(--pink), var(--purple));
-    color: var(--bg); padding: 0.1em 0.4em; border-radius: 3px;
-    vertical-align: middle; margin-left: 0.3rem;
+    color: var(--bg); padding: 0.1em 0.35em; border-radius: 3px;
+    vertical-align: middle; margin-left: 0.25rem;
 }
-.scores {
-    display: flex; gap: 0.7rem; font-size: 0.75rem; flex-shrink: 0;
-}
-.scores .s-label { color: var(--comment); }
-.scores .s-val { font-weight: 700; margin-left: 0.15rem; }
-.scores .s-val.v-score { color: var(--green); }
-.scores .s-val.v-streak { color: var(--orange); }
-.scores .s-val.v-best { color: var(--pink); }
-.scores .s-val.streak-fire { animation: pulse-glow 0.5s ease; }
-@keyframes pulse-glow {
-    50% { transform: scale(1.5); text-shadow: 0 0 6px var(--orange); }
-}
+.scores { display: flex; gap: 0.6rem; font-size: 0.72rem; flex-shrink: 0; }
+.scores .l { color: var(--comment); }
+.scores .v { font-weight: 700; margin-left: 0.1rem; }
+.v-s { color: var(--green); } .v-k { color: var(--orange); } .v-b { color: var(--pink); }
+.v.fire { animation: pop 0.5s ease; }
+@keyframes pop { 50% { transform: scale(1.5); text-shadow: 0 0 6px var(--orange); } }
 
 /* ── Tabs ── */
-.game-tabs {
+.tabs {
     display: flex; gap: 2px; flex-shrink: 0;
-    background: var(--bg-darker); border-radius: var(--r);
-    padding: 2px; margin-bottom: 0.45rem;
-    border: 1px solid var(--current);
+    background: var(--bg-darker); border-radius: var(--r); padding: 2px;
+    margin-bottom: 0.4rem; border: 1px solid var(--current);
 }
-.game-tab {
-    flex: 1; padding: 0.3rem 0; border: none; border-radius: 4px;
+.tab {
+    flex: 1; padding: 0.28rem 0; border: none; border-radius: 5px;
     background: transparent; color: var(--comment); cursor: pointer;
-    font-size: 0.72rem; font-weight: 600; font-family: var(--font);
+    font-size: 0.7rem; font-weight: 600; font-family: var(--font);
     transition: all 0.15s; text-align: center;
 }
-.game-tab:hover { color: var(--fg); }
-.game-tab.active {
-    background: var(--current); color: var(--fg);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-}
+.tab:hover { color: var(--fg); }
+.tab.on { background: var(--current); color: var(--fg); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
 
-/* ── Game Area: fills remaining space ── */
-#game-area { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.game-area-inner {
-    flex: 1; display: flex; flex-direction: column;
-    animation: fadeIn 0.25s ease-out;
-}
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+/* ── Game area: flex-fills remaining space ── */
+#ga { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.gi { flex: 1; display: flex; flex-direction: column; animation: fi 0.2s ease-out; }
+@keyframes fi { from { opacity: 0; } to { opacity: 1; } }
 
-/* ── Quote Card ── */
-.quote-card {
+/* ── Quote block ── */
+.qblock {
     background: var(--bg-darker); border: 1px solid var(--current);
-    border-radius: var(--r); padding: 0.6rem 0.75rem 0.55rem;
-    margin-bottom: 0.4rem; position: relative; overflow: hidden;
-    flex-shrink: 0;
+    border-radius: var(--r); padding: 0.6rem 0.8rem; margin-bottom: 0.4rem;
+    position: relative; flex-shrink: 0;
 }
-.quote-card::before {
-    content: '\201C'; position: absolute; top: -0.3rem; left: 0.3rem;
-    font-size: 2.5rem; color: var(--purple); opacity: 0.15; line-height: 1;
+.qblock::before {
+    content: '\201C'; position: absolute; top: -0.2rem; left: 0.4rem;
+    font-size: 2.2rem; color: var(--purple); opacity: 0.15; line-height: 1;
     font-family: Georgia, serif;
 }
-.quote-label {
-    font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--comment); margin-bottom: 0.2rem; font-weight: 700;
+.qlabel {
+    font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--comment); margin-bottom: 0.15rem; font-weight: 700;
 }
-.quote-text {
-    font-size: 0.88rem; font-style: italic; color: var(--fg);
+.qtext {
+    font-size: 0.92rem; font-style: italic; color: var(--fg);
     padding-left: 1rem; line-height: 1.4;
 }
 
-/* ── Options: 2x2 grid for Who Said It ── */
-.options-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem;
-    margin-bottom: 0.4rem; flex-shrink: 0;
+/* ════════════════════════════════════════════
+   METRO TILES — 2x2 grid, big images, bold names
+   ════════════════════════════════════════════ */
+.tiles {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem;
+    flex: 1; min-height: 0; margin-bottom: 0.35rem;
 }
-.option-btn {
-    display: flex; align-items: center; gap: 0.5rem;
-    padding: 0.4rem 0.6rem; border-radius: var(--r);
+.tile {
+    position: relative; border-radius: var(--r); overflow: hidden;
+    cursor: pointer; border: 2px solid transparent;
+    transition: border-color 0.18s, box-shadow 0.18s, opacity 0.18s;
+    background: var(--bg-light);
+}
+.tile-img {
+    width: 100%; height: 100%; object-fit: cover;
+    display: block; filter: brightness(0.7);
+    transition: filter 0.2s, transform 0.3s;
+}
+.tile:hover .tile-img { filter: brightness(0.85); transform: scale(1.03); }
+.tile-name {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 0.4rem 0.55rem; font-size: 0.85rem; font-weight: 700;
+    color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    background: linear-gradient(transparent, rgba(0,0,0,0.65));
+}
+/* No-image fallback */
+.tile-noimg {
+    width: 100%; height: 100%; display: flex; align-items: center;
+    justify-content: center; background: var(--current);
+}
+.tile-noimg .tile-initial {
+    font-size: 2.5rem; font-weight: 700; color: var(--comment); opacity: 0.5;
+}
+/* States */
+.tile.correct { border-color: var(--green); box-shadow: 0 0 20px rgba(80,250,123,0.3); }
+.tile.correct .tile-img { filter: brightness(1); }
+.tile.correct .tile-name { background: linear-gradient(transparent, rgba(80,250,123,0.4)); color: var(--green); }
+.tile.wrong { border-color: var(--red); opacity: 0.5; }
+.tile.wrong .tile-img { filter: brightness(0.4) grayscale(0.5); }
+.tile.locked { cursor: default; pointer-events: none; }
+.tile.shake { animation: shake 0.35s ease; }
+@keyframes shake { 20%{transform:translateX(-5px)} 40%{transform:translateX(5px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)} }
+
+/* ── Quote Chain: list options (text, not images) ── */
+.qlist {
+    display: flex; flex-direction: column; gap: 0.25rem;
+    margin-bottom: 0.35rem; flex-shrink: 0;
+}
+.qopt {
+    padding: 0.4rem 0.65rem; border-radius: var(--r);
     border: 1px solid var(--current); background: var(--bg-light);
     color: var(--fg); cursor: pointer; font-size: 0.8rem; font-weight: 500;
-    font-family: var(--font); transition: all 0.15s; text-align: left;
-    width: 100%; overflow: hidden;
+    font-family: var(--font); text-align: left; width: 100%;
+    transition: all 0.15s; line-height: 1.35;
 }
-.option-btn:hover:not(.locked) { border-color: var(--purple); background: rgba(68,71,90,0.6); }
-.option-btn:active:not(.locked) { transform: scale(0.97); }
-.option-btn .avatar {
-    width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
-    border: 2px solid var(--current); flex-shrink: 0;
-}
-.option-btn.correct {
-    border-color: var(--green); background: rgba(80,250,123,0.1);
-    color: var(--green); box-shadow: var(--glow-green);
-}
-.option-btn.correct .avatar { border-color: var(--green); }
-.option-btn.wrong {
-    border-color: var(--red); background: rgba(255,85,85,0.08);
-    color: var(--red); opacity: 0.6;
-}
-.option-btn.wrong .avatar { border-color: var(--red); }
-.option-btn.locked { cursor: default; pointer-events: none; }
-.option-btn.shake { animation: shake 0.35s ease; }
-@keyframes shake {
-    20% { transform: translateX(-5px); }
-    40% { transform: translateX(5px); }
-    60% { transform: translateX(-3px); }
-    80% { transform: translateX(3px); }
-}
+.qopt:hover:not(.locked) { border-color: var(--purple); background: rgba(68,71,90,0.6); }
+.qopt.correct { border-color: var(--green); background: rgba(80,250,123,0.1); color: var(--green); box-shadow: 0 0 12px rgba(80,250,123,0.2); }
+.qopt.wrong { border-color: var(--red); background: rgba(255,85,85,0.08); color: var(--red); opacity: 0.6; }
+.qopt.locked { cursor: default; pointer-events: none; }
+.qopt.shake { animation: shake 0.35s ease; }
 
-/* ── Quote Chain options: single column, compact ── */
-.options-list {
-    display: flex; flex-direction: column; gap: 0.25rem;
-    margin-bottom: 0.4rem; flex-shrink: 0;
-}
-.options-list .option-btn {
-    font-size: 0.78rem; padding: 0.35rem 0.6rem; line-height: 1.35;
-}
-
-/* ── Binary Options (Quote Match) ── */
-.binary-options { display: flex; gap: 0.5rem; margin-bottom: 0.4rem; flex-shrink: 0; }
-.binary-btn {
-    flex: 1; padding: 0.5rem; border-radius: var(--r);
+/* ── Binary buttons (Quote Match) ── */
+.bins { display: flex; gap: 0.4rem; margin-bottom: 0.35rem; flex-shrink: 0; }
+.bin {
+    flex: 1; padding: 0.55rem; border-radius: var(--r);
     border: 1px solid var(--current); background: var(--bg-light);
-    color: var(--fg); cursor: pointer; font-size: 0.85rem; font-weight: 600;
+    color: var(--fg); cursor: pointer; font-size: 0.88rem; font-weight: 700;
     font-family: var(--font); text-align: center; transition: all 0.15s;
 }
-.binary-btn:hover:not(.locked) { border-color: var(--purple); }
-.binary-btn:active:not(.locked) { transform: scale(0.97); }
-.binary-btn.correct { border-color: var(--green); background: rgba(80,250,123,0.1); color: var(--green); box-shadow: var(--glow-green); }
-.binary-btn.wrong { border-color: var(--red); background: rgba(255,85,85,0.08); color: var(--red); }
-.binary-btn.locked { cursor: default; pointer-events: none; }
+.bin:hover:not(.locked) { border-color: var(--purple); }
+.bin.correct { border-color: var(--green); background: rgba(80,250,123,0.1); color: var(--green); }
+.bin.wrong { border-color: var(--red); background: rgba(255,85,85,0.08); color: var(--red); }
+.bin.locked { cursor: default; pointer-events: none; }
 
-/* ── VS Divider ── */
-.vs-divider {
-    text-align: center; font-size: 0.65rem; color: var(--comment);
-    text-transform: uppercase; letter-spacing: 0.1em; margin: 0.15rem 0;
-    font-weight: 700; position: relative;
+/* ── Quote Match: side-by-side quote panels ── */
+.qpair { display: flex; gap: 0.35rem; margin-bottom: 0.35rem; flex: 1; min-height: 0; }
+.qpanel {
+    flex: 1; background: var(--bg-darker); border: 1px solid var(--current);
+    border-radius: var(--r); padding: 0.55rem 0.65rem; display: flex;
+    flex-direction: column; position: relative; overflow: hidden;
 }
-.vs-divider::before, .vs-divider::after {
-    content: ''; position: absolute; top: 50%; height: 1px;
-    width: calc(50% - 1.2em); background: var(--current);
+.qpanel::before {
+    content: '\201C'; position: absolute; top: -0.2rem; left: 0.3rem;
+    font-size: 2rem; color: var(--purple); opacity: 0.12; line-height: 1;
+    font-family: Georgia, serif;
 }
-.vs-divider::before { left: 0; }
-.vs-divider::after { right: 0; }
+.qpanel .qlabel { font-size: 0.58rem; }
+.qpanel .qtext { font-size: 0.82rem; padding-left: 0.8rem; flex: 1; }
+.vs {
+    align-self: center; font-size: 0.6rem; color: var(--comment);
+    text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700;
+    flex-shrink: 0; margin: 0 -0.1rem;
+}
 
-/* ── Result + Next: pushed to bottom via flex spacer ── */
-.result-footer { margin-top: auto; flex-shrink: 0; }
-.result-area {
-    text-align: center; min-height: 1.6rem;
-    display: flex; flex-direction: column; align-items: center;
-    justify-content: center; margin-bottom: 0.3rem;
-}
-.result-msg {
-    font-size: 0.88rem; font-weight: 700; opacity: 0; transition: opacity 0.2s;
-}
-.result-msg.show { opacity: 1; }
-.result-msg.correct { color: var(--green); }
-.result-msg.wrong { color: var(--red); }
-.result-detail {
-    font-size: 0.72rem; color: var(--comment); margin-top: 0.1rem;
-    opacity: 0; transition: opacity 0.25s 0.05s;
-}
-.result-detail.show { opacity: 1; }
-.streak-msg {
-    font-size: 0.7rem; font-weight: 600; color: var(--orange);
-    margin-top: 0.1rem; opacity: 0; transition: opacity 0.25s 0.1s;
-}
-.streak-msg.show { opacity: 1; animation: bounceIn 0.35s ease-out; }
-@keyframes bounceIn {
-    0% { transform: scale(0.5); opacity: 0; }
-    70% { transform: scale(1.1); }
-    100% { transform: scale(1); opacity: 1; }
-}
-.next-btn {
-    display: block; width: 100%; padding: 0.5rem;
-    border-radius: var(--r); border: none;
+/* ── Result footer (pushed to bottom) ── */
+.rf { margin-top: auto; flex-shrink: 0; }
+.ra { text-align: center; min-height: 1.4rem; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 0.25rem; }
+.rm { font-size: 0.85rem; font-weight: 700; opacity: 0; transition: opacity 0.2s; }
+.rm.show { opacity: 1; } .rm.ok { color: var(--green); } .rm.no { color: var(--red); }
+.rd { font-size: 0.7rem; color: var(--comment); margin-top: 0.05rem; opacity: 0; transition: opacity 0.2s 0.05s; }
+.rd.show { opacity: 1; }
+.sk { font-size: 0.68rem; font-weight: 600; color: var(--orange); margin-top: 0.05rem; opacity: 0; transition: opacity 0.2s 0.1s; }
+.sk.show { opacity: 1; animation: bIn 0.3s ease-out; }
+@keyframes bIn { 0%{transform:scale(0.5);opacity:0} 70%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
+.nb {
+    display: block; width: 100%; padding: 0.5rem; border-radius: var(--r); border: none;
     background: linear-gradient(135deg, var(--purple), #9580ff);
-    color: #fff; cursor: pointer; font-size: 0.82rem;
-    font-weight: 600; font-family: var(--font);
+    color: #fff; cursor: pointer; font-size: 0.82rem; font-weight: 600; font-family: var(--font);
     box-shadow: 0 2px 6px rgba(189,147,249,0.2);
     opacity: 0; transform: translateY(4px);
-    transition: opacity 0.25s 0.15s, transform 0.25s 0.15s, box-shadow 0.15s;
+    transition: opacity 0.2s 0.12s, transform 0.2s 0.12s, box-shadow 0.15s;
 }
-.next-btn.show { opacity: 1; transform: translateY(0); }
-.next-btn:hover { box-shadow: 0 0 16px rgba(189,147,249,0.3); }
+.nb.show { opacity: 1; transform: translateY(0); }
+.nb:hover { box-shadow: 0 0 16px rgba(189,147,249,0.3); }
 
 /* ── Loading / Error ── */
-.loading {
-    text-align: center; color: var(--comment); padding: 2rem 1rem;
-    font-size: 0.85rem; margin: auto 0;
-}
-.loading-dots::after { content: ''; animation: dots 1.2s steps(4,end) infinite; }
+.ld { text-align: center; color: var(--comment); padding: 2rem; font-size: 0.85rem; margin: auto 0; }
+.ld-d::after { content:''; animation: dots 1.2s steps(4,end) infinite; }
 @keyframes dots { 0%,20%{content:''} 40%{content:'.'} 60%{content:'..'} 80%,100%{content:'...'} }
-.error-state { text-align: center; padding: 1.5rem; color: var(--comment); margin: auto 0; }
-.error-state .error-icon { font-size: 1.5rem; margin-bottom: 0.3rem; }
-.error-state .error-text { font-size: 0.8rem; }
-.error-state .retry-btn {
-    display: inline-block; margin-top: 0.5rem; padding: 0.35rem 1rem;
-    border-radius: var(--r); border: 1px solid var(--current);
-    background: var(--bg-light); color: var(--fg); cursor: pointer;
-    font-size: 0.78rem; font-family: var(--font);
-}
-.error-state .retry-btn:hover { border-color: var(--purple); }
+.er { text-align: center; padding: 1.5rem; color: var(--comment); margin: auto 0; }
+.er .ei { font-size: 1.5rem; margin-bottom: 0.3rem; }
+.er .et { font-size: 0.8rem; }
+.er .rb { display: inline-block; margin-top: 0.5rem; padding: 0.35rem 1rem; border-radius: var(--r); border: 1px solid var(--current); background: var(--bg-light); color: var(--fg); cursor: pointer; font-size: 0.78rem; font-family: var(--font); }
 
 /* ── Footer ── */
-.game-footer {
-    text-align: center; padding-top: 0.3rem; font-size: 0.6rem;
-    color: var(--comment); opacity: 0.5; flex-shrink: 0;
-}
+.ft { text-align: center; padding-top: 0.2rem; font-size: 0.58rem; color: var(--comment); opacity: 0.4; flex-shrink: 0; }
 
 @media (max-width: 480px) {
-    .game-wrap { padding: 0.4rem 0.5rem; }
-    .top-bar h1 { font-size: 0.88rem; }
-    .scores { gap: 0.4rem; font-size: 0.7rem; }
-    .options-grid { grid-template-columns: 1fr; }
+    .wrap { padding: 0.4rem 0.5rem; }
+    .top h1 { font-size: 0.82rem; }
+    .tile-name { font-size: 0.75rem; }
 }
 </style>
 </head>
 <body>
-
 <canvas id="confetti-canvas"></canvas>
-
-<div class="game-wrap">
-    <div class="top-bar">
-        <h1>How Well Do You <span class="accent">Really</span> Know Them?<span class="april-badge">Apr 1</span></h1>
+<div class="wrap">
+    <div class="top">
+        <h1>How Well Do You <span class="a">Really</span> Know Them?<span class="badge">Apr 1</span></h1>
         <div class="scores">
-            <span><span class="s-label">Score</span> <span class="s-val v-score" id="score">0</span></span>
-            <span><span class="s-label">Streak</span> <span class="s-val v-streak" id="streak">0</span></span>
-            <span><span class="s-label">Best</span> <span class="s-val v-best" id="best">0</span></span>
+            <span><span class="l">Score</span> <span class="v v-s" id="sc">0</span></span>
+            <span><span class="l">Streak</span> <span class="v v-k" id="sk">0</span></span>
+            <span><span class="l">Best</span> <span class="v v-b" id="bs">0</span></span>
         </div>
     </div>
-
-    <div class="game-tabs">
-        <button class="game-tab active" data-game="who-said-it">Who Said It?</button>
-        <button class="game-tab" data-game="quote-match">Quote Match</button>
-        <button class="game-tab" data-game="quote-chain">Quote Chain</button>
+    <div class="tabs">
+        <button class="tab on" data-g="wsi">Who Said It?</button>
+        <button class="tab" data-g="qm">Quote Match</button>
+        <button class="tab" data-g="qc">Quote Chain</button>
     </div>
-
-    <div id="game-area">
-        <div class="loading">Loading<span class="loading-dots"></span></div>
-    </div>
-
-    <div class="game-footer">The Watcher sees all &mdash; therewasanidea.jcink.net</div>
+    <div id="ga"><div class="ld">Loading<span class="ld-d"></span></div></div>
+    <div class="ft">The Watcher &mdash; therewasanidea.jcink.net</div>
 </div>
-
 <script>
-(function() {
-    'use strict';
-    var API = window.QUOTE_GAME_API || 'https://imagehut.ch:8943';
-    var _score = 0, _streak = 0, _best = 0, _locked = false, _game = 'who-said-it';
-    var $s = document.getElementById('score'), $k = document.getElementById('streak'), $b = document.getElementById('best');
-    var $area = document.getElementById('game-area');
+(function(){
+'use strict';
+var API = window.QUOTE_GAME_API || 'https://imagehut.ch:8943';
+var _sc=0,_sk=0,_bs=0,_lk=false,_gm='wsi';
+var $sc=document.getElementById('sc'),$sk=document.getElementById('sk'),$bs=document.getElementById('bs');
+var $ga=document.getElementById('ga');
 
-    /* ── Confetti ── */
-    var cv = document.getElementById('confetti-canvas'), cx = cv.getContext('2d');
-    var parts = [], colors = ['#bd93f9','#50fa7b','#ff79c6','#8be9fd','#ffb86c','#f1fa8c'], af = null;
-    function rsz() { cv.width = innerWidth; cv.height = innerHeight; }
-    addEventListener('resize', rsz); rsz();
+// Confetti
+var cv=document.getElementById('confetti-canvas'),cx=cv.getContext('2d'),pp=[],
+cols=['#bd93f9','#50fa7b','#ff79c6','#8be9fd','#ffb86c','#f1fa8c'],af=null;
+function rsz(){cv.width=innerWidth;cv.height=innerHeight;} addEventListener('resize',rsz); rsz();
+function boom(n){for(var i=0;i<n;i++)pp.push({x:Math.random()*cv.width,y:-10-Math.random()*30,w:3+Math.random()*5,h:2+Math.random()*4,c:cols[Math.random()*cols.length|0],vx:(Math.random()-0.5)*3,vy:1.5+Math.random()*2.5,r:Math.random()*360,rv:(Math.random()-0.5)*10,l:1});if(!af)tck();}
+function tck(){cx.clearRect(0,0,cv.width,cv.height);for(var i=pp.length;i--;){var p=pp[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.04;p.r+=p.rv;p.l-=0.009;if(p.l<=0||p.y>cv.height+20){pp.splice(i,1);continue;}cx.save();cx.translate(p.x,p.y);cx.rotate(p.r*Math.PI/180);cx.globalAlpha=Math.min(p.l,1);cx.fillStyle=p.c;cx.fillRect(-p.w/2,-p.h/2,p.w,p.h);cx.restore();}af=pp.length?requestAnimationFrame(tck):null;}
 
-    function boom(n) {
-        for (var i = 0; i < n; i++) parts.push({
-            x: Math.random() * cv.width, y: -10 - Math.random() * 30,
-            w: 3 + Math.random() * 5, h: 2 + Math.random() * 4,
-            c: colors[Math.random() * colors.length | 0],
-            vx: (Math.random() - 0.5) * 3, vy: 1.5 + Math.random() * 2.5,
-            r: Math.random() * 360, rv: (Math.random() - 0.5) * 10, l: 1
+// Helpers
+function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+function api(p){return fetch(API+p).then(function(r){if(!r.ok)throw 0;return r.json();});}
+function upd(ok){if(ok){_sc++;_sk++;}else _sk=0;if(_sk>_bs)_bs=_sk;$sc.textContent=_sc;$sk.textContent=_sk;$bs.textContent=_bs;if(_sk>0&&ok){$sk.classList.remove('fire');void $sk.offsetWidth;$sk.classList.add('fire');}}
+function sRes(ok,det){
+    var ra=document.querySelector('.ra'),m=ra.querySelector('.rm'),d=ra.querySelector('.rd'),s=ra.querySelector('.sk');
+    m.textContent=ok?'Correct!':'Nope!'; m.className='rm show '+(ok?'ok':'no');
+    if(det){d.textContent=det;d.className='rd show';}
+    if(ok&&_sk>=3){var ms=['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!','Beyond mortal comprehension!'];s.textContent=_sk+' in a row! '+(ms[_sk]||_sk+'-streak!');s.className='sk show';boom(_sk>=5?50:25);}else if(ok)boom(10);
+    document.querySelector('.nb').classList.add('show');
+}
+function rfHtml(){return '<div class="rf"><div class="ra"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div><button class="nb">Next Round</button></div>';}
+function erHtml(m){return '<div class="er"><div class="ei">&#x1F50C;</div><div class="et">'+esc(m)+'</div><button class="rb" onclick="loadRound()">Try Again</button></div>';}
+
+// Tile HTML helper — big image with name overlay
+function tileHtml(id, name, imgUrl, dataAttr) {
+    var inner;
+    if (imgUrl) {
+        inner = '<img class="tile-img" src="'+esc(imgUrl)+'" alt="" onerror="this.parentNode.innerHTML=\'<div class=tile-noimg><span class=tile-initial>'+esc(name.charAt(0))+'</span></div><div class=tile-name>'+esc(name)+'</div>\'">';
+    } else {
+        inner = '<div class="tile-noimg"><span class="tile-initial">'+esc(name.charAt(0))+'</span></div>';
+    }
+    return '<div class="tile" '+dataAttr+'>' + inner + '<div class="tile-name">'+esc(name)+'</div></div>';
+}
+
+/* ── WHO SAID IT — Metro tiles ── */
+function loadWSI(){
+    _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
+    api('/api/game/who-said-it?choices=4').then(function(d){
+        var h='<div class="gi">';
+        h+='<div class="qblock"><div class="qlabel">Who said this?</div><div class="qtext">'+esc(d.quote)+'</div></div>';
+        h+='<div class="tiles">';
+        d.options.forEach(function(o){
+            var img = o.square_image || o.rectangle_gif || o.avatar_url;
+            h += tileHtml(o.id, o.name, img, 'data-id="'+esc(o.id)+'"');
         });
-        if (!af) tick();
-    }
-    function tick() {
-        cx.clearRect(0, 0, cv.width, cv.height);
-        for (var i = parts.length; i--;) {
-            var p = parts[i]; p.x += p.vx; p.y += p.vy; p.vy += 0.04; p.r += p.rv; p.l -= 0.009;
-            if (p.l <= 0 || p.y > cv.height + 20) { parts.splice(i, 1); continue; }
-            cx.save(); cx.translate(p.x, p.y); cx.rotate(p.r * Math.PI / 180);
-            cx.globalAlpha = Math.min(p.l, 1); cx.fillStyle = p.c;
-            cx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); cx.restore();
-        }
-        af = parts.length ? requestAnimationFrame(tick) : null;
-    }
-
-    /* ── Helpers ── */
-    function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
-    function avi(u) { return u ? '<img class="avatar" src="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">' : '<span class="avatar" style="display:inline-block;background:var(--current)"></span>'; }
-    function api(p) { return fetch(API + p).then(function(r) { if (!r.ok) throw 0; return r.json(); }); }
-
-    function updScores(ok) {
-        if (ok) { _score++; _streak++; } else { _streak = 0; }
-        if (_streak > _best) _best = _streak;
-        $s.textContent = _score; $k.textContent = _streak; $b.textContent = _best;
-        if (_streak > 0 && ok) { $k.classList.remove('streak-fire'); void $k.offsetWidth; $k.classList.add('streak-fire'); }
-    }
-
-    function showRes(ok, detail) {
-        var ra = document.querySelector('.result-area');
-        var msg = ra.querySelector('.result-msg'), det = ra.querySelector('.result-detail'), stk = ra.querySelector('.streak-msg');
-        msg.textContent = ok ? 'Correct!' : 'Nope!';
-        msg.className = 'result-msg show ' + (ok ? 'correct' : 'wrong');
-        if (detail) { det.textContent = detail; det.className = 'result-detail show'; }
-        if (ok && _streak >= 3) {
-            var m = ['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!','Beyond mortal comprehension!','The multiverse trembles!'];
-            stk.textContent = _streak + ' in a row! ' + (m[_streak] || _streak + '-streak!');
-            stk.className = 'streak-msg show';
-            boom(_streak >= 5 ? 50 : 25);
-        } else if (ok) boom(10);
-        document.querySelector('.next-btn').classList.add('show');
-    }
-
-    function resHtml() {
-        return '<div class="result-footer"><div class="result-area"><div class="result-msg"></div><div class="result-detail"></div><div class="streak-msg"></div></div><button class="next-btn">Next Round</button></div>';
-    }
-    function errHtml(m) { return '<div class="error-state"><div class="error-icon">&#x1F50C;</div><div class="error-text">'+esc(m)+'</div><button class="retry-btn" onclick="loadRound()">Try Again</button></div>'; }
-
-    /* ── WHO SAID IT ── */
-    function loadWSI() {
-        _locked = false; $area.innerHTML = '<div class="loading">Loading<span class="loading-dots"></span></div>';
-        api('/api/game/who-said-it?choices=4').then(function(d) {
-            var h = '<div class="game-area-inner">';
-            h += '<div class="quote-card"><div class="quote-label">Who said this?</div><div class="quote-text">' + esc(d.quote) + '</div></div>';
-            h += '<div class="options-grid">';
-            d.options.forEach(function(o) { h += '<button class="option-btn" data-id="'+esc(o.id)+'">'+avi(o.avatar_url)+'<span>'+esc(o.name)+'</span></button>'; });
-            h += '</div>' + resHtml() + '</div>';
-            $area.innerHTML = h;
-            var aid = d.answer_id;
-            $area.querySelectorAll('.option-btn').forEach(function(b) {
-                b.addEventListener('click', function() {
-                    if (_locked) return; _locked = true;
-                    var ok = b.dataset.id === aid;
-                    $area.querySelectorAll('.option-btn').forEach(function(x) {
-                        x.classList.add('locked');
-                        if (x.dataset.id === aid) x.classList.add('correct');
-                        else if (x === b && !ok) { x.classList.add('wrong','shake'); }
-                    });
-                    updScores(ok);
-                    var who = d.options.find(function(o){return o.id===aid;});
-                    showRes(ok, ok ? null : 'It was ' + who.name);
+        h+='</div>'+rfHtml()+'</div>';
+        $ga.innerHTML=h;
+        var aid=d.answer_id;
+        $ga.querySelectorAll('.tile').forEach(function(t){
+            t.addEventListener('click',function(){
+                if(_lk)return;_lk=true;
+                var ok=t.dataset.id===aid;
+                $ga.querySelectorAll('.tile').forEach(function(x){
+                    x.classList.add('locked');
+                    if(x.dataset.id===aid)x.classList.add('correct');
+                    else if(x===t&&!ok){x.classList.add('wrong','shake');}
                 });
+                upd(ok);
+                var who=d.options.find(function(o){return o.id===aid;});
+                sRes(ok,ok?null:'It was '+who.name);
             });
-            document.querySelector('.next-btn').addEventListener('click', loadRound);
-        }).catch(function() { $area.innerHTML = errHtml('Need at least 4 characters with quotes.'); });
-    }
-
-    /* ── QUOTE MATCH ── */
-    function loadQM() {
-        _locked = false; $area.innerHTML = '<div class="loading">Loading<span class="loading-dots"></span></div>';
-        api('/api/game/quote-match').then(function(d) {
-            var h = '<div class="game-area-inner">';
-            h += '<div class="quote-card"><div class="quote-label">Quote A</div><div class="quote-text">' + esc(d.quote_a) + '</div></div>';
-            h += '<div class="vs-divider">vs</div>';
-            h += '<div class="quote-card"><div class="quote-label">Quote B</div><div class="quote-text">' + esc(d.quote_b) + '</div></div>';
-            h += '<div class="binary-options"><button class="binary-btn" data-guess="same">Same Character</button><button class="binary-btn" data-guess="different">Different</button></div>';
-            h += resHtml() + '</div>';
-            $area.innerHTML = h;
-            $area.querySelectorAll('.binary-btn').forEach(function(b) {
-                b.addEventListener('click', function() {
-                    if (_locked) return; _locked = true;
-                    var gs = b.dataset.guess === 'same', ok = gs === d.same_character;
-                    $area.querySelectorAll('.binary-btn').forEach(function(x) {
-                        x.classList.add('locked');
-                        if ((x.dataset.guess === 'same') === d.same_character) x.classList.add('correct');
-                        else if (x === b && !ok) x.classList.add('wrong');
-                    });
-                    updScores(ok);
-                    showRes(ok, d.same_character ? 'Both by ' + d.character_a : d.character_a + ' & ' + d.character_b);
-                });
-            });
-            document.querySelector('.next-btn').addEventListener('click', loadRound);
-        }).catch(function() { $area.innerHTML = errHtml('Need at least 2 characters with quotes.'); });
-    }
-
-    /* ── QUOTE CHAIN ── */
-    function loadQC() {
-        _locked = false; $area.innerHTML = '<div class="loading">Loading<span class="loading-dots"></span></div>';
-        api('/api/game/quote-chain?choices=4').then(function(d) {
-            var h = '<div class="game-area-inner">';
-            h += '<div class="quote-card"><div class="quote-label">Find another quote by ' + esc(d.anchor_character) + '</div><div class="quote-text">' + esc(d.anchor_quote) + '</div></div>';
-            h += '<div class="options-list">';
-            d.options.forEach(function(o,i) { h += '<button class="option-btn" data-idx="'+i+'"><span>'+esc(o.quote_text)+'</span></button>'; });
-            h += '</div>' + resHtml() + '</div>';
-            $area.innerHTML = h;
-            $area.querySelectorAll('.option-btn').forEach(function(b) {
-                b.addEventListener('click', function() {
-                    if (_locked) return; _locked = true;
-                    var idx = +b.dataset.idx, pk = d.options[idx], ok = pk.correct;
-                    $area.querySelectorAll('.option-btn').forEach(function(x) {
-                        x.classList.add('locked');
-                        if (d.options[+x.dataset.idx].correct) x.classList.add('correct');
-                        else if (x === b && !ok) { x.classList.add('wrong','shake'); }
-                    });
-                    updScores(ok);
-                    showRes(ok, ok ? null : 'That was ' + pk.character_name);
-                });
-            });
-            document.querySelector('.next-btn').addEventListener('click', loadRound);
-        }).catch(function() { $area.innerHTML = errHtml('Need characters with 2+ quotes.'); });
-    }
-
-    window.loadRound = function() {
-        if (_game === 'who-said-it') loadWSI();
-        else if (_game === 'quote-match') loadQM();
-        else loadQC();
-    };
-
-    document.querySelectorAll('.game-tab').forEach(function(t) {
-        t.addEventListener('click', function() {
-            document.querySelectorAll('.game-tab').forEach(function(x){x.classList.remove('active');});
-            t.classList.add('active'); _game = t.dataset.game; loadRound();
         });
+        document.querySelector('.nb').addEventListener('click',loadRound);
+    }).catch(function(){$ga.innerHTML=erHtml('Need at least 4 characters with quotes.');});
+}
+
+/* ── QUOTE MATCH — side-by-side panels ── */
+function loadQM(){
+    _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
+    api('/api/game/quote-match').then(function(d){
+        var h='<div class="gi">';
+        h+='<div class="qpair">';
+        h+='<div class="qpanel"><div class="qlabel">Quote A</div><div class="qtext">'+esc(d.quote_a)+'</div></div>';
+        h+='<div class="vs">vs</div>';
+        h+='<div class="qpanel"><div class="qlabel">Quote B</div><div class="qtext">'+esc(d.quote_b)+'</div></div>';
+        h+='</div>';
+        h+='<div class="bins"><button class="bin" data-g="same">Same Character</button><button class="bin" data-g="different">Different</button></div>';
+        h+=rfHtml()+'</div>';
+        $ga.innerHTML=h;
+        $ga.querySelectorAll('.bin').forEach(function(b){
+            b.addEventListener('click',function(){
+                if(_lk)return;_lk=true;
+                var gs=b.dataset.g==='same',ok=gs===d.same_character;
+                $ga.querySelectorAll('.bin').forEach(function(x){
+                    x.classList.add('locked');
+                    if((x.dataset.g==='same')===d.same_character)x.classList.add('correct');
+                    else if(x===b&&!ok)x.classList.add('wrong');
+                });
+                upd(ok);
+                sRes(ok,d.same_character?'Both by '+d.character_a:d.character_a+' & '+d.character_b);
+            });
+        });
+        document.querySelector('.nb').addEventListener('click',loadRound);
+    }).catch(function(){$ga.innerHTML=erHtml('Need at least 2 characters with quotes.');});
+}
+
+/* ── QUOTE CHAIN — anchor + text options ── */
+function loadQC(){
+    _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
+    api('/api/game/quote-chain?choices=4').then(function(d){
+        var h='<div class="gi">';
+        h+='<div class="qblock"><div class="qlabel">Find another quote by '+esc(d.anchor_character)+'</div><div class="qtext">'+esc(d.anchor_quote)+'</div></div>';
+        h+='<div class="qlist">';
+        d.options.forEach(function(o,i){h+='<button class="qopt" data-i="'+i+'">'+esc(o.quote_text)+'</button>';});
+        h+='</div>'+rfHtml()+'</div>';
+        $ga.innerHTML=h;
+        $ga.querySelectorAll('.qopt').forEach(function(b){
+            b.addEventListener('click',function(){
+                if(_lk)return;_lk=true;
+                var idx=+b.dataset.i,pk=d.options[idx],ok=pk.correct;
+                $ga.querySelectorAll('.qopt').forEach(function(x){
+                    x.classList.add('locked');
+                    if(d.options[+x.dataset.i].correct)x.classList.add('correct');
+                    else if(x===b&&!ok){x.classList.add('wrong','shake');}
+                });
+                upd(ok);sRes(ok,ok?null:'That was '+pk.character_name);
+            });
+        });
+        document.querySelector('.nb').addEventListener('click',loadRound);
+    }).catch(function(){$ga.innerHTML=erHtml('Need characters with 2+ quotes.');});
+}
+
+window.loadRound=function(){if(_gm==='wsi')loadWSI();else if(_gm==='qm')loadQM();else loadQC();};
+document.querySelectorAll('.tab').forEach(function(t){
+    t.addEventListener('click',function(){
+        document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});
+        t.classList.add('on');_gm=t.dataset.g;loadRound();
     });
-
-    loadRound();
+});
+loadRound();
 })();
 </script>
 </body>

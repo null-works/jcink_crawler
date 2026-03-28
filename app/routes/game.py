@@ -25,11 +25,17 @@ templates.env.globals["app_build"] = APP_BUILD_TIME
 # ---------------------------------------------------------------------------
 
 async def _characters_with_quotes(db: aiosqlite.Connection) -> list[dict]:
-    """Return characters that have at least one quote."""
+    """Return characters that have at least one quote, with hero images."""
     excluded = settings.excluded_name_set
     cursor = await db.execute("""
-        SELECT c.id, c.name, c.avatar_url
+        SELECT c.id, c.name, c.avatar_url,
+               pf_sq.field_value AS square_image,
+               pf_rect.field_value AS rectangle_gif
         FROM characters c
+        LEFT JOIN profile_fields pf_sq
+          ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
+        LEFT JOIN profile_fields pf_rect
+          ON pf_rect.character_id = c.id AND pf_rect.field_key = 'rectangle_gif'
         WHERE c.id IN (SELECT DISTINCT character_id FROM quotes)
           AND COALESCE(c.hidden, 0) = 0
         ORDER BY c.name
@@ -92,7 +98,10 @@ async def game_who_said_it(
         "quote": quote["quote_text"],
         "quote_id": quote["id"],
         "options": [
-            {"id": c["id"], "name": c["name"], "avatar_url": c["avatar_url"]}
+            {
+                "id": c["id"], "name": c["name"], "avatar_url": c["avatar_url"],
+                "square_image": c.get("square_image"), "rectangle_gif": c.get("rectangle_gif"),
+            }
             for c in options
         ],
         "answer_id": correct["id"],
@@ -128,6 +137,8 @@ async def game_quote_match(db: aiosqlite.Connection = Depends(get_db)):
                     "same_character": True,
                     "character_a": c["name"],
                     "character_b": c["name"],
+                    "image_a": c.get("square_image") or c.get("avatar_url"),
+                    "image_b": c.get("square_image") or c.get("avatar_url"),
                 }
         same = False
 
@@ -143,6 +154,8 @@ async def game_quote_match(db: aiosqlite.Connection = Depends(get_db)):
         "same_character": False,
         "character_a": pair[0]["name"],
         "character_b": pair[1]["name"],
+        "image_a": pair[0].get("square_image") or pair[0].get("avatar_url"),
+        "image_b": pair[1].get("square_image") or pair[1].get("avatar_url"),
     }
 
 
@@ -195,6 +208,7 @@ async def game_quote_chain(
         "anchor_quote": anchor_quote["quote_text"],
         "anchor_character": anchor_char["name"],
         "anchor_avatar": anchor_char["avatar_url"],
+        "anchor_square_image": anchor_char.get("square_image"),
         "options": option_list,
     }
 
