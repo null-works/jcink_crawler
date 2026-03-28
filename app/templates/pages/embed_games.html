@@ -454,9 +454,14 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 /* Layer 1: background images (crossfade pair) */
 .dash-card-bg {
     position: absolute; inset: 0; background-size: cover; background-position: center;
-    transition: opacity 1.5s ease-in-out; opacity: 0;
+    transition: opacity 3s ease-in-out, transform 8s ease-in-out, filter 3s ease-in-out;
+    opacity: 0; transform: scale(1.05);
+    filter: saturate(1.2);
 }
-.dash-card-bg.active { opacity: 1; }
+.dash-card-bg.active {
+    opacity: 1; transform: scale(1);
+    filter: saturate(1);
+}
 
 /* Layer 2: dark gradient scrim over the image */
 .dash-card-scrim {
@@ -1168,19 +1173,24 @@ function loadDash() {
     api('/api/game/characters').then(function(chars) {
         var images = chars.map(function(c){return c.rectangle_gif || c.image;}).filter(Boolean);
         if (!images.length) return;
-        var cards = ['wsi','qm','qc','ml'];
-        var slots = {}; // track which layer is active per card
-        // Initial: set a random image on each card's "a" layer
-        cards.forEach(function(id) {
+        var cardIds = ['wsi','qm','qc','ml'];
+        var slots = {};
+        var turnIdx = 0;
+        // Shuffle images so each card starts different
+        function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.random()*(i+1)|0;var t=a[i];a[i]=a[j];a[j]=t;}return a;}
+        var shuffled = shuffle(images.slice());
+        // Initial: each card gets a different image
+        cardIds.forEach(function(id, i) {
             var imgA = document.getElementById('dbg-'+id+'-a');
             if (imgA) {
-                imgA.style.backgroundImage = 'url('+images[Math.random()*images.length|0]+')';
+                imgA.style.backgroundImage = 'url('+shuffled[i % shuffled.length]+')';
                 slots[id] = 'a';
             }
         });
-        // Rotate one random card every 4 seconds (each card changes ~every 16s)
+        // Cycle through cards sequentially, one every 5 seconds
         _dashTimer = setInterval(function() {
-            var id = cards[Math.random()*cards.length|0];
+            var id = cardIds[turnIdx % cardIds.length];
+            turnIdx++;
             var cur = slots[id] || 'a';
             var nxt = cur === 'a' ? 'b' : 'a';
             var elCur = document.getElementById('dbg-'+id+'-'+cur);
@@ -1190,7 +1200,7 @@ function loadDash() {
             elNxt.classList.add('active');
             elCur.classList.remove('active');
             slots[id] = nxt;
-        }, 4000);
+        }, 5000);
     }).catch(function(){});
 }
 var _dashTimer = null;
