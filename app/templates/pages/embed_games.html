@@ -703,14 +703,14 @@ function mlLoadQuestion() {
             btn.addEventListener('click', function() {
                 if (_lk || btn.classList.contains('used')) return;
                 var ll = btn.dataset.ll;
+                if (ll === 'cheat') { mlCheat(); return; }
+                if (ll === 'm8b') { mlUse8Ball(); return; }
                 _mlLifelines[ll] = true;
                 btn.classList.add('used');
                 btn.disabled = true;
-                if (ll === 'cheat') { mlCheat(); return; }
                 if (ll === '5050') mlUse5050();
                 else if (ll === 'ata') mlUseATA();
                 else if (ll === 'paf') mlUsePAF();
-                else if (ll === 'm8b') mlUse8Ball();
             });
         });
     }).catch(function() {});
