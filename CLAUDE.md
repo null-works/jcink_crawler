@@ -1,5 +1,7 @@
 # CLAUDE.md — Instructions for AI Agents
 
+# Watcher (JCink Analytics Platform)
+
 ## Version Bump Requirement (MANDATORY)
 
 **Every branch/PR that changes application code MUST bump `APP_VERSION` in `app/config.py`.**
@@ -13,7 +15,7 @@ If you are making any commit that touches code under `app/`, `scripts/`, `cli.py
 
 ## Project Overview
 
-FastAPI web crawler and caching service for a single JCink forum (`therewasanidea.jcink.net`). Replaces heavy client-side JS scraping with server-side crawling — serves profile fields, categorized threads, last-poster info, and dialog quotes via a REST API and an HTMX dashboard.
+**Watcher** is a JCink Analytics Platform for `therewasanidea.jcink.net`. Server-side crawling and ACP SQL dump parsing replaces heavy client-side JS scraping — serves profile fields, categorized threads, last-poster info, and dialog quotes via a REST API and an HTMX dashboard.
 
 - **Stack:** Python 3.11+, FastAPI, aiosqlite (SQLite), httpx, BeautifulSoup4, Jinja2/HTMX, Docker
 - **Deployment:** Single instance on `imagehut.ch:8943` (VPSdime), Docker Compose, SQLite persisted to `./data/`

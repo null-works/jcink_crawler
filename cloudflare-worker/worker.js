@@ -48,7 +48,7 @@ export default {
 
 		// Build forwarded request headers
 		const forwardHeaders = new Headers();
-		forwardHeaders.set('User-Agent', request.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; TWAICrawler/1.0)');
+		forwardHeaders.set('User-Agent', request.headers.get('User-Agent') || 'Mozilla/5.0 (compatible; Watcher/1.0)');
 
 		// Forward cookies if present (needed for authenticated JCink sessions)
 		const cookies = request.headers.get('Cookie');

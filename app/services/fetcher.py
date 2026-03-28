@@ -37,7 +37,7 @@ async def get_client() -> httpx.AsyncClient:
             "timeout": 30.0,
             "follow_redirects": True,
             "headers": {
-                "User-Agent": "Mozilla/5.0 (compatible; TWAICrawler/1.0)",
+                "User-Agent": "Mozilla/5.0 (compatible; Watcher/1.0)",
             },
         }
         if settings.proxy_url:

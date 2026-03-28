@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The Watcher - Deploy Script
+# Watcher (JCink Analytics Platform) - Deploy Script
 # Usage: ./deploy.sh [branch]
 #   branch defaults to the current branch
 
 BRANCH="${1:-$(git rev-parse --abbrev-ref HEAD)}"
 
 echo
-echo "  Deploying The Watcher"
-echo "  ====================="
+echo "  Deploying Watcher (JCink Analytics Platform)"
+echo "  ============================================="
 echo "  Branch: $BRANCH"
 echo
 

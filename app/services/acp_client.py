@@ -807,7 +807,7 @@ class ACPClient:
                 timeout=120.0,
                 follow_redirects=False,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; TWAICrawler/1.0)",
+                    "User-Agent": "Mozilla/5.0 (compatible; Watcher/1.0)",
                 },
             )
             if _is_cf_worker_enabled():
