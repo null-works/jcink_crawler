@@ -280,15 +280,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 .ml-opt:hover:not(.locked) { border-color: var(--orange); background: linear-gradient(135deg, rgba(255,184,108,0.12), rgba(255,184,108,0.04)); }
 .ml-opt.selected {
     border-color: var(--orange); background: linear-gradient(135deg, rgba(255,184,108,0.18), rgba(255,184,108,0.06));
-    animation: mlPulse 1.5s ease-in-out infinite;
-}
-@keyframes mlPulse {
-    0%,100% { box-shadow: 0 0 0 rgba(255,184,108,0); }
-    50% { box-shadow: 0 0 12px rgba(255,184,108,0.25); }
+    box-shadow: 0 0 10px rgba(255,184,108,0.25);
+    opacity: 1; transform: none; animation: none;
 }
 .ml-opt.correct {
     border-color: var(--green); background: linear-gradient(135deg, rgba(80,250,123,0.2), rgba(80,250,123,0.06));
-    color: var(--green); animation: mlCorrectGlow 0.6s ease-out;
+    color: var(--green); opacity: 1; transform: none; animation: mlCorrectGlow 0.6s ease-out;
 }
 @keyframes mlCorrectGlow {
     0% { box-shadow: 0 0 0 rgba(80,250,123,0); }
@@ -296,7 +293,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
     100% { box-shadow: 0 0 8px rgba(80,250,123,0.15); }
 }
 .ml-opt.correct .ml-letter { color: var(--green); }
-.ml-opt.wrong { border-color: var(--red); background: linear-gradient(135deg, rgba(255,85,85,0.15), rgba(255,85,85,0.04)); color: var(--red); }
+.ml-opt.wrong { border-color: var(--red); background: linear-gradient(135deg, rgba(255,85,85,0.15), rgba(255,85,85,0.04)); color: var(--red); opacity: 1; transform: none; animation: none; }
 .ml-opt.wrong .ml-letter { color: var(--red); }
 .ml-opt.locked { cursor: default; pointer-events: none; }
 .ml-opt.hidden-5050 { opacity: 0.08; pointer-events: none; }
