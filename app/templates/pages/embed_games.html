@@ -215,6 +215,105 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
 /* ── Footer ── */
 .ft { text-align: center; font-size: 0.55rem; color: var(--comment); opacity: 0.35; flex-shrink: 0; line-height: 1; }
 
+/* ════════════════════════════════════════════
+   MILLIONAIRE MODE
+   ════════════════════════════════════════════ */
+.ml-layout { flex: 1; display: flex; gap: 0.35rem; min-height: 0; }
+.ml-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.ml-ladder {
+    width: 105px; flex-shrink: 0; display: flex; flex-direction: column;
+    background: var(--bg-darker); border: 1px solid var(--current);
+    border-radius: var(--r); padding: 0.2rem; overflow-y: auto;
+}
+.ml-rung {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.12rem 0.3rem; font-size: 0.58rem; border-radius: 3px;
+    color: var(--comment); transition: all 0.2s;
+}
+.ml-rung .ml-num { opacity: 0.5; }
+.ml-rung .ml-amt { font-weight: 700; }
+.ml-rung.safe .ml-amt { color: var(--orange); }
+.ml-rung.current { background: var(--purple); color: var(--bg); }
+.ml-rung.current .ml-num, .ml-rung.current .ml-amt { color: var(--bg); opacity: 1; }
+.ml-rung.done { color: var(--comment); opacity: 0.4; }
+.ml-rung.won .ml-amt { color: var(--green); }
+
+/* Lifelines */
+.ml-lifelines {
+    display: flex; gap: 0.25rem; margin-bottom: 0.3rem; flex-shrink: 0;
+}
+.ml-life {
+    flex: 1; padding: 0.25rem; border-radius: var(--r);
+    border: 1px solid var(--current); background: var(--bg-light);
+    color: var(--fg); cursor: pointer; font-size: 0.65rem; font-weight: 600;
+    font-family: var(--font); text-align: center; transition: all 0.15s;
+}
+.ml-life:hover:not(.used):not([disabled]) { border-color: var(--purple); }
+.ml-life.used { opacity: 0.25; cursor: default; text-decoration: line-through; pointer-events: none; }
+.ml-life[disabled] { opacity: 0.4; cursor: default; }
+
+/* Millionaire option buttons — diamond-inspired */
+.ml-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; flex-shrink: 0; margin-bottom: 0.25rem; }
+.ml-opt {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.4rem 0.55rem; border-radius: 20px;
+    border: 1px solid var(--current); background: var(--bg-light);
+    color: var(--fg); cursor: pointer; font-size: 0.78rem; font-weight: 500;
+    font-family: var(--font); transition: all 0.2s; text-align: left;
+}
+.ml-opt .ml-letter {
+    font-weight: 700; color: var(--orange); font-size: 0.72rem; flex-shrink: 0;
+}
+.ml-opt:hover:not(.locked) { border-color: var(--orange); background: rgba(255,184,108,0.08); }
+.ml-opt.selected { border-color: var(--orange); background: rgba(255,184,108,0.15); }
+.ml-opt.correct { border-color: var(--green); background: rgba(80,250,123,0.15); color: var(--green); }
+.ml-opt.correct .ml-letter { color: var(--green); }
+.ml-opt.wrong { border-color: var(--red); background: rgba(255,85,85,0.1); color: var(--red); }
+.ml-opt.wrong .ml-letter { color: var(--red); }
+.ml-opt.locked { cursor: default; pointer-events: none; }
+.ml-opt.hidden-5050 { opacity: 0.1; pointer-events: none; }
+
+/* Ask the audience bars */
+.ml-ata { display: flex; gap: 0.2rem; align-items: flex-end; height: 50px; margin-bottom: 0.3rem; flex-shrink: 0; }
+.ml-ata-bar {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    font-size: 0.55rem; color: var(--comment);
+}
+.ml-ata-fill {
+    width: 100%; border-radius: 3px 3px 0 0; background: var(--purple);
+    transition: height 0.5s ease-out; min-height: 2px;
+}
+.ml-ata-pct { margin-top: 0.1rem; font-weight: 700; }
+
+/* Confirm bar */
+.ml-confirm {
+    display: flex; gap: 0.3rem; margin-bottom: 0.25rem; flex-shrink: 0;
+}
+.ml-confirm-btn {
+    flex: 1; padding: 0.35rem; border-radius: var(--r); border: none;
+    font-size: 0.78rem; font-weight: 600; font-family: var(--font);
+    cursor: pointer; transition: all 0.15s;
+}
+.ml-final { background: var(--orange); color: var(--bg); }
+.ml-final:hover { box-shadow: 0 0 12px rgba(255,184,108,0.3); }
+.ml-walk { background: var(--current); color: var(--fg); }
+.ml-walk:hover { background: var(--comment); }
+
+/* Game over overlay */
+.ml-over {
+    text-align: center; padding: 1rem; flex: 1; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+}
+.ml-over-prize { font-family: 'Bebas Neue', Impact, sans-serif; font-size: 2.5rem; color: var(--green); margin-bottom: 0.2rem; }
+.ml-over-msg { font-size: 0.85rem; color: var(--comment); margin-bottom: 0.6rem; }
+.ml-over-wrong { color: var(--red); }
+.ml-play-btn {
+    padding: 0.45rem 1.5rem; border-radius: var(--r); border: none;
+    background: linear-gradient(135deg, var(--purple), #9580ff);
+    color: #fff; cursor: pointer; font-size: 0.82rem; font-weight: 600;
+    font-family: var(--font);
+}
+
 @media (max-width: 480px) {
     .wrap { padding: 0.4rem 0.5rem; }
     .top h1 { font-size: 0.82rem; }
@@ -237,6 +336,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--fg); line-h
         <button class="tab on" data-g="wsi">Who Said It?</button>
         <button class="tab" data-g="qm">Quote Match</button>
         <button class="tab" data-g="qc">Quote Chain</button>
+        <button class="tab" data-g="ml">Millionaire</button>
     </div>
     <div id="ga"><div class="ld">Loading<span class="ld-d"></span></div></div>
     <div class="ft">The Watcher &mdash; therewasanidea.jcink.net</div>
@@ -406,11 +506,250 @@ function loadQC(){
     }).catch(function(){});
 }
 
-window.loadRound=function(){if(_gm==='wsi')loadWSI();else if(_gm==='qm')loadQM();else loadQC();};
-document.querySelectorAll('.tab').forEach(function(t){
-    t.addEventListener('click',function(){
-        document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});
-        t.classList.add('on');_gm=t.dataset.g;loadRound();
+/* ══════════════════════════════════════
+   MILLIONAIRE MODE
+   ══════════════════════════════════════ */
+var ML_PRIZES = ['$100','$200','$300','$500','$1,000','$2,000','$4,000','$8,000','$16,000','$32,000','$64,000','$125,000','$250,000','$500,000','$1,000,000'];
+var ML_SAFE = [4, 9]; // indices of safe havens ($1,000 and $32,000)
+var _mlLevel, _mlLifelines, _mlSelected, _mlData, _mlOver;
+
+function mlLadderHtml(current) {
+    var h = '';
+    for (var i = ML_PRIZES.length - 1; i >= 0; i--) {
+        var cls = 'ml-rung';
+        if (ML_SAFE.indexOf(i) >= 0) cls += ' safe';
+        if (i === current) cls += ' current';
+        else if (i < current) cls += ' done';
+        h += '<div class="' + cls + '"><span class="ml-num">' + (i+1) + '</span><span class="ml-amt">' + ML_PRIZES[i] + '</span></div>';
+    }
+    return h;
+}
+
+function mlLifelineHtml() {
+    var h = '';
+    var ll = [['5050','50:50'], ['ata','Ask Audience'], ['paf','Phone Friend']];
+    ll.forEach(function(l) {
+        var used = _mlLifelines[l[0]];
+        h += '<button class="ml-life' + (used ? ' used' : '') + '" data-ll="' + l[0] + '"' + (used ? ' disabled' : '') + '>' + l[1] + '</button>';
+    });
+    return h;
+}
+
+function mlStartGame() {
+    _mlLevel = 0; _mlLifelines = {5050: false, ata: false, paf: false}; _mlOver = false;
+    mlLoadQuestion();
+}
+
+function mlLoadQuestion() {
+    if (_mlOver) return;
+    $ga.innerHTML = '<div class="ld">Loading<span class="ld-d"></span></div>';
+    apiRetry('/api/game/millionaire?level=' + (_mlLevel + 1)).then(function(d) {
+        _mlData = d; _mlSelected = null; _lk = false;
+        var h = '<div class="gi">';
+        h += '<div class="ml-layout">';
+        // Main area
+        h += '<div class="ml-main">';
+        h += '<div class="ml-lifelines" id="ml-ll">' + mlLifelineHtml() + '</div>';
+        h += '<div class="qblock"><div class="qlabel">Question ' + (_mlLevel+1) + ' &mdash; ' + ML_PRIZES[_mlLevel] + '</div><div class="qtext">' + esc(d.quote) + '</div></div>';
+        h += '<div class="ml-opts" id="ml-opts">';
+        var letters = ['A','B','C','D'];
+        d.options.forEach(function(o, i) {
+            h += '<button class="ml-opt" data-id="' + esc(o.id) + '" data-i="' + i + '"><span class="ml-letter">' + letters[i] + ':</span> ' + esc(o.name) + '</button>';
+        });
+        h += '</div>';
+        h += '<div class="ml-confirm" id="ml-confirm" style="display:none">';
+        h += '<button class="ml-confirm-btn ml-final" id="ml-final-btn">Final Answer</button>';
+        h += '<button class="ml-confirm-btn ml-walk" id="ml-walk-btn">Walk Away (' + ((_mlLevel > 0) ? ML_PRIZES[_mlLevel-1] : '$0') + ')</button>';
+        h += '</div>';
+        h += '<div class="rf" id="ml-rf" style="display:none"><div class="ra"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div></div>';
+        h += '</div>';
+        // Ladder
+        h += '<div class="ml-ladder" id="ml-ladder">' + mlLadderHtml(_mlLevel) + '</div>';
+        h += '</div></div>';
+        $ga.innerHTML = h;
+
+        // Option click — select (not final yet)
+        $ga.querySelectorAll('.ml-opt').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                if (_lk) return;
+                _mlSelected = btn.dataset.id;
+                $ga.querySelectorAll('.ml-opt').forEach(function(x) { x.classList.remove('selected'); });
+                btn.classList.add('selected');
+                document.getElementById('ml-confirm').style.display = 'flex';
+            });
+        });
+
+        // Final Answer
+        document.getElementById('ml-final-btn').addEventListener('click', function() {
+            if (_lk || !_mlSelected) return;
+            _lk = true;
+            document.getElementById('ml-confirm').style.display = 'none';
+            // Dramatic pause
+            $ga.querySelectorAll('.ml-opt').forEach(function(x) { x.classList.add('locked'); });
+            setTimeout(function() { mlReveal(); }, 800);
+        });
+
+        // Walk away
+        document.getElementById('ml-walk-btn').addEventListener('click', function() {
+            if (_lk) return;
+            _mlOver = true;
+            var prize = _mlLevel > 0 ? ML_PRIZES[_mlLevel - 1] : '$0';
+            mlShowGameOver('You walked away with ' + prize + '.', prize, false);
+        });
+
+        // Lifeline clicks
+        $ga.querySelectorAll('.ml-life').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                if (_lk || btn.classList.contains('used')) return;
+                var ll = btn.dataset.ll;
+                _mlLifelines[ll] = true;
+                btn.classList.add('used');
+                btn.disabled = true;
+                if (ll === '5050') mlUse5050();
+                else if (ll === 'ata') mlUseATA();
+                else if (ll === 'paf') mlUsePAF();
+            });
+        });
+    }).catch(function() {});
+}
+
+function mlReveal() {
+    var aid = _mlData.answer_id;
+    var ok = _mlSelected === aid;
+    var rf = document.getElementById('ml-rf');
+    rf.style.display = 'block';
+    var rm = rf.querySelector('.rm'), rd = rf.querySelector('.rd');
+
+    $ga.querySelectorAll('.ml-opt').forEach(function(x) {
+        if (x.dataset.id === aid) x.classList.add('correct');
+        else if (x.dataset.id === _mlSelected && !ok) { x.classList.add('wrong'); x.classList.add('shake'); }
+    });
+
+    if (ok) {
+        rm.textContent = 'Correct!'; rm.className = 'rm show ok';
+        if (_mlData.source_thread_title && _mlData.source_thread_url) {
+            rd.innerHTML = 'from <a href="' + esc(_mlData.source_thread_url) + '" target="_blank">' + esc(_mlData.source_thread_title) + '</a>';
+            rd.className = 'rd show';
+        }
+        boom(20 + _mlLevel * 3);
+        _mlLevel++;
+        if (_mlLevel >= 15) {
+            _mlOver = true;
+            setTimeout(function() { mlShowGameOver('YOU WON THE MILLION!', '$1,000,000', false); boom(80); }, 1200);
+        } else {
+            setTimeout(function() { mlLoadQuestion(); }, 1500);
+        }
+    } else {
+        rm.textContent = 'Wrong!'; rm.className = 'rm show no';
+        var who = _mlData.options.find(function(o) { return o.id === aid; });
+        rd.textContent = 'It was ' + who.name; rd.className = 'rd show';
+        _mlOver = true;
+        var safePrize = '$0';
+        for (var i = ML_SAFE.length - 1; i >= 0; i--) {
+            if (_mlLevel > ML_SAFE[i]) { safePrize = ML_PRIZES[ML_SAFE[i]]; break; }
+        }
+        setTimeout(function() { mlShowGameOver('You leave with ' + safePrize + '.', safePrize, true); }, 2000);
+    }
+}
+
+function mlShowGameOver(msg, prize, wasWrong) {
+    var h = '<div class="gi"><div class="ml-over">';
+    h += '<div class="ml-over-prize' + (wasWrong ? ' ml-over-wrong' : '') + '">' + esc(prize) + '</div>';
+    h += '<div class="ml-over-msg">' + esc(msg) + '</div>';
+    h += '<button class="ml-play-btn" onclick="mlStartGame()">Play Again</button>';
+    h += '</div></div>';
+    $ga.innerHTML = h;
+}
+
+function mlUse5050() {
+    var aid = _mlData.answer_id;
+    var wrongs = [];
+    $ga.querySelectorAll('.ml-opt').forEach(function(x) {
+        if (x.dataset.id !== aid && !x.classList.contains('hidden-5050')) wrongs.push(x);
+    });
+    // Shuffle and hide 2
+    for (var i = wrongs.length - 1; i > 0; i--) { var j = Math.random() * (i+1) | 0; var t = wrongs[i]; wrongs[i] = wrongs[j]; wrongs[j] = t; }
+    wrongs.slice(0, 2).forEach(function(x) { x.classList.add('hidden-5050'); });
+    // Deselect if selected was hidden
+    if (_mlSelected) {
+        var sel = $ga.querySelector('.ml-opt.selected');
+        if (sel && sel.classList.contains('hidden-5050')) {
+            sel.classList.remove('selected'); _mlSelected = null;
+            document.getElementById('ml-confirm').style.display = 'none';
+        }
+    }
+}
+
+function mlUseATA() {
+    var aid = _mlData.answer_id;
+    var opts = $ga.querySelectorAll('.ml-opt');
+    // Generate fake percentages weighted toward correct
+    var pcts = [];
+    var correctWeight = 40 + Math.random() * 30; // 40-70%
+    var remaining = 100 - correctWeight;
+    opts.forEach(function(o, i) {
+        if (o.dataset.id === aid) pcts.push(correctWeight);
+        else if (o.classList.contains('hidden-5050')) pcts.push(0);
+        else pcts.push(0);
+    });
+    // Distribute remaining among visible wrong options
+    var wrongVisible = []; pcts.forEach(function(p, i) { if (p === 0 && !opts[i].classList.contains('hidden-5050')) wrongVisible.push(i); });
+    wrongVisible.forEach(function(idx, i) {
+        if (i === wrongVisible.length - 1) pcts[idx] = Math.round(remaining);
+        else { var chunk = Math.round(remaining * Math.random() * 0.7); pcts[idx] = chunk; remaining -= chunk; }
+    });
+
+    // Insert bar chart above options
+    var barH = '<div class="ml-ata" id="ml-ata">';
+    var letters = ['A','B','C','D'];
+    pcts.forEach(function(p, i) {
+        barH += '<div class="ml-ata-bar"><div class="ml-ata-fill" style="height:0%"></div><div class="ml-ata-pct">' + letters[i] + '</div></div>';
+    });
+    barH += '</div>';
+    var optsEl = document.getElementById('ml-opts');
+    optsEl.insertAdjacentHTML('beforebegin', barH);
+    // Animate bars
+    setTimeout(function() {
+        var fills = document.querySelectorAll('.ml-ata-fill');
+        fills.forEach(function(f, i) { f.style.height = Math.max(pcts[i], 2) + '%'; });
+        document.querySelectorAll('.ml-ata-pct').forEach(function(p, i) { p.textContent = Math.round(pcts[i]) + '%'; });
+    }, 50);
+}
+
+function mlUsePAF() {
+    var aid = _mlData.answer_id;
+    var who = _mlData.options.find(function(o) { return o.id === aid; });
+    // Friend is right 70% of the time at high levels, 90% at low
+    var confidence = _mlLevel < 5 ? 0.9 : (_mlLevel < 10 ? 0.75 : 0.6);
+    var friendRight = Math.random() < confidence;
+    var friendPick = who.name;
+    if (!friendRight) {
+        var wrongs = _mlData.options.filter(function(o) { return o.id !== aid; });
+        friendPick = wrongs[Math.random() * wrongs.length | 0].name;
+    }
+    var phrases = [
+        "I'm pretty sure it's " + friendPick + ".",
+        "I'd go with " + friendPick + ", definitely.",
+        "Hmm... I think " + friendPick + "?",
+        "Oh that's " + friendPick + " for sure!",
+        "I'm gonna say " + friendPick + "."
+    ];
+    var msg = phrases[Math.random() * phrases.length | 0];
+    var optsEl = document.getElementById('ml-opts');
+    optsEl.insertAdjacentHTML('beforebegin', '<div class="qblock" style="margin-bottom:0.25rem;border-color:var(--cyan)"><div class="qlabel" style="color:var(--cyan)">Phone a Friend</div><div class="qtext" style="font-size:0.8rem">' + esc(msg) + '</div></div>');
+}
+
+/* ── Round Router ── */
+window.loadRound = function() {
+    if (_gm === 'wsi') loadWSI();
+    else if (_gm === 'qm') loadQM();
+    else if (_gm === 'qc') loadQC();
+    else if (_gm === 'ml') mlStartGame();
+};
+document.querySelectorAll('.tab').forEach(function(t) {
+    t.addEventListener('click', function() {
+        document.querySelectorAll('.tab').forEach(function(x) { x.classList.remove('on'); });
+        t.classList.add('on'); _gm = t.dataset.g; loadRound();
     });
 });
 loadRound();

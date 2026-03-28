@@ -221,6 +221,85 @@ async def game_quote_chain(
     }
 
 
+@router.get("/api/game/millionaire")
+async def game_millionaire(
+    db: aiosqlite.Connection = Depends(get_db),
+    level: int = Query(1, ge=1, le=15),
+):
+    """Return a Millionaire-style question scaled to difficulty level.
+
+    Levels 1-5 (easy): wrong options from different groups.
+    Levels 6-10 (medium): some wrong options share the correct character's group.
+    Levels 11-15 (hard): all wrong options from the same group as correct answer.
+    """
+    characters = await _characters_with_quotes(db)
+    if len(characters) < 4:
+        return JSONResponse({"error": "Not enough characters with quotes"}, status_code=400)
+
+    quote = await _random_quote(db)
+    if not quote:
+        return JSONResponse({"error": "No quotes found"}, status_code=400)
+
+    correct = next((c for c in characters if c["id"] == quote["character_id"]), None)
+    if not correct:
+        return JSONResponse({"error": "Character not found"}, status_code=400)
+
+    correct_group = correct.get("group_name")
+    others = [c for c in characters if c["id"] != correct["id"]]
+
+    # Difficulty scaling: higher levels prefer same-group wrong options
+    same_group = [c for c in others if c.get("group_name") == correct_group] if correct_group else []
+    diff_group = [c for c in others if c.get("group_name") != correct_group or not correct_group]
+
+    wrong = []
+    if level >= 11 and len(same_group) >= 3:
+        # Hard: all same group
+        wrong = random.sample(same_group, 3)
+    elif level >= 6 and same_group and diff_group:
+        # Medium: 1-2 from same group
+        sg_count = min(2, len(same_group))
+        dg_count = 3 - sg_count
+        wrong = random.sample(same_group, sg_count)
+        if len(diff_group) >= dg_count:
+            wrong += random.sample(diff_group, dg_count)
+        else:
+            wrong += diff_group[:dg_count]
+    else:
+        # Easy: different groups preferred
+        if len(diff_group) >= 3:
+            wrong = random.sample(diff_group, 3)
+        else:
+            wrong = random.sample(others, min(3, len(others)))
+
+    # Pad if we don't have enough
+    if len(wrong) < 3:
+        remaining = [c for c in others if c not in wrong]
+        wrong += random.sample(remaining, min(3 - len(wrong), len(remaining)))
+
+    options = [correct] + wrong[:3]
+    random.shuffle(options)
+
+    thread_id = quote.get("source_thread_id")
+    thread_title = quote.get("source_thread_title")
+    thread_url = f"{settings.forum_base_url}/index.php?showtopic={thread_id}" if thread_id else None
+
+    return {
+        "quote": quote["quote_text"],
+        "source_thread_title": thread_title,
+        "source_thread_url": thread_url,
+        "options": [
+            {
+                "id": c["id"], "name": c["name"],
+                "group": c.get("group_name"),
+                "square_image": c.get("square_image") or c.get("rectangle_gif") or c.get("avatar_url"),
+            }
+            for c in options
+        ],
+        "answer_id": correct["id"],
+        "level": level,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Embeddable pages (DOHTML-ready, fully self-contained)
 # ---------------------------------------------------------------------------
@@ -269,3 +348,8 @@ async def games_quote_match(request: Request):
 @router.get("/games/quote-chain", response_class=HTMLResponse)
 async def games_quote_chain(request: Request):
     return templates.TemplateResponse("pages/game_quote_chain.html", {"request": request})
+
+
+@router.get("/games/millionaire", response_class=HTMLResponse)
+async def games_millionaire(request: Request):
+    return templates.TemplateResponse("pages/game_millionaire.html", {"request": request})
