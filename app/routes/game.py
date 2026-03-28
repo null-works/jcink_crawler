@@ -460,6 +460,10 @@ async def game_millionaire(
     else:
         pool = medium_types + hard_types + [None]
 
+    # Pick a random character name for "Phone a Friend" lifeline
+    friend = random.choice(all_chars)
+    friend_name = friend["name"]
+
     # Try generators until one works, fall back to quote question
     random.shuffle(pool)
     result = None
@@ -469,6 +473,7 @@ async def game_millionaire(
         try:
             result = gen()
             if result:
+                result["friend_name"] = friend_name
                 return result
         except Exception:
             continue
@@ -535,6 +540,7 @@ async def game_millionaire(
         ],
         "answer_id": correct["id"],
         "level": level,
+        "friend_name": friend_name,
     }
 
 

@@ -839,10 +839,7 @@ function mlUsePAF() {
         var wrongs = _mlData.options.filter(function(o) { return o.id !== aid; });
         friendPick = wrongs[Math.random() * wrongs.length | 0].text;
     }
-    // Pick a random character from the options as the "friend"
-    var allOpts = _mlData.options.slice();
-    var friend = allOpts[Math.random() * allOpts.length | 0];
-    var friendName = friend.text;
+    var friendName = _mlData.friend_name || 'Your friend';
     var phrases = [
         "I'm pretty sure it's " + friendPick + ".",
         "I'd go with " + friendPick + ", definitely.",
