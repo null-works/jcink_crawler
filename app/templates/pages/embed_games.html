@@ -832,7 +832,6 @@ function mlUseATA() {
 function mlUsePAF() {
     var aid = _mlData.answer_id;
     var who = _mlData.options.find(function(o) { return o.id === aid; });
-    // Friend is right 70% of the time at high levels, 90% at low
     var confidence = _mlLevel < 5 ? 0.9 : (_mlLevel < 10 ? 0.75 : 0.6);
     var friendRight = Math.random() < confidence;
     var friendPick = who.text;
@@ -840,14 +839,20 @@ function mlUsePAF() {
         var wrongs = _mlData.options.filter(function(o) { return o.id !== aid; });
         friendPick = wrongs[Math.random() * wrongs.length | 0].text;
     }
+    // Pick a random character from the options as the "friend"
+    var allOpts = _mlData.options.slice();
+    var friend = allOpts[Math.random() * allOpts.length | 0];
+    var friendName = friend.text;
     var phrases = [
         "I'm pretty sure it's " + friendPick + ".",
         "I'd go with " + friendPick + ", definitely.",
         "Hmm... I think " + friendPick + "?",
         "Oh that's " + friendPick + " for sure!",
-        "I'm gonna say " + friendPick + "."
+        "I'm gonna say " + friendPick + ".",
+        "Gotta be " + friendPick + ".",
+        "Easy. " + friendPick + "."
     ];
-    var msg = phrases[Math.random() * phrases.length | 0];
+    var msg = friendName + ' says: "' + phrases[Math.random() * phrases.length | 0] + '"';
     mlInjectQRight('ml-paf', '&#x1F4DE;', msg, 'var(--cyan)');
 }
 
