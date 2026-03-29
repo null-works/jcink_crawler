@@ -82,6 +82,8 @@ class ClaimsSummary(BaseModel):
     affiliation: str | None = None
     connections: str | None = None
     thread_counts: dict[str, int] = {}
+    approval_date: str | None = None
+    post_count: int = 0
 
 
 RELATIONSHIP_TYPES = ("ally", "enemy", "family", "romantic", "mentor", "other")

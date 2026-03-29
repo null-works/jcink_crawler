@@ -500,9 +500,9 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     excluded = settings.excluded_name_set
     excluded_ids = settings.excluded_id_set
 
-    # 1. All characters
+    # 1. All characters (include approval_date)
     cursor = await db.execute(
-        "SELECT id, name, profile_url, group_name, avatar_url FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
+        "SELECT id, name, profile_url, group_name, avatar_url, approval_date FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
     )
     char_rows = await cursor.fetchall()
 
@@ -545,6 +545,19 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     for row in count_rows:
         counts_map.setdefault(row["character_id"], {})[row["category"]] = row["count"]
 
+    # 3b. Batch-load total post counts
+    cursor = await db.execute(
+        f"""SELECT character_id, SUM(post_count) as total_posts
+            FROM character_threads
+            WHERE character_id IN ({placeholders_ids})
+            GROUP BY character_id""",
+        char_ids,
+    )
+    post_count_rows = await cursor.fetchall()
+    post_counts_map: dict[str, int] = {
+        row["character_id"]: row["total_posts"] or 0 for row in post_count_rows
+    }
+
     # 4. Assemble results
     results = []
     for row in char_rows:
@@ -580,6 +593,8 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
             affiliation=fields.get("affiliation"),
             connections=fields.get("connections"),
             thread_counts=thread_counts,
+            approval_date=char.get("approval_date"),
+            post_count=post_counts_map.get(cid, 0),
         ))
 
     return results
