@@ -117,10 +117,7 @@
                     style: {
                         'width': 55,
                         'height': 55,
-                        'background-color': dracula.bgLight,
-                        'background-image': 'data(avatar)',
-                        'background-fit': 'cover',
-                        'background-clip': 'node',
+                        'background-color': dracula.comment,
                         'border-width': 3,
                         'border-color': dracula.purple,
                         'label': 'data(label)',
@@ -130,6 +127,15 @@
                         'color': dracula.fg,
                         'text-outline-color': dracula.bg,
                         'text-outline-width': 2
+                    }
+                },
+                {
+                    selector: 'node[avatar]',
+                    style: {
+                        'background-image': 'data(avatar)',
+                        'background-fit': 'cover',
+                        'background-clip': 'node',
+                        'background-color': dracula.bgLight
                     }
                 },
                 {

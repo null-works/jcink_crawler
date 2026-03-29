@@ -1311,13 +1311,13 @@ async def get_relationship_graph(
 
     nodes = [
         {
-            "data": {
-                "id": c.id,
-                "label": c.name,
-                "avatar": c.avatar_url or "",
-                "group_name": c.group_name or "",
-                "affiliation": c.affiliation or "",
-            }
+            "data": dict(
+                id=c.id,
+                label=c.name,
+                group_name=c.group_name or "",
+                affiliation=c.affiliation or "",
+                **({"avatar": c.avatar_url} if c.avatar_url else {}),
+            )
         }
         for c in characters
         if c.id in connected_ids

@@ -65,14 +65,16 @@ function initAffiliationCluster() {
             classes: 'affiliation-node'
         });
         groups[aff].forEach(function(c) {
+            var img = c.square_image || c.avatar_url || '';
+            var nodeData = {
+                id: c.id,
+                label: c.name,
+                parent: 'aff-' + i,
+                groupName: c.group_name || ''
+            };
+            if (img) nodeData.avatar = img;
             elements.push({
-                data: {
-                    id: c.id,
-                    label: c.name,
-                    parent: 'aff-' + i,
-                    avatar: c.square_image || c.avatar_url || '',
-                    groupName: c.group_name || ''
-                },
+                data: nodeData,
                 classes: 'character-node'
             });
         });
@@ -104,10 +106,7 @@ function initAffiliationCluster() {
                 style: {
                     'width': 50,
                     'height': 50,
-                    'background-color': dracula.bgLight,
-                    'background-image': 'data(avatar)',
-                    'background-fit': 'cover',
-                    'background-clip': 'node',
+                    'background-color': dracula.comment,
                     'border-width': 3,
                     'border-color': dracula.purple,
                     'label': 'data(label)',
@@ -117,6 +116,15 @@ function initAffiliationCluster() {
                     'color': dracula.fg,
                     'text-outline-color': dracula.bg,
                     'text-outline-width': 2
+                }
+            },
+            {
+                selector: '.character-node[avatar]',
+                style: {
+                    'background-image': 'data(avatar)',
+                    'background-fit': 'cover',
+                    'background-clip': 'node',
+                    'background-color': dracula.bgLight
                 }
             }
         ],
