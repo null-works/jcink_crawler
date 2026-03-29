@@ -38,14 +38,16 @@
     {% include "partials/affiliation_view.html" %}
 </div>
 
-{# Load Cytoscape on the page so it's available for HTMX swaps #}
-<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
 <script>
 window._affGroups = {{ groups | tojson }};
 
 function initAffiliationCluster() {
     var el = document.getElementById('cy-affiliation');
-    if (!el || typeof cytoscape === 'undefined') return;
+    if (!el) return;
+    if (typeof cytoscape === 'undefined') {
+        el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);">Cytoscape.js failed to load. Check browser console.</div>';
+        return;
+    }
 
     var dracula = {
         green: '#50fa7b', cyan: '#8be9fd', pink: '#ff79c6', yellow: '#f1fa8c',
