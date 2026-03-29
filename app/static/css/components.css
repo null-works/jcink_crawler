@@ -1705,8 +1705,8 @@ select.form-input {
 }
 .affiliation-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 140px));
+    gap: 0.5rem;
 }
 .char-mini-card {
     display: flex;
@@ -1725,6 +1725,8 @@ select.form-input {
     flex-direction: column;
     text-align: center;
     padding: 0.75rem 0.5rem;
+    overflow: hidden;
+    max-width: 140px;
 }
 .char-mini-info {
     display: flex;
@@ -1741,9 +1743,11 @@ select.form-input {
 .char-mini-group {
     font-size: 0.7rem;
 }
-.avatar-aff {
-    width: 48px;
-    height: 48px;
+img.avatar-aff {
+    width: 56px;
+    height: 56px;
+    max-width: 56px;
+    max-height: 56px;
     border-radius: 50%;
     border: 2px solid var(--current);
     object-fit: cover;

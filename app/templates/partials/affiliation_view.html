@@ -9,8 +9,9 @@
         </div>
         {% for c in chars %}
         <a href="/character/{{ c.id }}" class="char-mini-card">
-            {% if c.avatar_url %}
-            <img src="{{ c.avatar_url }}" class="avatar-sm" alt="">
+            {% set thumb = c.square_image or c.avatar_url %}
+            {% if thumb %}
+            <img src="{{ thumb }}" class="avatar-sm" alt="">
             {% else %}
             <span class="avatar-placeholder" style="width: 32px; height: 32px; font-size: 0.8rem;">?</span>
             {% endif %}
@@ -157,17 +158,15 @@
     <div class="affiliation-grid">
         {% for c in chars %}
         <a href="/character/{{ c.id }}" class="char-mini-card char-mini-card-vertical">
-            {% if c.avatar_url %}
-            <img src="{{ c.avatar_url }}" class="avatar-aff" alt="">
+            {% set thumb = c.square_image or c.avatar_url %}
+            {% if thumb %}
+            <img src="{{ thumb }}" class="avatar-aff" alt="">
             {% else %}
             <span class="avatar-placeholder avatar-aff">?</span>
             {% endif %}
             <span class="char-mini-name">{{ c.name }}</span>
             {% if c.group_name %}
             <span class="char-mini-group text-comment">{{ c.group_name }}</span>
-            {% endif %}
-            {% if c.ongoing_count %}
-            <span class="count-badge green" style="font-size: 0.7rem;">{{ c.ongoing_count }} ongoing</span>
             {% endif %}
         </a>
         {% endfor %}
