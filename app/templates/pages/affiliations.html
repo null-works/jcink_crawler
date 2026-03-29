@@ -148,12 +148,14 @@ function initAffiliationCluster() {
 }
 
 // Init on page load if cluster view is active
-initAffiliationCluster();
+if (document.getElementById('cy-affiliation')) {
+    requestAnimationFrame(initAffiliationCluster);
+}
 
-// Re-init after HTMX swap
-document.body.addEventListener('htmx:afterSwap', function(e) {
-    if (e.detail.target && e.detail.target.id === 'affiliation-content') {
-        initAffiliationCluster();
+// Re-init after HTMX settles new content
+document.addEventListener('htmx:afterSettle', function(e) {
+    if (document.getElementById('cy-affiliation')) {
+        requestAnimationFrame(initAffiliationCluster);
     }
 });
 </script>
