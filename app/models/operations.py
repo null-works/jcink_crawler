@@ -929,10 +929,36 @@ async def seed_relationships_from_connections(db: aiosqlite.Connection) -> int:
     )
     conn_rows = await cursor.fetchall()
 
-    # Build name→id lookup (case-insensitive)
+    # Build name→id lookups (case-insensitive): exact name, first name, and contains
     cursor = await db.execute("SELECT id, name FROM characters")
     char_rows = await cursor.fetchall()
-    name_to_id: dict[str, str] = {row["name"].lower(): row["id"] for row in char_rows}
+    name_to_id: dict[str, str] = {}
+    first_name_to_id: dict[str, str] = {}
+    for row in char_rows:
+        full = row["name"].lower()
+        name_to_id[full] = row["id"]
+        first = full.split()[0] if " " in full else full
+        # Only use first-name lookup if it's unambiguous
+        if first not in first_name_to_id:
+            first_name_to_id[first] = row["id"]
+        else:
+            first_name_to_id[first] = None  # Ambiguous — multiple characters share first name
+
+    def _find_character(name: str) -> str | None:
+        key = name.lower().strip()
+        # Exact match
+        if key in name_to_id:
+            return name_to_id[key]
+        # First name match (only if unambiguous)
+        first = key.split()[0] if " " in key else key
+        candidate = first_name_to_id.get(first)
+        if candidate:
+            return candidate
+        # Substring match — find character whose name contains this string
+        for full_name, cid in name_to_id.items():
+            if key in full_name or full_name in key:
+                return cid
+        return None
 
     created = 0
     for row in conn_rows:
@@ -952,7 +978,7 @@ async def seed_relationships_from_connections(db: aiosqlite.Connection) -> int:
                 rel_type = "ally"
                 label = None
 
-            target_id = name_to_id.get(name.lower())
+            target_id = _find_character(name)
             if not target_id or target_id == source_id:
                 continue
 
