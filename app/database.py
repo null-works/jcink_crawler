@@ -174,6 +174,22 @@ async def init_db():
             )
         """)
 
+        # Relationships - character-to-character connections
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS relationships (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                character_a_id TEXT NOT NULL,
+                character_b_id TEXT NOT NULL,
+                relationship_type TEXT NOT NULL DEFAULT 'other',
+                label TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (character_a_id) REFERENCES characters(id) ON DELETE CASCADE,
+                FOREIGN KEY (character_b_id) REFERENCES characters(id) ON DELETE CASCADE,
+                UNIQUE(character_a_id, character_b_id)
+            )
+        """)
+
         # Indexes
         await db.execute("""
             CREATE INDEX IF NOT EXISTS idx_profile_fields_character
@@ -207,6 +223,14 @@ async def init_db():
         await db.execute("""
             CREATE INDEX IF NOT EXISTS idx_user_activity_last_seen
             ON user_activity(last_seen)
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_relationships_a
+            ON relationships(character_a_id)
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_relationships_b
+            ON relationships(character_b_id)
         """)
 
         # Add post_count to character_threads if it doesn't exist

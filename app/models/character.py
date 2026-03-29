@@ -84,6 +84,21 @@ class ClaimsSummary(BaseModel):
     thread_counts: dict[str, int] = {}
 
 
+RELATIONSHIP_TYPES = ("ally", "enemy", "family", "romantic", "mentor", "other")
+
+
+class Relationship(BaseModel):
+    id: int | None = None
+    character_a_id: str
+    character_b_id: str
+    relationship_type: str = "other"
+    label: str | None = None
+    character_a_name: str | None = None
+    character_b_name: str | None = None
+    character_a_avatar: str | None = None
+    character_b_avatar: str | None = None
+
+
 class CharacterProfile(BaseModel):
     character: CharacterSummary
     fields: dict[str, str] = {}

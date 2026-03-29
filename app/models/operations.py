@@ -10,6 +10,7 @@ Commit convention:
 
 import aiosqlite
 from app.config import settings
+import re
 from app.models.character import (
     CharacterSummary,
     ClaimsSummary,
@@ -17,6 +18,7 @@ from app.models.character import (
     ThreadCategory,
     CharacterThreads,
     Quote,
+    Relationship,
 )
 
 
@@ -794,3 +796,175 @@ async def get_recent_users(
         for row in rows
         if row["user_name"].lower() not in excluded and row["user_id"] not in excluded_ids
     ]
+
+
+# --- Relationship Operations ---
+
+_RELATIONSHIP_JOIN_SQL = """
+    SELECT r.*,
+           ca.name AS character_a_name, ca.avatar_url AS character_a_avatar,
+           cb.name AS character_b_name, cb.avatar_url AS character_b_avatar
+    FROM relationships r
+    JOIN characters ca ON ca.id = r.character_a_id
+    JOIN characters cb ON cb.id = r.character_b_id
+"""
+
+
+def _row_to_relationship(row) -> Relationship:
+    return Relationship(
+        id=row["id"],
+        character_a_id=row["character_a_id"],
+        character_b_id=row["character_b_id"],
+        relationship_type=row["relationship_type"],
+        label=row["label"],
+        character_a_name=row["character_a_name"],
+        character_b_name=row["character_b_name"],
+        character_a_avatar=row["character_a_avatar"],
+        character_b_avatar=row["character_b_avatar"],
+    )
+
+
+async def get_all_relationships(db: aiosqlite.Connection) -> list[Relationship]:
+    """Get all relationships with joined character info."""
+    cursor = await db.execute(
+        _RELATIONSHIP_JOIN_SQL + " ORDER BY r.created_at DESC"
+    )
+    return [_row_to_relationship(r) for r in await cursor.fetchall()]
+
+
+async def get_relationships_for_character(
+    db: aiosqlite.Connection, character_id: str
+) -> list[Relationship]:
+    """Get all relationships involving a specific character."""
+    cursor = await db.execute(
+        _RELATIONSHIP_JOIN_SQL
+        + " WHERE r.character_a_id = ? OR r.character_b_id = ? ORDER BY r.relationship_type",
+        (character_id, character_id),
+    )
+    return [_row_to_relationship(r) for r in await cursor.fetchall()]
+
+
+async def create_relationship(
+    db: aiosqlite.Connection,
+    char_a_id: str,
+    char_b_id: str,
+    rel_type: str = "other",
+    label: str | None = None,
+) -> int | None:
+    """Create a relationship between two characters. Auto-commits."""
+    # Normalize order so (A,B) and (B,A) are the same unique pair
+    a, b = sorted([char_a_id, char_b_id])
+    cursor = await db.execute(
+        """INSERT OR IGNORE INTO relationships
+           (character_a_id, character_b_id, relationship_type, label)
+           VALUES (?, ?, ?, ?)""",
+        (a, b, rel_type, label),
+    )
+    await db.commit()
+    return cursor.lastrowid if cursor.rowcount > 0 else None
+
+
+async def update_relationship(
+    db: aiosqlite.Connection,
+    relationship_id: int,
+    rel_type: str,
+    label: str | None = None,
+) -> bool:
+    """Update a relationship's type and label. Auto-commits."""
+    cursor = await db.execute(
+        """UPDATE relationships
+           SET relationship_type = ?, label = ?, updated_at = datetime('now')
+           WHERE id = ?""",
+        (rel_type, label, relationship_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def delete_relationship(db: aiosqlite.Connection, relationship_id: int) -> bool:
+    """Delete a relationship. Auto-commits."""
+    cursor = await db.execute(
+        "DELETE FROM relationships WHERE id = ?", (relationship_id,)
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+# Mapping from parenthetical hints to relationship types
+_HINT_MAP = {
+    "twin": "family", "sister": "family", "brother": "family",
+    "mother": "family", "father": "family", "parent": "family",
+    "daughter": "family", "son": "family", "sibling": "family",
+    "cousin": "family", "uncle": "family", "aunt": "family",
+    "family": "family", "adopted": "family",
+    "partner": "romantic", "wife": "romantic", "husband": "romantic",
+    "girlfriend": "romantic", "boyfriend": "romantic", "fiancé": "romantic",
+    "fiancee": "romantic", "lover": "romantic", "romantic": "romantic",
+    "ex": "romantic",
+    "mentor": "mentor", "mentee": "mentor", "student": "mentor",
+    "teacher": "mentor", "protégé": "mentor",
+    "rival": "enemy", "enemy": "enemy", "nemesis": "enemy",
+    "adversary": "enemy", "antagonist": "enemy",
+}
+
+
+def _guess_relationship_type(hint: str) -> str:
+    """Map a parenthetical hint to a relationship type."""
+    hint_lower = hint.lower().strip()
+    for keyword, rel_type in _HINT_MAP.items():
+        if keyword in hint_lower:
+            return rel_type
+    return "ally"
+
+
+async def seed_relationships_from_connections(db: aiosqlite.Connection) -> int:
+    """Parse 'connections' profile fields and create relationships. Auto-commits.
+
+    Returns the number of new relationships created.
+    """
+    # Get all connections fields
+    cursor = await db.execute(
+        "SELECT character_id, field_value FROM profile_fields "
+        "WHERE field_key = 'connections' AND field_value IS NOT NULL AND field_value != ''"
+    )
+    conn_rows = await cursor.fetchall()
+
+    # Build name→id lookup (case-insensitive)
+    cursor = await db.execute("SELECT id, name FROM characters")
+    char_rows = await cursor.fetchall()
+    name_to_id: dict[str, str] = {row["name"].lower(): row["id"] for row in char_rows}
+
+    created = 0
+    for row in conn_rows:
+        source_id = row["character_id"]
+        entries = [e.strip() for e in row["field_value"].split(",")]
+        for entry in entries:
+            if not entry:
+                continue
+            # Parse "Name (hint)" pattern
+            match = re.match(r"^(.+?)\s*\(([^)]+)\)\s*$", entry)
+            if match:
+                name, hint = match.group(1).strip(), match.group(2).strip()
+                rel_type = _guess_relationship_type(hint)
+                label = hint
+            else:
+                name = entry.strip()
+                rel_type = "ally"
+                label = None
+
+            target_id = name_to_id.get(name.lower())
+            if not target_id or target_id == source_id:
+                continue
+
+            a, b = sorted([source_id, target_id])
+            cur = await db.execute(
+                """INSERT OR IGNORE INTO relationships
+                   (character_a_id, character_b_id, relationship_type, label)
+                   VALUES (?, ?, ?, ?)""",
+                (a, b, rel_type, label),
+            )
+            if cur.rowcount > 0:
+                created += 1
+
+    await db.commit()
+    return created

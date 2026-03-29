@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Affiliations - The Watcher{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Affiliations</h1>
+    <p class="subtitle">Characters grouped by affiliation</p>
+</div>
+
+{# Stats #}
+<section class="stats-grid" style="margin-bottom: 1.5rem;">
+    <div class="stats-card purple">
+        <div class="stats-value">{{ groups|length }}</div>
+        <div class="stats-label">Affiliations</div>
+    </div>
+    <div class="stats-card green">
+        <div class="stats-value">{{ groups.values()|map('length')|sum }}</div>
+        <div class="stats-label">Characters</div>
+    </div>
+</section>
+
+{# View toggle #}
+<div class="filters-bar" style="margin-bottom: 1rem;">
+    <div class="chip-group">
+        <button class="chip{{ ' active' if view == 'cards' }}"
+                hx-get="/htmx/affiliations?view=cards"
+                hx-target="#affiliation-content"
+                hx-swap="innerHTML"
+                onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">Cards</button>
+        <button class="chip{{ ' active' if view == 'columns' }}"
+                hx-get="/htmx/affiliations?view=columns"
+                hx-target="#affiliation-content"
+                hx-swap="innerHTML"
+                onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">Columns</button>
+        <button class="chip{{ ' active' if view == 'cluster' }}"
+                hx-get="/htmx/affiliations?view=cluster"
+                hx-target="#affiliation-content"
+                hx-swap="innerHTML"
+                onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">Cluster Map</button>
+    </div>
+</div>
+
+<div id="affiliation-content">
+    {% include "partials/affiliation_view.html" %}
+</div>
+{% endblock %}

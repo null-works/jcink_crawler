@@ -1,0 +1,177 @@
+{% if view == 'columns' %}
+{# Column / Kanban board view #}
+<div class="column-board">
+    {% for aff_name, chars in groups.items() %}
+    <div class="column-lane">
+        <div class="column-lane-header">
+            <span>{{ aff_name }}</span>
+            <span class="count-badge purple">{{ chars|length }}</span>
+        </div>
+        {% for c in chars %}
+        <a href="/character/{{ c.id }}" class="char-mini-card">
+            {% if c.avatar_url %}
+            <img src="{{ c.avatar_url }}" class="avatar-sm" alt="">
+            {% else %}
+            <span class="avatar-placeholder" style="width: 32px; height: 32px; font-size: 0.8rem;">?</span>
+            {% endif %}
+            <div class="char-mini-info">
+                <span class="char-mini-name">{{ c.name }}</span>
+                {% if c.group_name %}
+                <span class="char-mini-group text-comment">{{ c.group_name }}</span>
+                {% endif %}
+            </div>
+            {% if c.ongoing_count %}
+            <span class="count-badge green" style="margin-left: auto;">{{ c.ongoing_count }}</span>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+
+{% elif view == 'cluster' %}
+{# Cluster map view — Cytoscape.js #}
+<div id="cy-affiliation" class="graph-container" style="height: 600px;"></div>
+<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+<script>
+(function() {
+    const dracula = {
+        green: '#50fa7b', cyan: '#8be9fd', pink: '#ff79c6', yellow: '#f1fa8c',
+        purple: '#bd93f9', orange: '#ffb86c', red: '#ff5555', comment: '#6272a4',
+        fg: '#f8f8f2', current: '#44475a', bg: '#282a36', bgLight: '#2d2f3d'
+    };
+    const palette = [dracula.purple, dracula.pink, dracula.cyan, dracula.green, dracula.orange, dracula.yellow, dracula.red];
+
+    const groups = {{ groups | tojson }};
+    const elements = [];
+    const affNames = Object.keys(groups);
+
+    // Create compound parent nodes for each affiliation
+    affNames.forEach((aff, i) => {
+        elements.push({
+            data: { id: 'aff-' + i, label: aff + ' (' + groups[aff].length + ')' },
+            classes: 'affiliation-node'
+        });
+        groups[aff].forEach(c => {
+            elements.push({
+                data: {
+                    id: c.id,
+                    label: c.name,
+                    parent: 'aff-' + i,
+                    avatar: c.avatar_url || '',
+                    groupName: c.group_name || ''
+                },
+                classes: 'character-node'
+            });
+        });
+    });
+
+    const cy = cytoscape({
+        container: document.getElementById('cy-affiliation'),
+        elements: elements,
+        style: [
+            {
+                selector: '.affiliation-node',
+                style: {
+                    'background-color': dracula.current,
+                    'background-opacity': 0.5,
+                    'border-color': dracula.comment,
+                    'border-width': 2,
+                    'label': 'data(label)',
+                    'text-valign': 'top',
+                    'text-halign': 'center',
+                    'font-size': '14px',
+                    'color': dracula.fg,
+                    'font-weight': 600,
+                    'padding': '30px',
+                    'shape': 'roundrectangle'
+                }
+            },
+            {
+                selector: '.character-node',
+                style: {
+                    'width': 50,
+                    'height': 50,
+                    'background-color': dracula.bgLight,
+                    'background-image': 'data(avatar)',
+                    'background-fit': 'cover',
+                    'background-clip': 'node',
+                    'border-width': 3,
+                    'border-color': dracula.purple,
+                    'label': 'data(label)',
+                    'text-valign': 'bottom',
+                    'text-margin-y': 8,
+                    'font-size': '10px',
+                    'color': dracula.fg,
+                    'text-outline-color': dracula.bg,
+                    'text-outline-width': 2
+                }
+            }
+        ],
+        layout: {
+            name: 'cose',
+            padding: 40,
+            nodeRepulsion: 8000,
+            idealEdgeLength: 100,
+            gravity: 0.25,
+            nestingFactor: 1.2,
+            animate: true,
+            animationDuration: 500
+        },
+        minZoom: 0.3,
+        maxZoom: 3
+    });
+
+    // Color nodes by affiliation
+    affNames.forEach((aff, i) => {
+        const color = palette[i % palette.length];
+        groups[aff].forEach(c => {
+            cy.getElementById(c.id).style('border-color', color);
+        });
+        cy.getElementById('aff-' + i).style('border-color', color);
+    });
+
+    // Click to navigate
+    cy.on('tap', '.character-node', function(e) {
+        window.location.href = '/character/' + e.target.id();
+    });
+    cy.on('mouseover', '.character-node', function(e) {
+        e.target.style('border-width', 5);
+        document.body.style.cursor = 'pointer';
+    });
+    cy.on('mouseout', '.character-node', function(e) {
+        e.target.style('border-width', 3);
+        document.body.style.cursor = 'default';
+    });
+})();
+</script>
+
+{% else %}
+{# Cards view (default) #}
+{% for aff_name, chars in groups.items() %}
+<div class="affiliation-group">
+    <div class="affiliation-header">
+        <h2>{{ aff_name }}</h2>
+        <span class="count-badge purple">{{ chars|length }}</span>
+    </div>
+    <div class="affiliation-grid">
+        {% for c in chars %}
+        <a href="/character/{{ c.id }}" class="char-mini-card char-mini-card-vertical">
+            {% if c.avatar_url %}
+            <img src="{{ c.avatar_url }}" class="avatar-aff" alt="">
+            {% else %}
+            <span class="avatar-placeholder avatar-aff">?</span>
+            {% endif %}
+            <span class="char-mini-name">{{ c.name }}</span>
+            {% if c.group_name %}
+            <span class="char-mini-group text-comment">{{ c.group_name }}</span>
+            {% endif %}
+            {% if c.ongoing_count %}
+            <span class="count-badge green" style="font-size: 0.7rem;">{{ c.ongoing_count }} ongoing</span>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+{% endif %}

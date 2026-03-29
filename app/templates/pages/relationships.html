@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+{% block title %}Relationships - The Watcher{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Character Relationships</h1>
+    <p class="subtitle">{{ relationships|length }} connections between characters</p>
+</div>
+
+<div class="relationship-page">
+    {# Left panel: Graph #}
+    <div class="graph-container" id="cy-relationships"></div>
+
+    {# Right panel: Sidebar #}
+    <div class="relationship-sidebar">
+        {# Add relationship form #}
+        <div class="card">
+            <h3 class="card-title" style="margin-bottom: 0.75rem;">Add Relationship</h3>
+            <form class="rel-form"
+                  hx-post="/htmx/relationship/add"
+                  hx-target="#relationship-list-container"
+                  hx-swap="innerHTML">
+                <select name="character_a" required>
+                    <option value="">Select character...</option>
+                    {% for c in characters %}
+                    <option value="{{ c.id }}">{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="character_b" required>
+                    <option value="">Select character...</option>
+                    {% for c in characters %}
+                    <option value="{{ c.id }}">{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="relationship_type" id="rel-type-select"
+                        onchange="document.getElementById('rel-custom-label').style.display = this.value === 'other' ? 'block' : 'none'">
+                    {% for rt in relationship_types %}
+                    <option value="{{ rt }}">{{ rt|capitalize }}</option>
+                    {% endfor %}
+                </select>
+                <input type="text" name="label" id="rel-custom-label" placeholder="Custom label (optional)"
+                       style="display: none;">
+                <button type="submit" class="btn btn-purple btn-sm">Add</button>
+            </form>
+            <div id="add-result" class="result" style="margin-top: 0.5rem;"></div>
+        </div>
+
+        {# Seed from connections #}
+        <div class="card">
+            <h3 class="card-title" style="margin-bottom: 0.5rem;">Import</h3>
+            <p class="text-comment" style="font-size: 0.8rem; margin-bottom: 0.5rem;">
+                Parse existing "connections" profile fields and auto-create relationships.
+            </p>
+            <button class="btn btn-green btn-sm"
+                    hx-post="/htmx/relationships/seed"
+                    hx-target="#seed-result"
+                    hx-swap="innerHTML"
+                    hx-confirm="This will parse all connections fields and create relationships. Existing relationships are not duplicated. Proceed?">
+                Import from Connections
+            </button>
+            <div id="seed-result" class="result" style="margin-top: 0.5rem;"></div>
+        </div>
+
+        {# Node info (shown when clicking a node) #}
+        <div class="card" id="node-info" style="display: none;">
+            <h3 class="card-title" style="margin-bottom: 0.5rem;" id="node-info-name"></h3>
+            <div id="node-info-connections"></div>
+            <a id="node-info-link" href="#" class="btn btn-ghost btn-sm" style="margin-top: 0.5rem;">View Profile</a>
+        </div>
+
+        {# Relationship list #}
+        <div class="card">
+            <h3 class="card-title" style="margin-bottom: 0.75rem;">All Relationships ({{ relationships|length }})</h3>
+            <div id="relationship-list-container">
+                {% include "partials/relationship_list.html" %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+<script>
+(function() {
+    const dracula = {
+        green: '#50fa7b', cyan: '#8be9fd', pink: '#ff79c6', yellow: '#f1fa8c',
+        purple: '#bd93f9', orange: '#ffb86c', red: '#ff5555', comment: '#6272a4',
+        fg: '#f8f8f2', current: '#44475a', bg: '#282a36', bgLight: '#2d2f3d'
+    };
+    const edgeColors = {
+        ally: dracula.green,
+        enemy: dracula.red,
+        family: dracula.cyan,
+        romantic: dracula.pink,
+        mentor: dracula.orange,
+        other: dracula.comment
+    };
+
+    const focusId = {{ (focus or '')|tojson }};
+
+    async function loadGraph() {
+        const resp = await fetch('/api/relationships');
+        const data = await resp.json();
+
+        if (!data.nodes.length) {
+            document.getElementById('cy-relationships').innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--comment);">No relationships to display. Add some or import from connections.</div>';
+            return;
+        }
+
+        const cy = cytoscape({
+            container: document.getElementById('cy-relationships'),
+            elements: {
+                nodes: data.nodes,
+                edges: data.edges
+            },
+            style: [
+                {
+                    selector: 'node',
+                    style: {
+                        'width': 55,
+                        'height': 55,
+                        'background-color': dracula.bgLight,
+                        'background-image': 'data(avatar)',
+                        'background-fit': 'cover',
+                        'background-clip': 'node',
+                        'border-width': 3,
+                        'border-color': dracula.purple,
+                        'label': 'data(label)',
+                        'text-valign': 'bottom',
+                        'text-margin-y': 8,
+                        'font-size': '11px',
+                        'color': dracula.fg,
+                        'text-outline-color': dracula.bg,
+                        'text-outline-width': 2
+                    }
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'width': 2,
+                        'line-color': dracula.comment,
+                        'curve-style': 'bezier',
+                        'label': 'data(label)',
+                        'font-size': '9px',
+                        'color': dracula.comment,
+                        'text-rotation': 'autorotate',
+                        'text-outline-color': dracula.bg,
+                        'text-outline-width': 2,
+                        'text-opacity': 0
+                    }
+                },
+                {
+                    selector: 'edge:hover',
+                    style: {
+                        'text-opacity': 1,
+                        'width': 3
+                    }
+                },
+                {
+                    selector: '.highlighted',
+                    style: {
+                        'border-width': 5,
+                        'border-color': dracula.yellow,
+                        'z-index': 10
+                    }
+                },
+                {
+                    selector: '.faded',
+                    style: {
+                        'opacity': 0.2
+                    }
+                },
+                {
+                    selector: 'edge.highlighted',
+                    style: {
+                        'width': 3,
+                        'text-opacity': 1,
+                        'opacity': 1,
+                        'z-index': 10
+                    }
+                }
+            ],
+            layout: {
+                name: 'cose',
+                padding: 50,
+                nodeRepulsion: 10000,
+                idealEdgeLength: 150,
+                gravity: 0.3,
+                animate: true,
+                animationDuration: 600,
+                randomize: true
+            },
+            minZoom: 0.2,
+            maxZoom: 3
+        });
+
+        // Color edges by relationship type
+        cy.edges().forEach(edge => {
+            const type = edge.data('relationship_type');
+            edge.style('line-color', edgeColors[type] || dracula.comment);
+            edge.style('target-arrow-color', edgeColors[type] || dracula.comment);
+        });
+
+        // Click node to highlight connections
+        cy.on('tap', 'node', function(e) {
+            const node = e.target;
+            const connectedEdges = node.connectedEdges();
+            const connectedNodes = connectedEdges.connectedNodes();
+
+            // Reset all
+            cy.elements().removeClass('highlighted faded');
+
+            // Fade everything, highlight connected
+            cy.elements().addClass('faded');
+            node.removeClass('faded').addClass('highlighted');
+            connectedNodes.removeClass('faded').addClass('highlighted');
+            connectedEdges.removeClass('faded').addClass('highlighted');
+
+            // Show node info
+            const info = document.getElementById('node-info');
+            info.style.display = 'block';
+            document.getElementById('node-info-name').textContent = node.data('label');
+            document.getElementById('node-info-link').href = '/character/' + node.id();
+
+            const conns = connectedEdges.map(edge => {
+                const otherId = edge.source().id() === node.id() ? edge.target().id() : edge.source().id();
+                const otherNode = cy.getElementById(otherId);
+                return '<div style="font-size:0.85rem;margin:0.25rem 0;">'
+                    + '<span class="rel-badge rel-badge-' + edge.data('relationship_type') + '">'
+                    + (edge.data('label') || edge.data('relationship_type')) + '</span> '
+                    + '<a href="/character/' + otherId + '" style="color:var(--fg);">' + otherNode.data('label') + '</a>'
+                    + '</div>';
+            });
+            document.getElementById('node-info-connections').innerHTML = conns.join('');
+        });
+
+        // Click background to deselect
+        cy.on('tap', function(e) {
+            if (e.target === cy) {
+                cy.elements().removeClass('highlighted faded');
+                document.getElementById('node-info').style.display = 'none';
+            }
+        });
+
+        // Cursor changes
+        cy.on('mouseover', 'node', () => { document.body.style.cursor = 'pointer'; });
+        cy.on('mouseout', 'node', () => { document.body.style.cursor = 'default'; });
+
+        // Auto-focus on a specific character if requested
+        if (focusId) {
+            const focusNode = cy.getElementById(focusId);
+            if (focusNode.length) {
+                cy.once('layoutstop', () => {
+                    focusNode.emit('tap');
+                    cy.animate({ center: { eles: focusNode }, zoom: 1.5, duration: 500 });
+                });
+            }
+        }
+    }
+
+    // Load after Cytoscape.js is ready
+    if (typeof cytoscape !== 'undefined') {
+        loadGraph();
+    } else {
+        window.addEventListener('load', loadGraph);
+    }
+
+    // Reload graph after HTMX mutations
+    document.body.addEventListener('htmx:afterSettle', function(e) {
+        if (e.detail.target && e.detail.target.id === 'relationship-list-container') {
+            loadGraph();
+        }
+    });
+})();
+</script>
+{% endblock %}

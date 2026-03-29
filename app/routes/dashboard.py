@@ -21,6 +21,7 @@ from app.models import (
     search_threads_global,
     search_quotes_global,
     get_unique_affiliations,
+    get_characters_by_affiliation,
     get_unique_groups,
     get_unique_players,
     search_players,
@@ -28,6 +29,13 @@ from app.models import (
     get_dashboard_stats,
     get_dashboard_chart_data,
     get_activity_check_data,
+    get_all_relationships,
+    get_relationships_for_character,
+    create_relationship,
+    update_relationship,
+    delete_relationship,
+    seed_relationships_from_connections,
+    RELATIONSHIP_TYPES,
 )
 from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden, set_approval_date, set_approval_dates
 from app.services import crawl_character_threads, crawl_character_profile, register_character
@@ -257,6 +265,7 @@ async def character_detail_page(
     approval_date = row["approval_date"] if row else None
 
     total_quotes = len(quotes)
+    character_relationships = await get_relationships_for_character(db, character_id)
     return templates.TemplateResponse(request, "pages/character_detail.html", {
         "character": char,
         "fields": fields,
@@ -272,6 +281,7 @@ async def character_detail_page(
         "category": None,
         "is_hidden": is_hidden,
         "approval_date": approval_date,
+        "character_relationships": character_relationships,
     })
 
 
@@ -546,6 +556,41 @@ async def admin_page(
         "browser_sync_url": browser_sync_url,
         "banner_album_url": banner_album_url,
         "banner_count": banner_count,
+    })
+
+
+@router.get("/affiliations", response_class=HTMLResponse)
+async def affiliations_page(
+    request: Request,
+    view: str = "cards",
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    groups = await get_characters_by_affiliation(db)
+    stats = await get_dashboard_stats(db)
+    activity = get_activity()
+
+    return templates.TemplateResponse(request, "pages/affiliations.html", {
+        "groups": groups,
+        "stats": stats,
+        "activity": activity,
+        "view": view,
+    })
+
+
+@router.get("/htmx/affiliations", response_class=HTMLResponse)
+async def htmx_affiliations(
+    request: Request,
+    view: str = "cards",
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    groups = await get_characters_by_affiliation(db)
+    return templates.TemplateResponse(request, "partials/affiliation_view.html", {
+        "groups": groups,
+        "view": view,
     })
 
 
@@ -1220,3 +1265,165 @@ async def htmx_nuke_rebuild(
 
     background_tasks.add_task(_crawl_all_characters)
     return HTMLResponse('<span class="text-green">Everything nuked. Re-crawling all user IDs from scratch.</span>')
+
+
+# --- Relationships ---
+
+@router.get("/relationships", response_class=HTMLResponse)
+async def relationships_page(
+    request: Request,
+    focus: str | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    characters = await get_all_characters(db)
+    relationships = await get_all_relationships(db)
+    stats = await get_dashboard_stats(db)
+    activity = get_activity()
+
+    return templates.TemplateResponse(request, "pages/relationships.html", {
+        "characters": characters,
+        "relationships": relationships,
+        "relationship_types": RELATIONSHIP_TYPES,
+        "stats": stats,
+        "activity": activity,
+        "focus": focus,
+    })
+
+
+@router.get("/api/relationships")
+async def get_relationship_graph(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Returns graph data as JSON for Cytoscape.js."""
+    characters = await get_all_characters(db)
+    relationships = await get_all_relationships(db)
+
+    # Build set of characters that have at least one relationship
+    connected_ids = set()
+    for r in relationships:
+        connected_ids.add(r.character_a_id)
+        connected_ids.add(r.character_b_id)
+
+    nodes = [
+        {
+            "data": {
+                "id": c.id,
+                "label": c.name,
+                "avatar": c.avatar_url or "",
+                "group_name": c.group_name or "",
+                "affiliation": c.affiliation or "",
+            }
+        }
+        for c in characters
+        if c.id in connected_ids
+    ]
+    edges = [
+        {
+            "data": {
+                "id": f"e{r.id}",
+                "source": r.character_a_id,
+                "target": r.character_b_id,
+                "relationship_type": r.relationship_type,
+                "label": r.label or r.relationship_type,
+            }
+        }
+        for r in relationships
+    ]
+    return {"nodes": nodes, "edges": edges}
+
+
+@router.post("/htmx/relationship/add", response_class=HTMLResponse)
+async def htmx_relationship_add(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    char_a = form.get("character_a", "").strip()
+    char_b = form.get("character_b", "").strip()
+    rel_type = form.get("relationship_type", "other").strip()
+    label = form.get("label", "").strip() or None
+
+    if not char_a or not char_b:
+        return HTMLResponse('<span class="text-red">Both characters are required</span>')
+    if char_a == char_b:
+        return HTMLResponse('<span class="text-red">Cannot create a relationship with the same character</span>')
+
+    result = await create_relationship(db, char_a, char_b, rel_type, label)
+    if result is None:
+        return HTMLResponse('<span class="text-yellow">Relationship already exists</span>')
+
+    relationships = await get_all_relationships(db)
+    return templates.TemplateResponse(request, "partials/relationship_list.html", {
+        "relationships": relationships,
+    })
+
+
+@router.post("/htmx/relationship/{rel_id}/edit", response_class=HTMLResponse)
+async def htmx_relationship_edit(
+    request: Request,
+    rel_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    rel_type = form.get("relationship_type", "other").strip()
+    label = form.get("label", "").strip() or None
+
+    await update_relationship(db, rel_id, rel_type, label)
+    relationships = await get_all_relationships(db)
+    return templates.TemplateResponse(request, "partials/relationship_list.html", {
+        "relationships": relationships,
+    })
+
+
+@router.post("/htmx/relationship/{rel_id}/delete", response_class=HTMLResponse)
+async def htmx_relationship_delete(
+    request: Request,
+    rel_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    await delete_relationship(db, rel_id)
+    relationships = await get_all_relationships(db)
+    return templates.TemplateResponse(request, "partials/relationship_list.html", {
+        "relationships": relationships,
+    })
+
+
+@router.post("/htmx/relationships/seed", response_class=HTMLResponse)
+async def htmx_relationships_seed(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    count = await seed_relationships_from_connections(db)
+    return HTMLResponse(f'<span class="text-green">Imported {count} new relationship{"s" if count != 1 else ""} from connections data</span>')
+
+
+@router.get("/htmx/relationship-list", response_class=HTMLResponse)
+async def htmx_relationship_list(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    relationships = await get_all_relationships(db)
+    return templates.TemplateResponse(request, "partials/relationship_list.html", {
+        "relationships": relationships,
+    })

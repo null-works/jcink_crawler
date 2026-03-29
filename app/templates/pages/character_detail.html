@@ -258,4 +258,32 @@
     </div>
 </div>
 
+{# Relationships section #}
+{% if character_relationships %}
+<div class="card">
+    <div class="section-header">
+        <h3 class="card-title">Relationships ({{ character_relationships|length }})</h3>
+        <a href="/relationships?focus={{ character.id }}" class="btn btn-ghost btn-sm">View in Graph</a>
+    </div>
+    <div class="relationship-list" style="margin-top: 0.5rem;">
+        {% for r in character_relationships %}
+        {% set other_id = r.character_b_id if r.character_a_id == character.id else r.character_a_id %}
+        {% set other_name = r.character_b_name if r.character_a_id == character.id else r.character_a_name %}
+        {% set other_avatar = r.character_b_avatar if r.character_a_id == character.id else r.character_a_avatar %}
+        <a href="/character/{{ other_id }}" class="relationship-item" style="text-decoration: none;">
+            {% if other_avatar %}
+            <img src="{{ other_avatar }}" class="avatar-sm" alt="">
+            {% else %}
+            <span class="avatar-placeholder" style="width: 32px; height: 32px; font-size: 0.8rem;">?</span>
+            {% endif %}
+            <div class="rel-names">
+                <span style="color: var(--fg);">{{ other_name }}</span>
+            </div>
+            <span class="rel-badge rel-badge-{{ r.relationship_type }}">{{ r.label or r.relationship_type }}</span>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}
