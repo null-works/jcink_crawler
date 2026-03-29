@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import aiosqlite
@@ -546,6 +546,19 @@ async def admin_page(
         "banner_album_url": banner_album_url,
         "banner_count": banner_count,
     })
+
+
+@router.get("/export/players", response_class=PlainTextResponse)
+async def export_players(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    players = await get_unique_players(db)
+    return PlainTextResponse("\n".join(players))
 
 
 @router.get("/players", response_class=HTMLResponse)
