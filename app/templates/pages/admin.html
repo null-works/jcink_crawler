@@ -438,9 +438,19 @@ function startBrowserSync() {
 <div class="card" style="margin-top: 1.5rem;">
     <h3 class="card-title" style="margin-bottom: 0.5rem;">Export</h3>
     <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
-        Quick data exports as plain text.
+        Quick data exports as plain text. Opens in a new tab.
     </p>
-    <a href="/export/players" target="_blank" class="btn btn-green">Export Player List</a>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+        <a href="/export/players" target="_blank" class="btn btn-green">Players</a>
+        <a href="/export/characters" target="_blank" class="btn btn-green">Characters</a>
+        <a href="/export/face-claims" target="_blank" class="btn btn-green">Face Claims</a>
+        <a href="/export/species" target="_blank" class="btn btn-green">Species</a>
+        <a href="/export/affiliations" target="_blank" class="btn btn-green">Affiliations</a>
+        <a href="/export/threads" target="_blank" class="btn btn-green">Threads</a>
+    </div>
+    <p class="text-comment" style="font-size: 0.75rem; margin-top: 0.5rem;">
+        Face Claims, Species, and Threads export as tab-separated (character &rarr; value).
+    </p>
 </div>
 
 {# Purge & re-crawl #}

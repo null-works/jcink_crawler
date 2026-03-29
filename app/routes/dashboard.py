@@ -13,6 +13,7 @@ from app.config import settings, APP_VERSION, APP_BUILD_TIME
 from app.models import (
     get_character,
     get_all_characters,
+    get_all_claims,
     get_character_threads,
     get_profile_fields,
     get_all_quotes,
@@ -559,6 +560,74 @@ async def export_players(
 
     players = await get_unique_players(db)
     return PlainTextResponse("\n".join(players))
+
+
+@router.get("/export/characters", response_class=PlainTextResponse)
+async def export_characters(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    characters = await get_all_characters(db)
+    return PlainTextResponse("\n".join(c.name for c in characters))
+
+
+@router.get("/export/face-claims", response_class=PlainTextResponse)
+async def export_face_claims(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    claims = await get_all_claims(db)
+    lines = [f"{c.name}\t{c.face_claim}" for c in claims if c.face_claim]
+    return PlainTextResponse("\n".join(lines))
+
+
+@router.get("/export/species", response_class=PlainTextResponse)
+async def export_species(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    claims = await get_all_claims(db)
+    lines = [f"{c.name}\t{c.species}" for c in claims if c.species]
+    return PlainTextResponse("\n".join(lines))
+
+
+@router.get("/export/affiliations", response_class=PlainTextResponse)
+async def export_affiliations(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    affiliations = await get_unique_affiliations(db)
+    return PlainTextResponse("\n".join(affiliations))
+
+
+@router.get("/export/threads", response_class=PlainTextResponse)
+async def export_threads(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    threads, _ = await search_threads_global(db, per_page=10000)
+    lines = [f"{t['char_name']}\t{t['title']}\t{t['char_category']}" for t in threads]
+    return PlainTextResponse("\n".join(lines))
 
 
 @router.get("/players", response_class=HTMLResponse)
