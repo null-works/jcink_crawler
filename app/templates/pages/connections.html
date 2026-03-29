@@ -85,8 +85,9 @@
 
         {# Relationship list #}
         <div class="card">
-            <h3 class="card-title" style="margin-bottom:0.75rem;">Relationships ({{ relationships|length }})</h3>
-            <div id="relationship-list-container">
+            <h3 class="card-title" style="margin-bottom:0.75rem;">Relationships (<span id="rel-count">{{ relationships|length }}</span>)</h3>
+            <div id="relationship-list-container"
+                 hx-on::after-settle="document.getElementById('rel-count').textContent = this.querySelectorAll('.relationship-item').length">
                 {% include "partials/relationship_list.html" %}
             </div>
         </div>
@@ -251,6 +252,20 @@
             container.innerHTML = '';
         }
 
+        // Compute cluster centers — arrange affiliations in a grid pattern
+        var affList = fullData.affiliations.concat(
+            affColorMap['Unaffiliated'] ? ['Unaffiliated'] : []
+        );
+        var cols = Math.ceil(Math.sqrt(affList.length));
+        var spacing = 250;
+        var clusterCenters = {};
+        affList.forEach(function(aff, i) {
+            clusterCenters[aff] = {
+                x: (i % cols - cols / 2) * spacing,
+                y: (Math.floor(i / cols) - Math.floor(affList.length / cols) / 2) * spacing
+            };
+        });
+
         graphInstance = ForceGraph()(container)
             .backgroundColor(dracula.bgDarker)
             .graphData({ nodes: nodes, links: links })
@@ -265,7 +280,6 @@
             .linkWidth(1.5)
             .linkDirectionalParticles(0)
             .onNodeClick(function(node) {
-                // Highlight
                 fullData.nodes.forEach(function(n) { n._highlighted = false; });
                 node._highlighted = true;
                 showNodeInfo(node);
@@ -277,10 +291,21 @@
                 fullData.nodes.forEach(function(n) { n._highlighted = false; });
                 document.getElementById('node-info').style.display = 'none';
             })
-            .warmupTicks(80)
-            .cooldownTicks(200)
+            .warmupTicks(120)
+            .cooldownTicks(300)
             .width(container.offsetWidth)
             .height(container.offsetHeight);
+
+        // Add clustering forces — pull nodes toward their affiliation center
+        graphInstance.d3Force('charge').strength(-120);
+        if (typeof d3 !== 'undefined' && d3.forceX) {
+            graphInstance.d3Force('clusterX',
+                d3.forceX(function(n) { var c = clusterCenters[n.affiliation]; return c ? c.x : 0; }).strength(0.3)
+            );
+            graphInstance.d3Force('clusterY',
+                d3.forceY(function(n) { var c = clusterCenters[n.affiliation]; return c ? c.y : 0; }).strength(0.3)
+            );
+        }
 
         // Focus on specific character if requested
         if (focusId) {
