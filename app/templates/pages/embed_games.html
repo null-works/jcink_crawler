@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Well Do You Really Know Our Cast?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+:root {
+    --bg: #282a36; --bg-darker: #1e1f29; --bg-light: #2d2f3d;
+    --current: #44475a; --fg: #f8f8f2; --comment: #6272a4;
+    --cyan: #8be9fd; --green: #50fa7b; --orange: #ffb86c;
+    --pink: #ff79c6; --purple: #bd93f9; --red: #ff5555; --yellow: #f1fa8c;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+    --r: 8px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: var(--font); background: var(--bg); color: var(--fg); line-height: 1.4; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-darker); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--comment); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--purple); }
+* { scrollbar-width: thin; scrollbar-color: var(--comment) var(--bg-darker); }
+#confetti-canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1000; }
+
+/* ── Full-height flex layout — fills entire frame ── */
+.wrap {
+    height: 100vh; display: flex; flex-direction: column;
+    padding: 0.4rem 0.5rem;
+}
+
+/* ── Back button ── */
+.back-btn {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    padding: 0.2rem 0.5rem; border-radius: var(--r); border: 1px solid var(--current);
+    background: var(--bg-light); color: var(--comment); cursor: pointer;
+    font-size: 0.65rem; font-weight: 600; font-family: var(--font);
+    transition: all 0.15s; flex-shrink: 0; margin-bottom: 0.3rem; align-self: flex-start;
+}
+.back-btn:hover { border-color: var(--purple); color: var(--fg); }
+.score-bar {
+    display: flex; gap: 0.6rem; font-size: 0.68rem; color: var(--comment);
+}
+.sb-item b { margin-left: 0.1rem; }
+
+/* ── Game area: flex-fills remaining space ── */
+#ga { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.gi { flex: 1; display: flex; flex-direction: column; min-height: 0; animation: fi 0.2s ease-out; }
+@keyframes fi { from { opacity: 0; } to { opacity: 1; } }
+
+/* ── Quote block ── */
+.qblock {
+    background: var(--bg-darker); border: 1px solid var(--current);
+    border-radius: var(--r); padding: 0.5rem 0.75rem; margin-bottom: 0.3rem;
+    position: relative; flex-shrink: 0;
+}
+.qblock::before {
+    content: '\201C'; position: absolute; top: -0.25rem; left: 0.3rem;
+    font-size: 2rem; color: var(--purple); opacity: 0.15; line-height: 1;
+    font-family: Georgia, serif;
+}
+.qlabel {
+    font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--comment); margin-bottom: 0.1rem; font-weight: 700;
+}
+.qtext {
+    font-size: 1rem; font-style: italic; color: var(--fg);
+    padding-left: 0.9rem; line-height: 1.4;
+}
+
+/* ════════════════════════════════════════════
+   METRO TILES — 2x2 grid, big images, bold names
+   ════════════════════════════════════════════ */
+.tiles {
+    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+    gap: 0.3rem; flex: 1; min-height: 0; overflow: hidden;
+}
+.tile {
+    position: relative; border-radius: var(--r); overflow: hidden;
+    cursor: pointer; border: 2px solid transparent;
+    min-height: 0;
+    transition: border-color 0.18s, box-shadow 0.18s, opacity 0.18s;
+    background: var(--bg-light); min-height: 0;
+}
+.tile-img {
+    width: 100%; height: 100%; object-fit: cover; object-position: center top;
+    display: block; filter: brightness(0.7);
+    transition: filter 0.2s, transform 0.3s;
+    position: absolute; inset: 0;
+}
+.tile:hover .tile-img { filter: brightness(0.85); transform: scale(1.03); }
+.tile-name {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 0.4rem 0.5rem; font-family: 'Bebas Neue', Impact, sans-serif;
+    font-size: 1.65rem; font-weight: 400; letter-spacing: 0.04em;
+    color: #fff;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.95), 0 4px 12px rgba(0,0,0,0.7), 0 0 30px rgba(0,0,0,0.5);
+    background: linear-gradient(transparent 20%, rgba(0,0,0,0.75));
+    line-height: 1.05;
+}
+/* No-image fallback */
+.tile-noimg {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; background: var(--current);
+}
+.tile-noimg .tile-initial {
+    font-size: 2.5rem; font-weight: 700; color: var(--comment); opacity: 0.5;
+}
+/* States */
+.tile.correct { border-color: var(--green); box-shadow: 0 0 20px rgba(80,250,123,0.3); }
+.tile.correct .tile-img { filter: brightness(1); }
+.tile.correct .tile-name { background: linear-gradient(transparent, rgba(80,250,123,0.35)); }
+.tile.wrong { border-color: var(--red); opacity: 0.5; }
+.tile.wrong .tile-img { filter: brightness(0.4) grayscale(0.5); }
+.tile.locked { cursor: default; pointer-events: none; }
+.tile.shake { animation: shake 0.35s ease; }
+@keyframes shake { 20%{transform:translateX(-5px)} 40%{transform:translateX(5px)} 60%{transform:translateX(-3px)} 80%{transform:translateX(3px)} }
+
+/* ── Quote Chain: 2x2 quote card grid ── */
+.qc-anchor {
+    display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.3rem; flex-shrink: 0;
+}
+.qc-anchor-img {
+    width: 50px; height: 50px; border-radius: 50%; object-fit: cover;
+    flex-shrink: 0;
+}
+.qc-anchor-info { flex: 1; min-width: 0; }
+.qc-anchor-name {
+    font-family: 'Bebas Neue', Impact, sans-serif; font-size: 1.1rem;
+    letter-spacing: 0.03em; line-height: 1.1;
+}
+.qc-anchor-quote {
+    font-size: 0.8rem; font-style: italic; color: var(--comment);
+    line-height: 1.35; margin-top: 0.1rem;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.qc-grid {
+    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+    gap: 0.3rem; flex: 1; min-height: 0; margin-bottom: 0.3rem; overflow: hidden;
+}
+.qc-card {
+    background: var(--bg-darker); border: 1px solid var(--current);
+    border-radius: var(--r); padding: 0.5rem 0.6rem; cursor: pointer;
+    font-size: 0.78rem; font-style: italic; color: var(--fg);
+    line-height: 1.35; transition: all 0.18s; overflow: hidden;
+    display: flex; align-items: center;
+}
+.qc-card:hover:not(.locked) { border-color: var(--purple); background: rgba(68,71,90,0.5); }
+.qc-card.correct { border-color: var(--green); background: rgba(80,250,123,0.1); color: var(--green); box-shadow: 0 0 12px rgba(80,250,123,0.2); }
+.qc-card.wrong { border-color: var(--red); background: rgba(255,85,85,0.08); color: var(--red); opacity: 0.6; }
+.qc-card.locked { cursor: default; pointer-events: none; }
+.qc-card.shake { animation: shake 0.35s ease; }
+.qc-footer { flex-shrink: 0; }
+
+/* ── Character picker ── */
+.char-picker {
+    display: grid; grid-template-columns: repeat(auto-fill, 90px);
+    grid-auto-rows: 90px; justify-content: center;
+    gap: 0.4rem; flex: 1; min-height: 0; overflow-y: auto; margin-bottom: 0.3rem;
+    padding: 0.2rem;
+}
+.char-pick {
+    position: relative; width: 90px; height: 90px;
+    border-radius: var(--r); overflow: hidden;
+    cursor: pointer; border: 2px solid transparent;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    background: var(--bg-darker);
+}
+.char-pick:hover { border-color: var(--purple); box-shadow: 0 0 10px rgba(189,147,249,0.2); }
+.char-pick img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; display: block;
+    filter: brightness(0.75); transition: filter 0.15s;
+}
+.char-pick:hover img { filter: brightness(1); }
+.char-pick .cp-name {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    font-size: 0.6rem; font-weight: 600; text-align: center;
+    padding: 0.5rem 0.2rem 0.2rem;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.6);
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.char-pick .cp-noimg {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; background: var(--current);
+    font-size: 1.4rem; font-weight: 700; color: var(--comment);
+}
+
+/* ── Binary buttons (Quote Match) ── */
+.bins { display: flex; gap: 0.4rem; margin-bottom: 0.35rem; flex-shrink: 0; }
+.bin {
+    flex: 1; padding: 0.7rem; border-radius: var(--r);
+    border: 1px solid var(--current); background: var(--bg-light);
+    color: var(--fg); cursor: pointer; font-size: 1.1rem; font-weight: 700;
+    font-family: var(--font); text-align: center; transition: all 0.15s;
+}
+.bin:hover:not(.locked) { border-color: var(--purple); }
+.bin.correct { border-color: var(--green); background: rgba(80,250,123,0.1); color: var(--green); }
+.bin.wrong { border-color: var(--red); background: rgba(255,85,85,0.08); color: var(--red); }
+.bin.locked { cursor: default; pointer-events: none; }
+
+/* ── Quote Match: side-by-side quote panels ── */
+.qpair { display: flex; gap: 0.35rem; margin-bottom: 0.35rem; flex: 1; min-height: 0; }
+.qpanel {
+    flex: 1; background: var(--bg-darker); border: 1px solid var(--current);
+    border-radius: var(--r); padding: 0.55rem 0.65rem; display: flex;
+    flex-direction: column; position: relative; overflow: hidden;
+}
+.qpanel::before {
+    content: '\201C'; position: absolute; top: -0.2rem; left: 0.3rem;
+    font-size: 2rem; color: var(--purple); opacity: 0.12; line-height: 1;
+    font-family: Georgia, serif;
+}
+.qpanel .qlabel { font-size: 0.65rem; }
+.qpanel .qtext { font-size: 1.05rem; padding-left: 0.8rem; flex: 1; }
+.qpanel-reveal {
+    display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem;
+    padding-top: 0.35rem; border-top: 1px solid var(--current);
+    animation: fi 0.3s ease-out;
+}
+.qpanel-reveal img {
+    width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--green); flex-shrink: 0;
+}
+.qpanel-reveal .reveal-name {
+    font-size: 0.75rem; font-weight: 600; color: var(--green);
+}
+.vs {
+    align-self: center; font-size: 0.6rem; color: var(--comment);
+    text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700;
+    flex-shrink: 0; margin: 0 -0.1rem;
+}
+
+/* ── Quote Match buttons + next ── */
+.qm-footer { flex-shrink: 0; }
+.qm-next {
+    display: block; width: 100%; padding: 0.5rem; border-radius: var(--r); border: none;
+    background: linear-gradient(135deg, var(--purple), #9580ff);
+    color: #fff; cursor: pointer; font-size: 0.82rem; font-weight: 600;
+    font-family: var(--font); box-shadow: 0 2px 6px rgba(189,147,249,0.2);
+}
+.qm-next:hover { box-shadow: 0 0 16px rgba(189,147,249,0.3); }
+
+/* ── Result footer (pushed to bottom) ── */
+.rf { margin-top: auto; flex-shrink: 0; }
+.ra { text-align: center; height: 3rem; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 0.2rem; overflow: hidden; }
+.rm { font-size: 0.85rem; font-weight: 700; opacity: 0; transition: opacity 0.2s; }
+.rm.show { opacity: 1; } .rm.ok { color: var(--green); } .rm.no { color: var(--red); }
+.rd { font-size: 0.7rem; color: var(--comment); margin-top: 0.05rem; opacity: 0; transition: opacity 0.2s 0.05s; }
+.rd.show { opacity: 1; }
+.rd a { color: var(--cyan); text-decoration: none; }
+.rd a:hover { text-decoration: underline; }
+.sk { font-size: 0.68rem; font-weight: 600; color: var(--orange); margin-top: 0.05rem; opacity: 0; transition: opacity 0.2s 0.1s; }
+.sk.show { opacity: 1; animation: bIn 0.3s ease-out; }
+@keyframes bIn { 0%{transform:scale(0.5);opacity:0} 70%{transform:scale(1.1)} 100%{transform:scale(1);opacity:1} }
+.nb {
+    display: block; width: 100%; padding: 0.4rem; border-radius: var(--r); border: none;
+    background: linear-gradient(135deg, var(--purple), #9580ff);
+    color: #fff; cursor: pointer; font-size: 0.82rem; font-weight: 600; font-family: var(--font);
+    box-shadow: 0 2px 6px rgba(189,147,249,0.2);
+    visibility: hidden;
+}
+.nb.show { visibility: visible; }
+.nb:hover { box-shadow: 0 0 16px rgba(189,147,249,0.3); }
+
+/* ── Loading / Error ── */
+.ld { text-align: center; color: var(--comment); padding: 2rem; font-size: 0.85rem; margin: auto 0; }
+.ld-d::after { content:''; animation: dots 1.2s steps(4,end) infinite; }
+@keyframes dots { 0%,20%{content:''} 40%{content:'.'} 60%{content:'..'} 80%,100%{content:'...'} }
+.er { text-align: center; padding: 1.5rem; color: var(--comment); margin: auto 0; }
+.er .ei { font-size: 1.5rem; margin-bottom: 0.3rem; }
+.er .et { font-size: 0.8rem; }
+.er .rb { display: inline-block; margin-top: 0.5rem; padding: 0.35rem 1rem; border-radius: var(--r); border: 1px solid var(--current); background: var(--bg-light); color: var(--fg); cursor: pointer; font-size: 0.78rem; font-family: var(--font); }
+
+/* ── Footer ── */
+.ft { text-align: center; font-size: 0.55rem; color: var(--comment); opacity: 0.35; flex-shrink: 0; line-height: 1; }
+
+/* ════════════════════════════════════════════
+   MILLIONAIRE MODE
+   ════════════════════════════════════════════ */
+.ml-layout { flex: 1; display: flex; gap: 0.35rem; min-height: 0; }
+.ml-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.ml-ladder {
+    width: 110px; flex-shrink: 0; display: flex; flex-direction: column;
+    justify-content: center;
+    background: var(--bg-darker); border: 1px solid var(--current);
+    border-radius: var(--r); padding: 0.25rem; overflow-y: auto;
+}
+.ml-rung {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.2rem 0.35rem; font-size: 0.65rem; border-radius: 3px;
+    color: var(--comment); transition: all 0.2s;
+}
+.ml-rung .ml-num { opacity: 0.5; }
+.ml-rung .ml-amt { font-weight: 700; }
+.ml-rung.safe .ml-amt { color: var(--orange); }
+.ml-rung.current {
+    background: var(--purple); color: var(--bg);
+    box-shadow: 0 0 8px rgba(189,147,249,0.4);
+    animation: mlRungPulse 2s ease-in-out infinite;
+}
+@keyframes mlRungPulse { 0%,100%{box-shadow:0 0 4px rgba(189,147,249,0.2)} 50%{box-shadow:0 0 12px rgba(189,147,249,0.5)} }
+.ml-rung.current .ml-num, .ml-rung.current .ml-amt { color: var(--bg); opacity: 1; }
+.ml-rung.done { color: var(--green); opacity: 0.5; }
+.ml-rung.done .ml-amt { color: var(--green); }
+.ml-rung.won .ml-amt { color: var(--green); }
+
+/* Lifelines */
+.ml-lifelines {
+    display: flex; gap: 0.3rem; margin-bottom: 0.3rem; flex-shrink: 0;
+}
+.ml-life {
+    flex: 1; padding: 0.4rem; border-radius: var(--r);
+    border: 1px solid var(--current); background: var(--bg-light);
+    color: var(--fg); cursor: pointer; font-size: 0.75rem; font-weight: 600;
+    font-family: var(--font); text-align: center; transition: all 0.15s;
+}
+.ml-life:hover:not(.used):not([disabled]) { border-color: var(--purple); }
+.ml-life.used { opacity: 0.25; cursor: default; text-decoration: line-through; pointer-events: none; }
+.ml-life[disabled] { opacity: 0.4; cursor: default; }
+
+/* Millionaire option buttons */
+.ml-opts {
+    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+    gap: 0.3rem; flex: 1; min-height: 0; margin-bottom: 0.3rem;
+}
+.ml-opt {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 0.75rem; border-radius: 20px;
+    border: 1px solid var(--current); background: linear-gradient(135deg, var(--bg-light), var(--bg-darker));
+    color: var(--fg); cursor: pointer; font-size: 0.95rem; font-weight: 500;
+    font-family: var(--font); transition: all 0.2s; text-align: left;
+    opacity: 0; transform: translateY(8px);
+    animation: mlOptIn 0.3s ease-out forwards;
+}
+.ml-opt:nth-child(1) { animation-delay: 0.05s; }
+.ml-opt:nth-child(2) { animation-delay: 0.12s; }
+.ml-opt:nth-child(3) { animation-delay: 0.19s; }
+.ml-opt:nth-child(4) { animation-delay: 0.26s; }
+@keyframes mlOptIn { to { opacity: 1; transform: translateY(0); } }
+.ml-opt .ml-letter {
+    font-weight: 700; color: var(--orange); font-size: 0.9rem; flex-shrink: 0;
+}
+.ml-opt:hover:not(.locked) { border-color: var(--orange); background: linear-gradient(135deg, rgba(255,184,108,0.12), rgba(255,184,108,0.04)); }
+.ml-opt.selected {
+    border-color: var(--orange); background: linear-gradient(135deg, rgba(255,184,108,0.18), rgba(255,184,108,0.06));
+    box-shadow: 0 0 10px rgba(255,184,108,0.25);
+    opacity: 1; transform: none; animation: none;
+}
+.ml-opt.correct {
+    border-color: var(--green); background: linear-gradient(135deg, rgba(80,250,123,0.2), rgba(80,250,123,0.06));
+    color: var(--green); opacity: 1; transform: none; animation: mlCorrectGlow 0.6s ease-out;
+}
+@keyframes mlCorrectGlow {
+    0% { box-shadow: 0 0 0 rgba(80,250,123,0); }
+    50% { box-shadow: 0 0 20px rgba(80,250,123,0.4); }
+    100% { box-shadow: 0 0 8px rgba(80,250,123,0.15); }
+}
+.ml-opt.correct .ml-letter { color: var(--green); }
+.ml-opt.wrong { border-color: var(--red); background: linear-gradient(135deg, rgba(255,85,85,0.15), rgba(255,85,85,0.04)); color: var(--red); opacity: 1; transform: none; animation: none; }
+.ml-opt.wrong .ml-letter { color: var(--red); }
+.ml-opt.locked { cursor: default; pointer-events: none; }
+.ml-opt.hidden-5050 { opacity: 0.08; pointer-events: none; animation: none; transform: none; }
+.ml-opt.ml-thinking { animation: mlBlink 0.5s ease-in-out infinite alternate; }
+@keyframes mlBlink { from { opacity: 0.5; } to { opacity: 1; } }
+
+/* Ask the audience bars */
+.ml-ata { display: flex; gap: 0.3rem; margin-bottom: 0.3rem; flex-shrink: 0; height: 60px; }
+.ml-ata-bar {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    font-size: 0.6rem; color: var(--comment);
+}
+.ml-ata-track {
+    flex: 1; width: 100%; display: flex; align-items: flex-end;
+}
+.ml-ata-fill {
+    width: 100%; border-radius: 3px 3px 0 0; background: var(--purple);
+    transition: height 0.6s ease-out; height: 2px;
+}
+.ml-ata-pct { margin-top: 0.15rem; font-weight: 700; font-size: 0.65rem; }
+
+/* Confirm bar — always takes space, visibility toggled */
+.ml-confirm {
+    display: flex; gap: 0.3rem; margin-bottom: 0.25rem; flex-shrink: 0;
+    visibility: hidden;
+}
+.ml-confirm-btn {
+    flex: 1; padding: 0.5rem; border-radius: var(--r); border: none;
+    font-size: 0.88rem; font-weight: 600; font-family: var(--font);
+    cursor: pointer; transition: all 0.15s;
+}
+.ml-final { background: var(--orange); color: var(--bg); }
+.ml-final:hover { box-shadow: 0 0 12px rgba(255,184,108,0.3); }
+.ml-walk { background: var(--current); color: var(--fg); }
+.ml-walk:hover { background: var(--comment); }
+
+/* Game over overlay */
+.ml-over {
+    text-align: center; padding: 1rem; flex: 1; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    animation: fi 0.4s ease-out;
+}
+.ml-over-img {
+    width: 80px; height: 80px; border-radius: 50%; object-fit: cover;
+    border: 3px solid var(--green); margin-bottom: 0.5rem;
+    box-shadow: 0 0 20px rgba(80,250,123,0.3);
+}
+.ml-over-img.lost { border-color: var(--red); box-shadow: 0 0 20px rgba(255,85,85,0.2); }
+.ml-over-prize {
+    font-family: 'Bebas Neue', Impact, sans-serif; font-size: 2.8rem;
+    color: var(--green); margin-bottom: 0.15rem;
+    animation: mlPrizeIn 0.6s ease-out;
+}
+@keyframes mlPrizeIn {
+    0% { transform: scale(0.3); opacity: 0; }
+    60% { transform: scale(1.1); }
+    100% { transform: scale(1); opacity: 1; }
+}
+.ml-over-prize.lost { color: var(--red); }
+.ml-over-msg { font-size: 0.85rem; color: var(--comment); margin-bottom: 0.6rem; }
+.ml-play-btn {
+    padding: 0.45rem 1.5rem; border-radius: var(--r); border: none;
+    background: linear-gradient(135deg, var(--purple), #9580ff);
+    color: #fff; cursor: pointer; font-size: 0.82rem; font-weight: 600;
+    font-family: var(--font); transition: box-shadow 0.15s;
+}
+.ml-play-btn:hover { box-shadow: 0 0 16px rgba(189,147,249,0.3); }
+
+/* ════════════════════════════════════════════
+   DASHBOARD — game picker landing
+   ════════════════════════════════════════════ */
+.dash { flex: 1; display: flex; flex-direction: column; animation: fi 0.3s ease-out; }
+.dash-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem;
+    flex: 1; min-height: 0;
+}
+
+/* Each card is a self-contained stacking context */
+.dash-card {
+    position: relative; border-radius: var(--r); overflow: hidden;
+    border: 1px solid var(--current); cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    isolation: isolate; /* forces new stacking context */
+}
+.dash-card:hover { border-color: var(--purple); box-shadow: 0 0 15px rgba(189,147,249,0.15); }
+
+/* Layer 1: background images (crossfade pair) */
+.dash-card-bg {
+    position: absolute; inset: 0; background-size: cover; background-position: center;
+    transition: opacity 3s ease-in-out, transform 8s ease-in-out, filter 3s ease-in-out;
+    opacity: 0; transform: scale(1.05);
+    filter: saturate(1.2);
+}
+.dash-card-bg.active {
+    opacity: 1; transform: scale(1);
+    filter: saturate(1);
+}
+
+/* Layer 2: dark gradient scrim over the image */
+.dash-card-scrim {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.8) 100%);
+}
+
+/* Layer 3: all text content */
+.dash-card-content {
+    position: relative; display: flex; flex-direction: column;
+    justify-content: flex-end; height: 100%; padding: 0.6rem 0.7rem;
+    text-shadow: 0 2px 8px rgba(0,0,0,1), 0 0 20px rgba(0,0,0,0.6);
+}
+.dash-card-stats {
+    position: absolute; top: 0.5rem; right: 0.6rem; text-align: right;
+}
+.dash-card-stats .stat-big {
+    font-family: 'Bebas Neue', Impact, sans-serif; font-size: 2.5rem;
+    line-height: 1; letter-spacing: 0.02em; color: #fff;
+}
+.dash-card-stats .stat-label {
+    font-size: 0.7rem; color: #fff; text-transform: uppercase;
+    letter-spacing: 0.05em; font-weight: 600;
+}
+.dash-card-stats .stat-row {
+    display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.15rem;
+}
+.dash-card-stats .stat-mini {
+    font-size: 0.75rem; color: #fff; text-align: center; font-weight: 600;
+}
+.dash-card-stats .stat-mini b { display: block; font-size: 1.15rem; }
+
+.dash-card-icon { font-size: 1.8rem; margin-bottom: 0.2rem; }
+.dash-card-title {
+    font-family: 'Bebas Neue', Impact, sans-serif;
+    font-size: 2.2rem; letter-spacing: 0.04em; line-height: 1;
+    margin-bottom: 0.2rem; color: #fff;
+}
+.dash-card-desc { font-size: 0.85rem; color: #fff; line-height: 1.35; }
+.dash-card:nth-child(1) .dash-card-title { color: var(--purple); }
+.dash-card:nth-child(2) .dash-card-title { color: var(--cyan); }
+.dash-card:nth-child(3) .dash-card-title { color: var(--green); }
+.dash-card:nth-child(4) .dash-card-title { color: var(--orange); }
+
+/* ── Glass bottom sheet overlay ── */
+.bottom-sheet {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 900;
+    transform: translateY(100%);
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    pointer-events: none;
+}
+.bottom-sheet.open {
+    transform: translateY(0);
+    pointer-events: auto;
+}
+.bottom-sheet-glass {
+    background: rgba(30, 31, 41, 0.85);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px 16px 0 0;
+    padding: 0.8rem 1rem 1rem;
+    box-shadow: 0 -4px 30px rgba(0,0,0,0.5);
+}
+.bs-handle {
+    width: 36px; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.2); margin: 0 auto 0.6rem;
+}
+.bs-result {
+    text-align: center; margin-bottom: 0.5rem;
+}
+.bs-result .bs-verdict {
+    font-size: 1.2rem; font-weight: 700;
+    font-family: 'Bebas Neue', Impact, sans-serif;
+    letter-spacing: 0.03em;
+}
+.bs-result .bs-verdict.ok { color: var(--green); }
+.bs-result .bs-verdict.no { color: var(--red); }
+.bs-result .bs-detail {
+    font-size: 0.8rem; color: var(--comment); margin-top: 0.15rem;
+}
+.bs-result .bs-detail a { color: var(--cyan); text-decoration: none; }
+.bs-result .bs-detail a:hover { text-decoration: underline; }
+.bs-result .bs-streak {
+    font-size: 0.75rem; font-weight: 600; color: var(--orange); margin-top: 0.15rem;
+}
+.bs-next {
+    display: block; width: 100%; padding: 0.55rem; border-radius: var(--r); border: none;
+    background: linear-gradient(135deg, var(--purple), #9580ff);
+    color: #fff; cursor: pointer; font-size: 0.9rem; font-weight: 600;
+    font-family: var(--font); box-shadow: 0 2px 8px rgba(189,147,249,0.25);
+}
+.bs-next:hover { box-shadow: 0 0 16px rgba(189,147,249,0.35); }
+
+/* Reveal image after answer */
+.ml-reveal-img {
+    width: 36px; height: 36px; border-radius: 50%; object-fit: cover;
+    border: 2px solid var(--green); margin-right: 0.4rem; vertical-align: middle;
+    animation: mlRevealPop 0.3s ease-out;
+}
+@keyframes mlRevealPop { 0%{transform:scale(0);opacity:0} 100%{transform:scale(1);opacity:1} }
+
+@media (max-width: 480px) {
+    .wrap { padding: 0.3rem 0.4rem; }
+    .tile-name { font-size: 1rem; }
+}
+</style>
+</head>
+<body>
+<canvas id="confetti-canvas"></canvas>
+<div class="wrap">
+    <div id="ga"><div class="ld">Loading<span class="ld-d"></span></div></div>
+</div>
+<div class="bottom-sheet" id="bsheet">
+    <div class="bottom-sheet-glass">
+        <div class="bs-handle"></div>
+        <div class="bs-result" id="bs-result"></div>
+        <button class="bs-next" id="bs-next">Next Round</button>
+    </div>
+</div>
+<script>
+(function(){
+'use strict';
+var API = window.QUOTE_GAME_API || 'https://imagehut.ch:8943';
+var _lk=false,_gm='dash',_streak=0,_sessionScore=0;
+var $ga=document.getElementById('ga');
+
+// ── Per-game localStorage scores ──
+var STORE_KEY='watcher_game_scores';
+function loadScores(){try{return JSON.parse(localStorage.getItem(STORE_KEY))||{};}catch(e){return {};}}
+function saveScores(s){try{localStorage.setItem(STORE_KEY,JSON.stringify(s));}catch(e){}}
+function getScore(gm){var s=loadScores();return s[gm]||{score:0,best:0,streak:0,played:0};}
+function setScore(gm,data){var s=loadScores();s[gm]=data;saveScores(s);}
+function recordResult(gm,correct){
+    var s=getScore(gm);
+    if(correct){s.score++;_streak++;_sessionScore++;} else {_streak=0;}
+    s.streak=_streak;
+    if(_streak>s.best)s.best=_streak;
+    s.played++;
+    setScore(gm,s);
+    return s;
+}
+
+// Confetti
+var cv=document.getElementById('confetti-canvas'),cx=cv.getContext('2d'),pp=[],
+cols=['#bd93f9','#50fa7b','#ff79c6','#8be9fd','#ffb86c','#f1fa8c'],af=null;
+function rsz(){cv.width=innerWidth;cv.height=innerHeight;} addEventListener('resize',rsz); rsz();
+function boom(n){for(var i=0;i<n;i++)pp.push({x:Math.random()*cv.width,y:-10-Math.random()*30,w:3+Math.random()*5,h:2+Math.random()*4,c:cols[Math.random()*cols.length|0],vx:(Math.random()-0.5)*3,vy:1.5+Math.random()*2.5,r:Math.random()*360,rv:(Math.random()-0.5)*10,l:1});if(!af)tck();}
+function tck(){cx.clearRect(0,0,cv.width,cv.height);for(var i=pp.length;i--;){var p=pp[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.04;p.r+=p.rv;p.l-=0.009;if(p.l<=0||p.y>cv.height+20){pp.splice(i,1);continue;}cx.save();cx.translate(p.x,p.y);cx.rotate(p.r*Math.PI/180);cx.globalAlpha=Math.min(p.l,1);cx.fillStyle=p.c;cx.fillRect(-p.w/2,-p.h/2,p.w,p.h);cx.restore();}af=pp.length?requestAnimationFrame(tck):null;}
+
+// Helpers
+function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+var _retries=0, MAX_RETRY=3, RETRY_DELAY=1500;
+function api(p){
+    return fetch(API+p).then(function(r){
+        if(r.status===400)return r.json().then(function(d){var e=new Error(d.error||'Bad request');e.status=400;throw e;});
+        if(!r.ok){var e2=new Error('HTTP '+r.status);e2.status=r.status;throw e2;}
+        _retries=0; return r.json();
+    });
+}
+function apiRetry(p,fallbackMsg){
+    return api(p).catch(function(e){
+        if(e.status===400){$ga.innerHTML=erHtml(e.message);throw e;}
+        if(_retries<MAX_RETRY){
+            _retries++;
+            $ga.innerHTML='<div class="ld">Reconnecting ('+_retries+'/'+MAX_RETRY+')<span class="ld-d"></span></div>';
+            return new Promise(function(res){setTimeout(res,RETRY_DELAY);}).then(function(){return apiRetry(p,fallbackMsg);});
+        }
+        _retries=0;
+        $ga.innerHTML=erHtml('Connection lost. Check your network and try again.');
+        throw e;
+    });
+}
+function upd(ok){var s=recordResult(_gm,ok);updateScoreBar(s);}
+
+// ── Bottom sheet ──
+var $bs = document.getElementById('bsheet');
+var $bsResult = document.getElementById('bs-result');
+var $bsNext = document.getElementById('bs-next');
+var _bsNextFn = null;
+
+function openSheet(ok, detailHtml, nextFn) {
+    var h = '<div class="bs-verdict '+(ok?'ok':'no')+'">'+(ok?'Correct!':'Nope!')+'</div>';
+    if (detailHtml) h += '<div class="bs-detail">'+detailHtml+'</div>';
+    if (ok && _streak >= 3) {
+        var ms = ['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!','Beyond mortal comprehension!'];
+        h += '<div class="bs-streak">'+_streak+' in a row! '+(ms[_streak]||_streak+'-streak!')+'</div>';
+        boom(_streak >= 5 ? 50 : 25);
+    } else if (ok) boom(10);
+    $bsResult.innerHTML = h;
+    _bsNextFn = nextFn;
+    $bs.classList.add('open');
+}
+function closeSheet() { $bs.classList.remove('open'); }
+$bsNext.addEventListener('click', function() {
+    closeSheet();
+    if (_bsNextFn) _bsNextFn();
+});
+function sRes(ok,det,detHtml){
+    var ra=document.querySelector('.ra'),m=ra.querySelector('.rm'),d=ra.querySelector('.rd'),s=ra.querySelector('.sk');
+    m.textContent=ok?'Correct!':'Nope!'; m.className='rm show '+(ok?'ok':'no');
+    if(detHtml){d.innerHTML=detHtml;d.className='rd show';}
+    else if(det){d.textContent=det;d.className='rd show';}
+    if(ok&&_streak>=3){var ms=['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!','Beyond mortal comprehension!'];s.textContent=_streak+' in a row! '+(ms[_streak]||_streak+'-streak!');s.className='sk show';boom(_streak>=5?50:25);}else if(ok)boom(10);
+    document.querySelector('.nb').classList.add('show');
+}
+function backHtml(){
+    if (_gm === 'ml') return mlBackHtml();
+    var s=getScore(_gm);
+    return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;flex-shrink:0">'
+        +'<button class="back-btn" style="margin-bottom:0" onclick="goHome()">&#x2190; Games</button>'
+        +'<div class="score-bar" id="score-bar"><span class="sb-item">Score <b style="color:var(--green)">'+_sessionScore+'</b></span>'
+        +'<span class="sb-item">Streak <b style="color:var(--orange)">'+_streak+'</b></span>'
+        +'<span class="sb-item">Best <b style="color:var(--pink)">'+s.best+'</b></span></div></div>';
+}
+function mlBackHtml(){
+    var s=getScore('ml');
+    var topPrize = s.topPrize || '$0';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.3rem;flex-shrink:0">'
+        +'<button class="back-btn" style="margin-bottom:0" onclick="goHome()">&#x2190; Games</button>'
+        +'<div class="score-bar" id="score-bar"><span class="sb-item">Games <b style="color:var(--green)">'+(s.played||0)+'</b></span>'
+        +'<span class="sb-item">Top Prize <b style="color:var(--orange)">'+topPrize+'</b></span></div></div>';
+}
+function updateScoreBar(s){
+    var bar=document.getElementById('score-bar');
+    if(!bar)return;
+    bar.innerHTML='<span class="sb-item">Score <b style="color:var(--green)">'+_sessionScore+'</b></span>'
+        +'<span class="sb-item">Streak <b style="color:var(--orange)">'+_streak+'</b></span>'
+        +'<span class="sb-item">Best <b style="color:var(--pink)">'+s.best+'</b></span>';
+}
+function rfHtml(){return '<div class="rf"><div class="ra"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div><button class="nb">Next Round</button></div>';}
+function erHtml(m){return '<div class="er"><div class="ei">&#x1F50C;</div><div class="et">'+esc(m)+'</div><button class="rb" onclick="loadRound()">Try Again</button></div>';}
+
+// Group color map — matches the TWAI theme color groups
+var GROUP_COLORS = {
+    'Red':'#ff5555','Orange':'#ffb86c','Yellow':'#f1fa8c','Green':'#50fa7b',
+    'Blue':'#8be9fd','Purple':'#bd93f9','Corrupted':'#ff5555','Pastel':'#e8c1ff',
+    'Pink':'#ff79c6','Neutral':'#f8f8f2','Admin':'#f1fa8c','Reserved':'#6272a4'
+};
+function groupColor(g) { return (g && GROUP_COLORS[g]) || '#fff'; }
+
+// Tile HTML helper — big image with name overlay, group-colored name
+function tileHtml(id, name, imgUrl, group, dataAttr) {
+    var nc = groupColor(group);
+    var nameStyle = ' style="color:'+nc+'"';
+    var inner;
+    if (imgUrl) {
+        inner = '<img class="tile-img" src="'+esc(imgUrl)+'" alt="" onerror="this.parentNode.innerHTML=\'<div class=tile-noimg><span class=tile-initial>'+esc(name.charAt(0))+'</span></div><div class=tile-name'+nameStyle.replace(/"/g,'&quot;')+'>'+esc(name)+'</div>\'">';
+    } else {
+        inner = '<div class="tile-noimg"><span class="tile-initial">'+esc(name.charAt(0))+'</span></div>';
+    }
+    return '<div class="tile" '+dataAttr+'>' + inner + '<div class="tile-name"'+nameStyle+'>'+esc(name)+'</div></div>';
+}
+
+/* ── WHO SAID IT — Metro tiles + bottom sheet ── */
+function loadWSI(){
+    _lk=false; closeSheet();
+    $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
+    apiRetry('/api/game/who-said-it?choices=4').then(function(d){
+        var h='<div class="gi">';
+        h+=backHtml();
+        h+='<div class="qblock"><div class="qlabel">Who said this?</div><div class="qtext">'+esc(d.quote)+'</div></div>';
+        h+='<div class="tiles">';
+        d.options.forEach(function(o){
+            var img = o.rectangle_gif || o.square_image || o.avatar_url;
+            h += tileHtml(o.id, o.name, img, o.group, 'data-id="'+esc(o.id)+'"');
+        });
+        h+='</div></div>';
+        $ga.innerHTML=h;
+        var aid=d.answer_id;
+        $ga.querySelectorAll('.tile').forEach(function(t){
+            t.addEventListener('click',function(){
+                if(_lk)return;_lk=true;
+                var ok=t.dataset.id===aid;
+                $ga.querySelectorAll('.tile').forEach(function(x){
+                    x.classList.add('locked');
+                    if(x.dataset.id===aid)x.classList.add('correct');
+                    else if(x===t&&!ok){x.classList.add('wrong','shake');}
+                });
+                upd(ok);
+                var who=d.options.find(function(o){return o.id===aid;});
+                var det='';
+                if(!ok) det+=esc('It was '+who.name);
+                if(d.source_thread_title&&d.source_thread_url){
+                    var src='from <a href="'+esc(d.source_thread_url)+'" target="_blank">'+esc(d.source_thread_title)+'</a>';
+                    det+=(det?' &mdash; ':'')+src;
+                }
+                openSheet(ok, det, function(){ _gm='wsi'; loadRound(); });
+            });
+        });
+    }).catch(function(){});
+}
+
+/* ── QUOTE MATCH — side-by-side panels ── */
+function loadQM(){
+    _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
+    apiRetry('/api/game/quote-match').then(function(d){
+        var h='<div class="gi">';
+        h+=backHtml();
+        h+='<div class="qpair">';
+        h+='<div class="qpanel" id="qp-a"><div class="qlabel">Quote A</div><div class="qtext">'+esc(d.quote_a)+'</div></div>';
+        h+='<div class="vs">vs</div>';
+        h+='<div class="qpanel" id="qp-b"><div class="qlabel">Quote B</div><div class="qtext">'+esc(d.quote_b)+'</div></div>';
+        h+='</div>';
+        h+='<div class="qm-footer">';
+        h+='<div class="bins"><button class="bin" data-g="same">Same Character</button><button class="bin" data-g="different">Different</button></div>';
+        h+='<div class="ra" style="height:2.5rem"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div>';
+        h+='<button class="qm-next" id="qm-next" style="visibility:hidden">Next Round</button>';
+        h+='</div></div>';
+        $ga.innerHTML=h;
+        $ga.querySelectorAll('.bin').forEach(function(b){
+            b.addEventListener('click',function(){
+                if(_lk)return;_lk=true;
+                var gs=b.dataset.g==='same',ok=gs===d.same_character;
+                $ga.querySelectorAll('.bin').forEach(function(x){
+                    x.classList.add('locked');
+                    if((x.dataset.g==='same')===d.same_character)x.classList.add('correct');
+                    else if(x===b&&!ok)x.classList.add('wrong');
+                });
+                upd(ok);
+                // Reveal character faces in the panels
+                var revA='<div class="qpanel-reveal">';
+                if(d.image_a)revA+='<img src="'+esc(d.image_a)+'" onerror="this.style.display=\'none\'">';
+                revA+='<span class="reveal-name">'+esc(d.character_a)+'</span></div>';
+                document.getElementById('qp-a').insertAdjacentHTML('beforeend',revA);
+                var revB='<div class="qpanel-reveal">';
+                if(d.image_b)revB+='<img src="'+esc(d.image_b)+'" onerror="this.style.display=\'none\'">';
+                revB+='<span class="reveal-name">'+esc(d.character_b)+'</span></div>';
+                document.getElementById('qp-b').insertAdjacentHTML('beforeend',revB);
+
+                var detail=d.same_character?'Both by '+d.character_a:d.character_a+' & '+d.character_b;
+                var ra=$ga.querySelector('.ra'),rm=ra.querySelector('.rm'),rd=ra.querySelector('.rd'),sk=ra.querySelector('.sk');
+                rm.textContent=ok?'Correct!':'Nope!'; rm.className='rm show '+(ok?'ok':'no');
+                rd.textContent=detail; rd.className='rd show';
+                if(ok&&_streak>=3){var ms=['','','','On fire!','Unstoppable!','Legendary!','GODLIKE!','Are you The Watcher?!'];sk.textContent=_streak+' in a row! '+(ms[_streak]||_streak+'-streak!');sk.className='sk show';boom(_streak>=5?50:25);}else if(ok)boom(10);
+                document.getElementById('qm-next').style.visibility='visible';
+            });
+        });
+        document.getElementById('qm-next').addEventListener('click',function(){_gm='qm';loadRound();});
+    }).catch(function(){});
+}
+
+/* ── QUOTE CHAIN — character picker + 2x2 grid ── */
+var _qcCharId = null;
+
+function loadQC(){
+    _streak=0; _sessionScore=0;
+    // Show character picker first
+    _lk=false;
+    $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
+    apiRetry('/api/game/characters').then(function(chars){
+        var h='<div class="gi">';
+        h+=backHtml();
+        h+='<div class="qlabel" style="margin-bottom:0.25rem">Choose a character — or</div>';
+        h+='<button class="qm-next" id="qc-random" style="margin-bottom:0.3rem;visibility:visible">Random Character</button>';
+        h+='<div class="char-picker">';
+        chars.forEach(function(c){
+            var nc = groupColor(c.group);
+            h+='<div class="char-pick" data-cid="'+esc(c.id)+'">';
+            if(c.image) h+='<img src="'+esc(c.image)+'" onerror="this.outerHTML=\'<div class=cp-noimg>'+esc(c.name.charAt(0))+'</div>\'">';
+            else h+='<div class="cp-noimg">'+esc(c.name.charAt(0))+'</div>';
+            h+='<div class="cp-name" style="color:'+nc+'">'+esc(c.name)+'</div></div>';
+        });
+        h+='</div></div>';
+        $ga.innerHTML=h;
+        document.getElementById('qc-random').addEventListener('click',function(){ _qcCharId=null; loadQCRound(); });
+        $ga.querySelectorAll('.char-pick').forEach(function(p){
+            p.addEventListener('click',function(){ _qcCharId=p.dataset.cid; loadQCRound(); });
+        });
+    }).catch(function(){});
+}
+
+function loadQCRound(){
+    _lk=false; $ga.innerHTML='<div class="ld">Loading<span class="ld-d"></span></div>';
+    var url='/api/game/quote-chain?choices=4';
+    if(_qcCharId) url+='&character_id='+encodeURIComponent(_qcCharId);
+    apiRetry(url).then(function(d){
+        var nc = groupColor(d.anchor_group);
+        var h='<div class="gi">';
+        h+=backHtml();
+        // Anchor: character image + name + quote
+        h+='<div class="qc-anchor">';
+        if(d.anchor_image) h+='<img class="qc-anchor-img" src="'+esc(d.anchor_image)+'" style="border:2px solid '+nc+'" onerror="this.style.display=\'none\'">';
+        h+='<div class="qc-anchor-info"><div class="qc-anchor-name" style="color:'+nc+'">'+esc(d.anchor_character)+'</div>';
+        h+='<div class="qc-anchor-quote">&ldquo;'+esc(d.anchor_quote)+'&rdquo;</div></div></div>';
+        // 2x2 quote cards
+        h+='<div class="qc-grid">';
+        d.options.forEach(function(o,i){
+            h+='<div class="qc-card" data-i="'+i+'">'+esc(o.quote_text)+'</div>';
+        });
+        h+='</div>';
+        // Footer
+        h+='<div class="qc-footer">';
+        h+='<div class="ra" style="height:2rem"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div>';
+        h+='<div style="display:flex;gap:0.3rem">';
+        h+='<button class="qm-next" id="qc-next" style="visibility:hidden;flex:1">Next Round</button>';
+        h+='<button class="qm-next" id="qc-pick" style="visibility:hidden;flex:1;background:var(--current);color:var(--fg)">Change Character</button>';
+        h+='</div></div></div>';
+        $ga.innerHTML=h;
+        $ga.querySelectorAll('.qc-card').forEach(function(c){
+            c.addEventListener('click',function(){
+                if(_lk)return;_lk=true;
+                var idx=+c.dataset.i,pk=d.options[idx],ok=pk.correct;
+                $ga.querySelectorAll('.qc-card').forEach(function(x){
+                    x.classList.add('locked');
+                    if(d.options[+x.dataset.i].correct)x.classList.add('correct');
+                    else if(x===c&&!ok){x.classList.add('wrong','shake');}
+                });
+                upd(ok);
+                var ra=$ga.querySelector('.ra'),rm=ra.querySelector('.rm'),rd=ra.querySelector('.rd');
+                rm.textContent=ok?'Correct!':'Nope!'; rm.className='rm show '+(ok?'ok':'no');
+                if(!ok){rd.textContent='That was '+pk.character_name;rd.className='rd show';}
+                if(ok)boom(_streak>=3?30:10);
+                document.getElementById('qc-next').style.visibility='visible';
+                document.getElementById('qc-pick').style.visibility='visible';
+            });
+        });
+        document.getElementById('qc-next').addEventListener('click',loadQCRound);
+        document.getElementById('qc-pick').addEventListener('click',loadQC);
+    }).catch(function(){});
+}
+
+/* ══════════════════════════════════════
+   MILLIONAIRE MODE
+   ══════════════════════════════════════ */
+var ML_PRIZES = ['$100','$200','$300','$500','$1,000','$2,000','$4,000','$8,000','$16,000','$32,000','$64,000','$125,000','$250,000','$500,000','$1,000,000'];
+var ML_SAFE = [4, 9]; // indices of safe havens ($1,000 and $32,000)
+var _mlLevel, _mlLifelines, _mlSelected, _mlData, _mlOver;
+
+function mlLadderHtml(current) {
+    var h = '';
+    for (var i = ML_PRIZES.length - 1; i >= 0; i--) {
+        var cls = 'ml-rung';
+        if (ML_SAFE.indexOf(i) >= 0) cls += ' safe';
+        if (i === current) cls += ' current';
+        else if (i < current) cls += ' done';
+        h += '<div class="' + cls + '"><span class="ml-num">' + (i+1) + '</span><span class="ml-amt">' + ML_PRIZES[i] + '</span></div>';
+    }
+    return h;
+}
+
+function mlLifelineHtml() {
+    var h = '';
+    var ll = [['5050','50:50'], ['ata','Ask Audience'], ['paf','Phone Friend'], ['m8b','&#x1F3B1; 8-Ball']];
+    ll.forEach(function(l) {
+        var used = _mlLifelines[l[0]];
+        h += '<button class="ml-life' + (used ? ' used' : '') + '" data-ll="' + l[0] + '"' + (used ? ' disabled' : '') + '>' + l[1] + '</button>';
+    });
+    h += '<button class="ml-life" data-ll="cheat" style="color:var(--green);border-color:var(--green);font-size:0.55rem">&#x2714; CHEAT</button>';
+    return h;
+}
+
+window.mlStartGame = function() {
+    _mlLevel = 0; _mlLifelines = {5050: false, ata: false, paf: false, m8b: false}; _mlOver = false;
+    mlLoadQuestion();
+}
+
+function mlLoadQuestion() {
+    if (_mlOver) return;
+    $ga.innerHTML = '<div class="ld">Loading<span class="ld-d"></span></div>';
+    apiRetry('/api/game/millionaire?level=' + (_mlLevel + 1)).then(function(d) {
+        _mlData = d; _mlSelected = null; _lk = false;
+        var h = '<div class="gi">';
+        h += '<div class="ml-layout">';
+        // Main area
+        h += '<div class="ml-main">';
+        h += backHtml();
+        h += '<div class="ml-lifelines" id="ml-ll">' + mlLifelineHtml() + '</div>';
+        // Show character image if the question is about a specific character
+        var qLabel = 'Question ' + (_mlLevel+1) + ' &mdash; ' + ML_PRIZES[_mlLevel];
+        h += '<div class="qblock">';
+        if (d.char_image) {
+            h += '<div style="display:flex;gap:0.6rem;align-items:center">';
+            h += '<img src="' + esc(d.char_image) + '" style="width:48px;height:48px;border-radius:50%;object-fit:cover;border:2px solid var(--purple);flex-shrink:0;box-shadow:0 0 12px rgba(189,147,249,0.2)" onerror="this.style.display=\'none\'">';
+            h += '<div>';
+        }
+        h += '<div class="qlabel">' + qLabel + '</div><div class="qtext">' + esc(d.question) + '</div>';
+        if (d.char_image) h += '</div></div>';
+        h += '</div>';
+        h += '<div class="ml-opts" id="ml-opts">';
+        var letters = ['A','B','C','D'];
+        d.options.forEach(function(o, i) {
+            h += '<button class="ml-opt" data-id="' + esc(o.id) + '" data-i="' + i + '"><span class="ml-letter">' + letters[i] + ':</span> ' + esc(o.text) + '</button>';
+        });
+        h += '</div>';
+        h += '<div class="ml-confirm" id="ml-confirm" style="visibility:hidden">';
+        h += '<button class="ml-confirm-btn ml-final" id="ml-final-btn">Final Answer</button>';
+        h += '<button class="ml-confirm-btn ml-walk" id="ml-walk-btn">Walk Away (' + ((_mlLevel > 0) ? ML_PRIZES[_mlLevel-1] : '$0') + ')</button>';
+        h += '</div>';
+        h += '<div class="rf" id="ml-rf" style="visibility:hidden"><div class="ra"><div class="rm"></div><div class="rd"></div><div class="sk"></div></div></div>';
+        h += '</div>';
+        // Ladder
+        h += '<div class="ml-ladder" id="ml-ladder">' + mlLadderHtml(_mlLevel) + '</div>';
+        h += '</div></div>';
+        $ga.innerHTML = h;
+
+        // Option click — select (not final yet)
+        $ga.querySelectorAll('.ml-opt').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                if (_lk) return;
+                _mlSelected = btn.dataset.id;
+                $ga.querySelectorAll('.ml-opt').forEach(function(x) { x.classList.remove('selected'); });
+                btn.classList.add('selected');
+                document.getElementById('ml-confirm').style.visibility = 'visible';
+            });
+        });
+
+        // Final Answer
+        document.getElementById('ml-final-btn').addEventListener('click', function() {
+            if (_lk || !_mlSelected) return;
+            _lk = true;
+            document.getElementById('ml-confirm').style.visibility = 'hidden';
+            // Dramatic pause — blink all options
+            $ga.querySelectorAll('.ml-opt').forEach(function(x) { x.classList.add('locked', 'ml-thinking'); });
+            setTimeout(function() {
+                $ga.querySelectorAll('.ml-opt').forEach(function(x) { x.classList.remove('ml-thinking'); });
+                mlReveal();
+            }, 1200);
+        });
+
+        // Walk away
+        document.getElementById('ml-walk-btn').addEventListener('click', function() {
+            if (_lk) return;
+            _mlOver = true;
+            var prize = _mlLevel > 0 ? ML_PRIZES[_mlLevel - 1] : '$0';
+            mlShowGameOver('You walked away with ' + prize + '.', prize, false);
+        });
+
+        // Lifeline clicks
+        $ga.querySelectorAll('.ml-life').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                if (_lk || btn.classList.contains('used')) return;
+                var ll = btn.dataset.ll;
+                if (ll === 'cheat') { mlCheat(); return; }
+                if (ll === 'm8b') { mlUse8Ball(); return; }
+                _mlLifelines[ll] = true;
+                btn.classList.add('used');
+                btn.disabled = true;
+                if (ll === '5050') mlUse5050();
+                else if (ll === 'ata') mlUseATA();
+                else if (ll === 'paf') mlUsePAF();
+            });
+        });
+    }).catch(function() {});
+}
+
+function mlReveal() {
+    var aid = _mlData.answer_id;
+    var ok = _mlSelected === aid;
+    var rf = document.getElementById('ml-rf');
+    rf.style.visibility = 'visible';
+    var rm = rf.querySelector('.rm'), rd = rf.querySelector('.rd');
+
+    $ga.querySelectorAll('.ml-opt').forEach(function(x) {
+        if (x.dataset.id === aid) x.classList.add('correct');
+        else if (x.dataset.id === _mlSelected && !ok) { x.classList.add('wrong'); x.classList.add('shake'); }
+    });
+
+    // Find the correct option's image (for post-reveal display)
+    var correctOpt = _mlData.options.find(function(o) { return o.id === aid; });
+    var revealImg = correctOpt && correctOpt.image ? '<img class="ml-reveal-img" src="'+esc(correctOpt.image)+'" onerror="this.style.display=\'none\'">' : '';
+
+    if (ok) {
+        rm.textContent = 'Correct!'; rm.className = 'rm show ok';
+        var detHtml = '';
+        if (_mlData.source_thread_title && _mlData.source_thread_url) {
+            detHtml = 'from <a href="' + esc(_mlData.source_thread_url) + '" target="_blank">' + esc(_mlData.source_thread_title) + '</a>';
+        }
+        if (detHtml) { rd.innerHTML = detHtml; rd.className = 'rd show'; }
+        boom(20 + _mlLevel * 3);
+        // Update ladder to show completed rung
+        var ladder = document.getElementById('ml-ladder');
+        if (ladder) ladder.innerHTML = mlLadderHtml(_mlLevel + 1);
+        _mlLevel++;
+        if (_mlLevel >= 15) {
+            _mlOver = true;
+            setTimeout(function() { if (_gm==='ml') { mlShowGameOver('YOU WON THE MILLION!', '$1,000,000', false, revealImg); boom(80); } }, 1200);
+        } else {
+            setTimeout(function() { if (_gm==='ml') mlLoadQuestion(); }, 1500);
+        }
+    } else {
+        rm.textContent = 'Wrong!'; rm.className = 'rm show no';
+        rd.innerHTML = revealImg + esc('It was ' + correctOpt.text); rd.className = 'rd show';
+        _mlOver = true;
+        var safePrize = '$0';
+        for (var i = ML_SAFE.length - 1; i >= 0; i--) {
+            if (_mlLevel > ML_SAFE[i]) { safePrize = ML_PRIZES[ML_SAFE[i]]; break; }
+        }
+        setTimeout(function() { if (_gm==='ml') mlShowGameOver('You leave with ' + safePrize + '.', safePrize, true, revealImg); }, 2000);
+    }
+}
+
+function mlShowGameOver(msg, prize, wasWrong, charImg) {
+    // Record top prize in localStorage
+    var s = getScore('ml');
+    s.played = (s.played || 0) + 1;
+    var prizeIdx = ML_PRIZES.indexOf(prize);
+    var topIdx = ML_PRIZES.indexOf(s.topPrize || '$0');
+    if (prizeIdx > topIdx) s.topPrize = prize;
+    setScore('ml', s);
+
+    var topPrize = s.topPrize || '$0';
+    var h = '<div class="gi"><div class="ml-over">';
+    if (charImg) h += charImg.replace('ml-reveal-img', 'ml-over-img' + (wasWrong ? ' lost' : ''));
+    h += '<div class="ml-over-prize' + (wasWrong ? ' lost' : '') + '">' + esc(prize) + '</div>';
+    h += '<div class="ml-over-msg">' + esc(msg) + '</div>';
+    if (topPrize !== '$0') h += '<div style="font-size:0.7rem;color:var(--comment);margin-bottom:0.5rem">Top winnings: <b style="color:var(--orange)">' + esc(topPrize) + '</b></div>';
+    h += '<button class="ml-play-btn" onclick="mlStartGame()">Play Again</button>';
+    h += '</div></div>';
+    $ga.innerHTML = h;
+    if (!wasWrong) boom(40);
+}
+
+function mlUse5050() {
+    var aid = _mlData.answer_id;
+    var wrongs = [];
+    $ga.querySelectorAll('.ml-opt').forEach(function(x) {
+        if (x.dataset.id !== aid && !x.classList.contains('hidden-5050')) wrongs.push(x);
+    });
+    // Shuffle and hide 2
+    for (var i = wrongs.length - 1; i > 0; i--) { var j = Math.random() * (i+1) | 0; var t = wrongs[i]; wrongs[i] = wrongs[j]; wrongs[j] = t; }
+    wrongs.slice(0, 2).forEach(function(x) { x.classList.add('hidden-5050'); });
+    // Deselect if selected was hidden
+    if (_mlSelected) {
+        var sel = $ga.querySelector('.ml-opt.selected');
+        if (sel && sel.classList.contains('hidden-5050')) {
+            sel.classList.remove('selected'); _mlSelected = null;
+            document.getElementById('ml-confirm').style.visibility = 'hidden';
+        }
+    }
+}
+
+function mlUseATA() {
+    var aid = _mlData.answer_id;
+    var opts = $ga.querySelectorAll('.ml-opt');
+    // Generate fake percentages weighted toward correct
+    var pcts = [];
+    var correctWeight = 40 + Math.random() * 30; // 40-70%
+    var remaining = 100 - correctWeight;
+    opts.forEach(function(o, i) {
+        if (o.dataset.id === aid) pcts.push(correctWeight);
+        else if (o.classList.contains('hidden-5050')) pcts.push(0);
+        else pcts.push(0);
+    });
+    // Distribute remaining among visible wrong options
+    var wrongVisible = []; pcts.forEach(function(p, i) { if (p === 0 && !opts[i].classList.contains('hidden-5050')) wrongVisible.push(i); });
+    wrongVisible.forEach(function(idx, i) {
+        if (i === wrongVisible.length - 1) pcts[idx] = Math.round(remaining);
+        else { var chunk = Math.round(remaining * Math.random() * 0.7); pcts[idx] = chunk; remaining -= chunk; }
+    });
+
+    // Insert bar chart above options
+    var barH = '<div class="ml-ata" id="ml-ata">';
+    var letters = ['A','B','C','D'];
+    pcts.forEach(function(p, i) {
+        barH += '<div class="ml-ata-bar"><div class="ml-ata-track"><div class="ml-ata-fill"></div></div><div class="ml-ata-pct">' + letters[i] + '</div></div>';
+    });
+    barH += '</div>';
+    var optsEl = document.getElementById('ml-opts');
+    optsEl.insertAdjacentHTML('beforebegin', barH);
+    // Animate bars
+    setTimeout(function() {
+        var fills = document.querySelectorAll('.ml-ata-fill');
+        fills.forEach(function(f, i) { f.style.height = Math.max(pcts[i], 2) + '%'; });
+        document.querySelectorAll('.ml-ata-pct').forEach(function(p, i) { p.textContent = Math.round(pcts[i]) + '%'; });
+    }, 50);
+}
+
+function mlUsePAF() {
+    var aid = _mlData.answer_id;
+    var who = _mlData.options.find(function(o) { return o.id === aid; });
+    var confidence = _mlLevel < 5 ? 0.9 : (_mlLevel < 10 ? 0.75 : 0.6);
+    var friendRight = Math.random() < confidence;
+    var friendPick = who.text;
+    if (!friendRight) {
+        var wrongs = _mlData.options.filter(function(o) { return o.id !== aid; });
+        friendPick = wrongs[Math.random() * wrongs.length | 0].text;
+    }
+    var friendName = _mlData.friend_name || 'Your friend';
+    var phrases = [
+        "I'm pretty sure it's " + friendPick + ".",
+        "I'd go with " + friendPick + ", definitely.",
+        "Hmm... I think " + friendPick + "?",
+        "Oh that's " + friendPick + " for sure!",
+        "I'm gonna say " + friendPick + ".",
+        "Gotta be " + friendPick + ".",
+        "Easy. " + friendPick + "."
+    ];
+    var msg = friendName + ' says: "' + phrases[Math.random() * phrases.length | 0] + '"';
+    mlInjectQRight('ml-paf', '&#x1F4DE;', msg, 'var(--cyan)');
+}
+
+function mlInjectQRight(id, icon, msg, color) {
+    // Remove any previous injection (8-ball or phone-a-friend)
+    ['ml-8ball','ml-paf'].forEach(function(eid) { var el=document.getElementById(eid); if(el) el.remove(); });
+    var qblock = $ga.querySelector('.qblock');
+    if (!qblock) return;
+    if (!qblock.querySelector('#ml-qwrap')) {
+        var inner = qblock.innerHTML;
+        qblock.innerHTML = '<div id="ml-qwrap" style="flex:1;min-width:0">' + inner + '</div>';
+    }
+    qblock.style.display = 'flex';
+    qblock.style.alignItems = 'center';
+    qblock.style.gap = '0.6rem';
+    var borderColor = color || 'var(--current)';
+    qblock.insertAdjacentHTML('beforeend',
+        '<div id="'+id+'" style="flex:0 0 40%;display:flex;align-items:center;gap:0.5rem;padding-left:0.5rem;border-left:1px solid '+borderColor+';animation:fi 0.3s ease-out">'
+        + '<div style="font-size:2rem;line-height:1;flex-shrink:0">'+icon+'</div>'
+        + '<div style="font-size:0.85rem;color:'+borderColor+';font-style:italic">' + esc(msg) + '</div></div>');
+}
+
+function mlUse8Ball() {
+    var responses = [
+        'It is certain.', 'It is decidedly so.', 'Without a doubt.',
+        'Yes, definitely.', 'You may rely on it.', 'As I see it, yes.',
+        'Most likely.', 'Outlook good.', 'Yes.', 'Signs point to yes.',
+        'Reply hazy, try again.', 'Ask again later.', 'Better not tell you now.',
+        'Cannot predict now.', 'Concentrate and ask again.',
+        'Don\'t count on it.', 'My reply is no.', 'My sources say no.',
+        'Outlook not so good.', 'Very doubtful.'
+    ];
+    var msg = responses[Math.random() * responses.length | 0];
+    mlInjectQRight('ml-8ball', '&#x1F3B1;', msg, 'var(--comment)');
+}
+
+function mlCheat() {
+    if (_lk) return;
+    _lk = true;
+    _mlSelected = _mlData.answer_id;
+    $ga.querySelectorAll('.ml-opt').forEach(function(x) {
+        x.classList.add('locked');
+        if (x.dataset.id === _mlData.answer_id) { x.classList.add('selected'); x.classList.add('correct'); }
+    });
+    document.getElementById('ml-confirm').style.visibility = 'hidden';
+    setTimeout(function() { mlReveal(); }, 300);
+}
+
+/* ── Dashboard ── */
+function loadDash() {
+    var games = [
+        {id:'wsi', icon:'&#x1F50D;', title:'Who Said It?', desc:'Read a quote, guess which character said it. Big image tiles, four choices.', color:'purple'},
+        {id:'qm',  icon:'&#x2194;&#xFE0F;',  title:'Quote Match',   desc:'Two quotes presented side by side. Same character or different?', color:'cyan'},
+        {id:'qc',  icon:'&#x1F517;', title:'Quote Chain',   desc:'Given a quote, find another by the same character.', color:'green'},
+        {id:'ml',  icon:'&#x1F4B0;', title:'Millionaire',   desc:'15 questions to $1M. Lifelines, rising difficulty. How far can you go?', color:'orange'}
+    ];
+    var h = '<div class="dash">';
+    h += '<div style="text-align:center;margin-bottom:0.4rem;flex-shrink:0"><div style="font-family:Bebas Neue,Impact,sans-serif;font-size:1.5rem;letter-spacing:0.03em;color:var(--fg)">How Well Do You <span style="color:var(--purple)">Really</span> Know Our Cast?</div><div style="font-size:0.68rem;color:var(--comment)">The Watcher sees all. But do you?</div></div>';
+    h += '<div class="dash-grid">';
+    var cardColors = {wsi:'var(--purple)',qm:'var(--cyan)',qc:'var(--green)',ml:'var(--orange)'};
+    games.forEach(function(g) {
+        var gs=getScore(g.id);
+        var clr = cardColors[g.id];
+        h += '<div class="dash-card" data-game="'+g.id+'">';
+        // Layer 1: bg images
+        h += '<div class="dash-card-bg active" id="dbg-'+g.id+'-a"></div>';
+        h += '<div class="dash-card-bg" id="dbg-'+g.id+'-b"></div>';
+        // Layer 2: scrim
+        h += '<div class="dash-card-scrim"></div>';
+        // Layer 3: all text
+        h += '<div class="dash-card-content">';
+        if(gs.played>0) {
+            h += '<div class="dash-card-stats">';
+            if(g.id==='ml') {
+                h += '<div class="stat-row"><div class="stat-mini"><b style="color:var(--green)">'+gs.played+'</b>games</div></div>';
+                h += '<div class="stat-big" style="color:'+clr+'">'+(gs.topPrize||'$0')+'</div>';
+                h += '<div class="stat-label">Top Prize</div>';
+            } else {
+                h += '<div class="stat-row"><div class="stat-mini"><b style="color:var(--orange)">'+gs.best+'</b>best</div><div class="stat-mini"><b style="color:var(--green)">'+gs.played+'</b>played</div></div>';
+                h += '<div class="stat-big" style="color:'+clr+'">'+Math.round(gs.score/gs.played*100)+'%</div>';
+                h += '<div class="stat-label">Accuracy</div>';
+            }
+            h += '</div>';
+        }
+        h += '<div class="dash-card-icon">'+g.icon+'</div>';
+        h += '<div class="dash-card-title">'+g.title+'</div>';
+        h += '<div class="dash-card-desc">'+g.desc+'</div>';
+        h += '</div></div>';
+    });
+    h += '</div></div>';
+    $ga.innerHTML = h;
+    $ga.querySelectorAll('.dash-card').forEach(function(card) {
+        card.addEventListener('click', function() {
+            if (_dashTimer) clearInterval(_dashTimer);
+            _gm = card.dataset.game;
+            loadRound();
+        });
+    });
+
+    // Fetch character images and rotate backgrounds
+    api('/api/game/characters').then(function(chars) {
+        var images = chars.map(function(c){return c.rectangle_gif || c.image;}).filter(Boolean);
+        if (!images.length) return;
+        var cardIds = ['wsi','qm','qc','ml'];
+        var slots = {};
+        var turnIdx = 0;
+        // Shuffle images so each card starts different
+        function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.random()*(i+1)|0;var t=a[i];a[i]=a[j];a[j]=t;}return a;}
+        var shuffled = shuffle(images.slice());
+        // Initial: each card gets a different image
+        cardIds.forEach(function(id, i) {
+            var imgA = document.getElementById('dbg-'+id+'-a');
+            if (imgA) {
+                imgA.style.backgroundImage = 'url('+shuffled[i % shuffled.length]+')';
+                slots[id] = 'a';
+            }
+        });
+        // Cycle through cards sequentially, one every 5 seconds
+        _dashTimer = setInterval(function() {
+            var id = cardIds[turnIdx % cardIds.length];
+            turnIdx++;
+            var cur = slots[id] || 'a';
+            var nxt = cur === 'a' ? 'b' : 'a';
+            var elCur = document.getElementById('dbg-'+id+'-'+cur);
+            var elNxt = document.getElementById('dbg-'+id+'-'+nxt);
+            if (!elCur || !elNxt) return;
+            elNxt.style.backgroundImage = 'url('+images[Math.random()*images.length|0]+')';
+            elNxt.classList.add('active');
+            elCur.classList.remove('active');
+            slots[id] = nxt;
+        }, 5000);
+    }).catch(function(){});
+}
+var _dashTimer = null;
+
+/* ── Round Router ── */
+window.goHome = function() { closeSheet(); _gm = 'dash'; loadRound(); };
+window.loadRound = function() {
+    _streak=0; _sessionScore=0;
+    if (_gm === 'dash') loadDash();
+    else if (_gm === 'wsi') loadWSI();
+    else if (_gm === 'qm') loadQM();
+    else if (_gm === 'qc') loadQC();
+    else if (_gm === 'ml') mlStartGame();
+};
+loadRound();
+})();
+</script>
+</body>
+</html>
