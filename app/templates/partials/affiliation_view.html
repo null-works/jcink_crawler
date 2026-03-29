@@ -1,36 +1,4 @@
-{% if view == 'columns' %}
-{# Column / Kanban board view #}
-<div class="column-board">
-    {% for aff_name, chars in groups.items() %}
-    <div class="column-lane">
-        <div class="column-lane-header">
-            <span>{{ aff_name }}</span>
-            <span class="count-badge purple">{{ chars|length }}</span>
-        </div>
-        {% for c in chars %}
-        <a href="/character/{{ c.id }}" class="char-mini-card">
-            {% set thumb = c.square_image or c.avatar_url %}
-            {% if thumb %}
-            <img src="{{ thumb }}" class="avatar-sm" alt="">
-            {% else %}
-            <span class="avatar-placeholder" style="width: 32px; height: 32px; font-size: 0.8rem;">?</span>
-            {% endif %}
-            <div class="char-mini-info">
-                <span class="char-mini-name">{{ c.name }}</span>
-                {% if c.group_name %}
-                <span class="char-mini-group text-comment">{{ c.group_name }}</span>
-                {% endif %}
-            </div>
-            {% if c.ongoing_count %}
-            <span class="count-badge green" style="margin-left: auto;">{{ c.ongoing_count }}</span>
-            {% endif %}
-        </a>
-        {% endfor %}
-    </div>
-    {% endfor %}
-</div>
-
-{% elif view == 'cluster' %}
+{% if view == 'cluster' %}
 {# Cluster map view — Cytoscape.js #}
 <div id="cy-affiliation" class="graph-container" style="height: 600px;"></div>
 <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>

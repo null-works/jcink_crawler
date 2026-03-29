@@ -26,11 +26,6 @@
                 hx-target="#affiliation-content"
                 hx-swap="innerHTML"
                 onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">Cards</button>
-        <button class="chip{{ ' active' if view == 'columns' }}"
-                hx-get="/htmx/affiliations?view=columns"
-                hx-target="#affiliation-content"
-                hx-swap="innerHTML"
-                onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">Columns</button>
         <button class="chip{{ ' active' if view == 'cluster' }}"
                 hx-get="/htmx/affiliations?view=cluster"
                 hx-target="#affiliation-content"

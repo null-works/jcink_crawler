@@ -1762,39 +1762,6 @@ span.avatar-aff {
     color: var(--comment);
 }
 
-/* Column board view */
-.column-board {
-    display: flex;
-    gap: 0.75rem;
-    overflow-x: auto;
-    padding-bottom: 1rem;
-    max-height: calc(100vh - 200px);
-    align-items: flex-start;
-}
-.column-lane {
-    min-width: 230px;
-    max-width: 260px;
-    max-height: calc(100vh - 220px);
-    overflow-y: auto;
-    flex-shrink: 0;
-    background: var(--bg-light);
-    border: 1px solid var(--current);
-    border-radius: 10px;
-    padding: 0.75rem;
-}
-.column-lane-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.75rem;
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: var(--fg);
-}
-.column-lane .char-mini-card {
-    margin-bottom: 0.25rem;
-}
-
 /* === Relationships === */
 .relationship-page {
     display: flex;
@@ -1892,8 +1859,6 @@ span.avatar-aff {
     .relationship-page { flex-direction: column; }
     .relationship-sidebar { width: 100%; max-height: none; }
     .graph-container { min-height: 400px; }
-    .column-board { flex-direction: column; }
-    .column-lane { max-width: 100%; min-width: auto; }
     .affiliation-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
 }
 
