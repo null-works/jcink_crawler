@@ -130,16 +130,18 @@ function initAffiliationCluster() {
         ],
         layout: {
             name: 'cose',
-            padding: 40,
-            nodeRepulsion: 8000,
-            idealEdgeLength: 100,
-            gravity: 0.25,
-            nestingFactor: 1.2,
-            animate: true,
-            animationDuration: 500
+            padding: 50,
+            nodeRepulsion: 50000,
+            idealEdgeLength: 80,
+            gravity: 0.8,
+            nestingFactor: 5,
+            numIter: 1000,
+            animate: false,
+            nodeOverlap: 20
         },
-        minZoom: 0.3,
-        maxZoom: 3
+        minZoom: 0.2,
+        maxZoom: 3,
+        wheelSensitivity: 0.3
     });
 
     affNames.forEach(function(aff, i) {
