@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+{% block title %}Connections - The Watcher{% endblock %}
+{% block content %}
+<div class="page-header" style="margin-bottom: 0.75rem;">
+    <h1>Connections</h1>
+    <p class="subtitle">{{ characters|length }} characters &middot; {{ relationships|length }} relationships</p>
+</div>
+
+{# Tabs #}
+<div class="filters-bar" style="margin-bottom: 0;">
+    <div class="chip-group">
+        <button class="chip{{ ' active' if tab == 'all' }}" id="tab-all"
+                onclick="switchTab('all')">All</button>
+        <button class="chip{{ ' active' if tab == 'affiliations' }}" id="tab-affiliations"
+                onclick="switchTab('affiliations')">Affiliations</button>
+        <button class="chip{{ ' active' if tab == 'relationships' }}" id="tab-relationships"
+                onclick="switchTab('relationships')">Relationships</button>
+    </div>
+</div>
+
+{# Affiliations cards view (hidden by default unless tab=affiliations) #}
+<div id="view-affiliations" style="{{ '' if tab == 'affiliations' else 'display:none;' }}">
+    {% include "partials/affiliation_view.html" %}
+</div>
+
+{# Graph + sidebar (shown for 'all' and 'relationships' tabs) #}
+<div id="view-graph" class="connections-page" style="{{ 'display:none;' if tab == 'affiliations' else '' }}">
+    <div class="connections-graph-wrap">
+        <div id="force-graph" class="connections-graph"></div>
+        {# Legend overlay #}
+        <div id="graph-legend" class="graph-legend"></div>
+    </div>
+
+    <div class="connections-sidebar">
+        {# Node info (shown on click) #}
+        <div class="card" id="node-info" style="display:none;">
+            <h3 class="card-title" id="node-info-name" style="margin-bottom:0.5rem;"></h3>
+            <div id="node-info-aff" class="text-comment" style="font-size:0.85rem;margin-bottom:0.5rem;"></div>
+            <div id="node-info-rels"></div>
+            <a id="node-info-link" href="#" class="btn btn-ghost btn-sm" style="margin-top:0.5rem;">View Profile</a>
+        </div>
+
+        {# Add relationship form #}
+        <div class="card">
+            <h3 class="card-title" style="margin-bottom:0.75rem;">Add Relationship</h3>
+            <form class="rel-form"
+                  hx-post="/htmx/relationship/add"
+                  hx-target="#relationship-list-container"
+                  hx-swap="innerHTML">
+                <select name="character_a" required>
+                    <option value="">Character A...</option>
+                    {% for c in characters %}
+                    <option value="{{ c.id }}">{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="character_b" required>
+                    <option value="">Character B...</option>
+                    {% for c in characters %}
+                    <option value="{{ c.id }}">{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="relationship_type" id="rel-type-select"
+                        onchange="document.getElementById('rel-custom-label').style.display = this.value === 'other' ? 'block' : 'none'">
+                    {% for rt in relationship_types %}
+                    <option value="{{ rt }}">{{ rt|capitalize }}</option>
+                    {% endfor %}
+                </select>
+                <input type="text" name="label" id="rel-custom-label" placeholder="Custom label (optional)" style="display:none;">
+                <button type="submit" class="btn btn-purple btn-sm">Add</button>
+            </form>
+        </div>
+
+        {# Import #}
+        <div class="card">
+            <h3 class="card-title" style="margin-bottom:0.5rem;">Import</h3>
+            <button class="btn btn-green btn-sm"
+                    hx-post="/htmx/relationships/seed"
+                    hx-target="#seed-result"
+                    hx-swap="innerHTML"
+                    hx-confirm="Parse connections fields and create relationships?">
+                Import from Connections
+            </button>
+            <div id="seed-result" class="result" style="margin-top:0.5rem;"></div>
+        </div>
+
+        {# Relationship list #}
+        <div class="card">
+            <h3 class="card-title" style="margin-bottom:0.75rem;">Relationships ({{ relationships|length }})</h3>
+            <div id="relationship-list-container">
+                {% include "partials/relationship_list.html" %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const dracula = {
+        green: '#50fa7b', cyan: '#8be9fd', pink: '#ff79c6', yellow: '#f1fa8c',
+        purple: '#bd93f9', orange: '#ffb86c', red: '#ff5555', comment: '#6272a4',
+        fg: '#f8f8f2', current: '#44475a', bg: '#282a36', bgDarker: '#1e1f29'
+    };
+    const edgeColors = {
+        ally: dracula.green, enemy: dracula.red, family: dracula.cyan,
+        romantic: dracula.pink, mentor: dracula.orange, other: dracula.comment
+    };
+    const affPalette = [
+        dracula.purple, dracula.pink, dracula.cyan, dracula.green,
+        dracula.orange, dracula.yellow, dracula.red, '#9580ff',
+        '#80ffea', '#ff80bf', '#ffff80', '#ff9580'
+    ];
+
+    let graphInstance = null;
+    let fullData = null;
+    let affColorMap = {};
+    const imgCache = {};
+    const focusId = {{ (focus or '')|tojson }};
+
+    function loadImg(url) {
+        if (!imgCache[url]) {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.src = url;
+            img.onload = function() {
+                if (graphInstance) graphInstance.refresh();
+            };
+            imgCache[url] = img;
+        }
+        return imgCache[url];
+    }
+
+    function renderNode(node, ctx, globalScale) {
+        var size = node._highlighted ? 24 : 18;
+        var ringColor = affColorMap[node.affiliation] || dracula.comment;
+
+        // Ring
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, size + 3, 0, 2 * Math.PI);
+        ctx.fillStyle = ringColor;
+        ctx.fill();
+
+        // Avatar or placeholder
+        if (node.avatar) {
+            var img = loadImg(node.avatar);
+            if (img.complete && img.naturalWidth > 0) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
+                ctx.clip();
+                ctx.drawImage(img, node.x - size, node.y - size, size * 2, size * 2);
+                ctx.restore();
+            } else {
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
+                ctx.fillStyle = dracula.current;
+                ctx.fill();
+            }
+        } else {
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, size, 0, 2 * Math.PI);
+            ctx.fillStyle = dracula.current;
+            ctx.fill();
+        }
+
+        // Name label
+        if (globalScale > 0.5) {
+            var fontSize = Math.max(11 / globalScale, 4);
+            ctx.fillStyle = dracula.fg;
+            ctx.font = fontSize + 'px -apple-system, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText(node.name, node.x, node.y + size + 4 / globalScale);
+        }
+    }
+
+    function buildLegend(affiliations) {
+        var el = document.getElementById('graph-legend');
+        if (!el) return;
+        var html = '<div class="legend-section"><strong style="color:' + dracula.fg + ';font-size:0.75rem;">Affiliations</strong><br>';
+        affiliations.forEach(function(aff, i) {
+            var color = affColorMap[aff] || dracula.comment;
+            html += '<span class="legend-item"><span class="legend-dot" style="background:' + color + '"></span>' + aff + '</span>';
+        });
+        html += '</div><div class="legend-section" style="margin-top:0.5rem;"><strong style="color:' + dracula.fg + ';font-size:0.75rem;">Relationships</strong><br>';
+        Object.keys(edgeColors).forEach(function(type) {
+            html += '<span class="legend-item"><span class="legend-line" style="background:' + edgeColors[type] + '"></span>' + type + '</span>';
+        });
+        html += '</div>';
+        el.innerHTML = html;
+    }
+
+    function showNodeInfo(node) {
+        document.getElementById('node-info').style.display = 'block';
+        document.getElementById('node-info-name').textContent = node.name;
+        document.getElementById('node-info-aff').textContent = node.affiliation;
+        document.getElementById('node-info-link').href = '/character/' + node.id;
+
+        // Find edges for this node
+        var rels = fullData.links.filter(function(l) {
+            var sid = typeof l.source === 'object' ? l.source.id : l.source;
+            var tid = typeof l.target === 'object' ? l.target.id : l.target;
+            return sid === node.id || tid === node.id;
+        });
+        var html = '';
+        rels.forEach(function(l) {
+            var sid = typeof l.source === 'object' ? l.source.id : l.source;
+            var tid = typeof l.target === 'object' ? l.target.id : l.target;
+            var otherId = sid === node.id ? tid : sid;
+            var other = fullData.nodes.find(function(n) { return n.id === otherId; });
+            if (other) {
+                html += '<div style="font-size:0.85rem;margin:0.2rem 0;">'
+                    + '<span class="rel-badge rel-badge-' + l.type + '">' + (l.label || l.type) + '</span> '
+                    + '<a href="/character/' + otherId + '" style="color:' + dracula.fg + ';">' + other.name + '</a>'
+                    + '</div>';
+            }
+        });
+        document.getElementById('node-info-rels').innerHTML = html || '<span class="text-comment">No relationships</span>';
+    }
+
+    async function initGraph(filterMode) {
+        var container = document.getElementById('force-graph');
+        if (!container || typeof ForceGraph === 'undefined') return;
+
+        var resp = await fetch('/api/relationships');
+        fullData = await resp.json();
+
+        // Build affiliation color map
+        fullData.affiliations.forEach(function(aff, i) {
+            affColorMap[aff] = affPalette[i % affPalette.length];
+        });
+        if (!affColorMap['Unaffiliated']) affColorMap['Unaffiliated'] = dracula.comment;
+
+        // Filter nodes based on tab
+        var nodes, links;
+        if (filterMode === 'relationships') {
+            nodes = fullData.nodes.filter(function(n) { return n.connected; });
+            var nodeIds = new Set(nodes.map(function(n) { return n.id; }));
+            links = fullData.links.filter(function(l) {
+                return nodeIds.has(l.source) && nodeIds.has(l.target);
+            });
+        } else {
+            nodes = fullData.nodes;
+            links = fullData.links;
+        }
+
+        buildLegend(fullData.affiliations);
+
+        // Destroy previous instance
+        if (graphInstance) {
+            graphInstance._destructor && graphInstance._destructor();
+            container.innerHTML = '';
+        }
+
+        graphInstance = ForceGraph()(container)
+            .backgroundColor(dracula.bgDarker)
+            .graphData({ nodes: nodes, links: links })
+            .nodeCanvasObject(renderNode)
+            .nodePointerAreaPaint(function(node, color, ctx) {
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, 22, 0, 2 * Math.PI);
+                ctx.fill();
+            })
+            .linkColor(function(link) { return edgeColors[link.type] || dracula.comment; })
+            .linkWidth(1.5)
+            .linkDirectionalParticles(0)
+            .onNodeClick(function(node) {
+                // Highlight
+                fullData.nodes.forEach(function(n) { n._highlighted = false; });
+                node._highlighted = true;
+                showNodeInfo(node);
+            })
+            .onNodeHover(function(node) {
+                document.body.style.cursor = node ? 'pointer' : 'default';
+            })
+            .onBackgroundClick(function() {
+                fullData.nodes.forEach(function(n) { n._highlighted = false; });
+                document.getElementById('node-info').style.display = 'none';
+            })
+            .warmupTicks(80)
+            .cooldownTicks(200)
+            .width(container.offsetWidth)
+            .height(container.offsetHeight);
+
+        // Focus on specific character if requested
+        if (focusId) {
+            var focusNode = nodes.find(function(n) { return n.id === focusId; });
+            if (focusNode) {
+                setTimeout(function() {
+                    graphInstance.centerAt(focusNode.x, focusNode.y, 500);
+                    graphInstance.zoom(2, 500);
+                    focusNode._highlighted = true;
+                    showNodeInfo(focusNode);
+                }, 1000);
+            }
+        }
+    }
+
+    // Tab switching
+    window.switchTab = function(tab) {
+        document.querySelectorAll('.chip-group .chip').forEach(function(c) { c.classList.remove('active'); });
+        document.getElementById('tab-' + tab).classList.add('active');
+
+        if (tab === 'affiliations') {
+            document.getElementById('view-affiliations').style.display = '';
+            document.getElementById('view-graph').style.display = 'none';
+        } else {
+            document.getElementById('view-affiliations').style.display = 'none';
+            document.getElementById('view-graph').style.display = '';
+            initGraph(tab === 'relationships' ? 'relationships' : 'all');
+        }
+
+        // Update URL without reload
+        var url = '/connections?tab=' + tab;
+        history.replaceState(null, '', url);
+    };
+
+    // Init on page load
+    var currentTab = {{ tab|tojson }};
+    if (currentTab !== 'affiliations') {
+        initGraph(currentTab === 'relationships' ? 'relationships' : 'all');
+    }
+
+    // Reload graph after relationship CRUD
+    document.body.addEventListener('htmx:afterSettle', function(e) {
+        if (e.detail.target && e.detail.target.id === 'relationship-list-container') {
+            var activeTab = document.querySelector('.chip-group .chip.active');
+            var mode = activeTab && activeTab.id === 'tab-relationships' ? 'relationships' : 'all';
+            if (document.getElementById('view-graph').style.display !== 'none') {
+                initGraph(mode);
+            }
+        }
+    });
+
+    // Resize handler
+    window.addEventListener('resize', function() {
+        if (graphInstance) {
+            var container = document.getElementById('force-graph');
+            graphInstance.width(container.offsetWidth).height(container.offsetHeight);
+        }
+    });
+})();
+</script>
+{% endblock %}

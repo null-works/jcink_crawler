@@ -559,26 +559,38 @@ async def admin_page(
     })
 
 
-@router.get("/affiliations", response_class=HTMLResponse)
-async def affiliations_page(
+@router.get("/connections", response_class=HTMLResponse)
+async def connections_page(
     request: Request,
-    view: str = "cards",
+    tab: str = "all",
+    focus: str | None = None,
     db: aiosqlite.Connection = Depends(get_db),
 ):
     redirect = _require_auth(request)
     if redirect:
         return redirect
 
+    characters = await get_all_characters(db)
+    relationships = await get_all_relationships(db)
     groups = await get_characters_by_affiliation(db)
     stats = await get_dashboard_stats(db)
     activity = get_activity()
 
-    return templates.TemplateResponse(request, "pages/affiliations.html", {
+    return templates.TemplateResponse(request, "pages/connections.html", {
+        "characters": characters,
+        "relationships": relationships,
+        "relationship_types": RELATIONSHIP_TYPES,
         "groups": groups,
         "stats": stats,
         "activity": activity,
-        "view": view,
+        "tab": tab,
+        "focus": focus,
     })
+
+
+@router.get("/affiliations")
+async def affiliations_redirect(tab: str = "affiliations"):
+    return RedirectResponse(url=f"/connections?tab={tab}", status_code=302)
 
 
 @router.get("/htmx/affiliations", response_class=HTMLResponse)
@@ -1269,29 +1281,12 @@ async def htmx_nuke_rebuild(
 
 # --- Relationships ---
 
-@router.get("/relationships", response_class=HTMLResponse)
-async def relationships_page(
-    request: Request,
-    focus: str | None = None,
-    db: aiosqlite.Connection = Depends(get_db),
-):
-    redirect = _require_auth(request)
-    if redirect:
-        return redirect
-
-    characters = await get_all_characters(db)
-    relationships = await get_all_relationships(db)
-    stats = await get_dashboard_stats(db)
-    activity = get_activity()
-
-    return templates.TemplateResponse(request, "pages/relationships.html", {
-        "characters": characters,
-        "relationships": relationships,
-        "relationship_types": RELATIONSHIP_TYPES,
-        "stats": stats,
-        "activity": activity,
-        "focus": focus,
-    })
+@router.get("/relationships")
+async def relationships_redirect(focus: str | None = None):
+    url = "/connections?tab=relationships"
+    if focus:
+        url += f"&focus={focus}"
+    return RedirectResponse(url=url, status_code=302)
 
 
 @router.get("/api/relationships")
@@ -1299,42 +1294,39 @@ async def get_relationship_graph(
     request: Request,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Returns graph data as JSON for Cytoscape.js."""
+    """Returns graph data as JSON for Force-Graph."""
     characters = await get_all_characters(db)
     relationships = await get_all_relationships(db)
+    affiliations = await get_unique_affiliations(db)
 
-    # Build set of characters that have at least one relationship
     connected_ids = set()
     for r in relationships:
         connected_ids.add(r.character_a_id)
         connected_ids.add(r.character_b_id)
 
-    nodes = [
-        {
-            "data": dict(
-                id=c.id,
-                label=c.name,
-                group_name=c.group_name or "",
-                affiliation=c.affiliation or "",
-                **({"avatar": c.avatar_url} if c.avatar_url else {}),
-            )
+    nodes = []
+    for c in characters:
+        node = {
+            "id": c.id,
+            "name": c.name,
+            "affiliation": c.affiliation or "Unaffiliated",
+            "connected": c.id in connected_ids,
         }
-        for c in characters
-        if c.id in connected_ids
-    ]
-    edges = [
+        avatar = getattr(c, "square_image", None) or c.avatar_url
+        if avatar:
+            node["avatar"] = avatar
+        nodes.append(node)
+
+    links = [
         {
-            "data": {
-                "id": f"e{r.id}",
-                "source": r.character_a_id,
-                "target": r.character_b_id,
-                "relationship_type": r.relationship_type,
-                "label": r.label or r.relationship_type,
-            }
+            "source": r.character_a_id,
+            "target": r.character_b_id,
+            "type": r.relationship_type,
+            "label": r.label or r.relationship_type,
         }
         for r in relationships
     ]
-    return {"nodes": nodes, "edges": edges}
+    return {"nodes": nodes, "links": links, "affiliations": affiliations}
 
 
 @router.post("/htmx/relationship/add", response_class=HTMLResponse)

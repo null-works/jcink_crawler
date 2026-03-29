@@ -1,10 +1,3 @@
-{% if view == 'cluster' %}
-{# Cluster map view — container only, JS init is on the parent page #}
-<div id="cluster-legend" style="display:flex;flex-wrap:wrap;margin-bottom:0.5rem;"></div>
-<div id="cy-affiliation" class="graph-container" style="width: 100%; height: calc(100vh - 120px); min-height: 600px; display: block;"></div>
-
-{% else %}
-{# Cards view (default) #}
 {% for aff_name, chars in groups.items() %}
 <div class="affiliation-group">
     <div class="affiliation-header">
@@ -29,4 +22,3 @@
     </div>
 </div>
 {% endfor %}
-{% endif %}
