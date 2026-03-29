@@ -45,7 +45,7 @@ function initAffiliationCluster() {
     var el = document.getElementById('cy-affiliation');
     if (!el) return;
     if (typeof cytoscape === 'undefined') {
-        el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);">Cytoscape.js failed to load. Check browser console.</div>';
+        el.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);">Cytoscape.js failed to load.</div>';
         return;
     }
 
@@ -59,24 +59,18 @@ function initAffiliationCluster() {
     var elements = [];
     var affNames = Object.keys(groups);
 
+    // Flat nodes only — no compound parents. Color-coded by affiliation.
     affNames.forEach(function(aff, i) {
-        elements.push({
-            data: { id: 'aff-' + i, label: aff + ' (' + groups[aff].length + ')' },
-            classes: 'affiliation-node'
-        });
         groups[aff].forEach(function(c) {
             var img = c.square_image || c.avatar_url || '';
             var nodeData = {
                 id: c.id,
                 label: c.name,
-                parent: 'aff-' + i,
-                groupName: c.group_name || ''
+                affiliation: aff,
+                affIndex: i
             };
             if (img) nodeData.avatar = img;
-            elements.push({
-                data: nodeData,
-                classes: 'character-node'
-            });
+            elements.push({ data: nodeData });
         });
     });
 
@@ -85,41 +79,26 @@ function initAffiliationCluster() {
         elements: elements,
         style: [
             {
-                selector: '.affiliation-node',
+                selector: 'node',
                 style: {
-                    'background-color': dracula.current,
-                    'background-opacity': 0.5,
-                    'border-color': dracula.comment,
-                    'border-width': 2,
-                    'label': 'data(label)',
-                    'text-valign': 'top',
-                    'text-halign': 'center',
-                    'font-size': '14px',
-                    'color': dracula.fg,
-                    'font-weight': 600,
-                    'padding': '30px',
-                    'shape': 'roundrectangle'
-                }
-            },
-            {
-                selector: '.character-node',
-                style: {
-                    'width': 50,
-                    'height': 50,
+                    'width': 60,
+                    'height': 60,
                     'background-color': dracula.comment,
-                    'border-width': 3,
+                    'border-width': 4,
                     'border-color': dracula.purple,
                     'label': 'data(label)',
                     'text-valign': 'bottom',
-                    'text-margin-y': 8,
-                    'font-size': '10px',
+                    'text-margin-y': 10,
+                    'font-size': '11px',
                     'color': dracula.fg,
                     'text-outline-color': dracula.bg,
-                    'text-outline-width': 2
+                    'text-outline-width': 2,
+                    'text-max-width': '80px',
+                    'text-wrap': 'ellipsis'
                 }
             },
             {
-                selector: '.character-node[avatar]',
+                selector: 'node[avatar]',
                 style: {
                     'background-image': 'data(avatar)',
                     'background-fit': 'cover',
@@ -129,34 +108,49 @@ function initAffiliationCluster() {
             }
         ],
         layout: {
-            name: 'cose',
-            padding: 50,
-            nodeRepulsion: 50000,
-            idealEdgeLength: 80,
-            gravity: 0.8,
-            nestingFactor: 5,
-            numIter: 1000,
-            animate: false,
-            nodeOverlap: 20
+            name: 'grid',
+            padding: 30,
+            avoidOverlap: true,
+            condense: true,
+            sort: function(a, b) {
+                var ai = a.data('affIndex'), bi = b.data('affIndex');
+                return ai - bi;
+            }
         },
         minZoom: 0.2,
         maxZoom: 3,
         wheelSensitivity: 0.3
     });
 
-    affNames.forEach(function(aff, i) {
-        var color = palette[i % palette.length];
-        groups[aff].forEach(function(c) {
-            cy.getElementById(c.id).style('border-color', color);
-        });
-        cy.getElementById('aff-' + i).style('border-color', color);
+    // Color borders by affiliation
+    cy.nodes().forEach(function(node) {
+        var i = node.data('affIndex');
+        node.style('border-color', palette[i % palette.length]);
     });
 
-    cy.on('tap', '.character-node', function(e) {
+    cy.on('tap', 'node', function(e) {
         window.location.href = '/character/' + e.target.id();
     });
-    cy.on('mouseover', '.character-node', function() { document.body.style.cursor = 'pointer'; });
-    cy.on('mouseout', '.character-node', function() { document.body.style.cursor = 'default'; });
+    cy.on('mouseover', 'node', function(e) {
+        e.target.style('border-width', 6);
+        document.body.style.cursor = 'pointer';
+    });
+    cy.on('mouseout', 'node', function(e) {
+        e.target.style('border-width', 4);
+        document.body.style.cursor = 'default';
+    });
+
+    // Build a legend
+    var legend = document.getElementById('cluster-legend');
+    if (legend) {
+        legend.innerHTML = affNames.map(function(aff, i) {
+            var color = palette[i % palette.length];
+            return '<span style="display:inline-flex;align-items:center;gap:0.3rem;margin:0.2rem 0.5rem;">'
+                + '<span style="width:12px;height:12px;border-radius:50%;background:' + color + ';flex-shrink:0;"></span>'
+                + '<span style="font-size:0.8rem;color:var(--fg);">' + aff + ' (' + groups[aff].length + ')</span>'
+                + '</span>';
+        }).join('');
+    }
 }
 
 // Init on page load if cluster view is active
