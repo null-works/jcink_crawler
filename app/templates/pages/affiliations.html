@@ -37,4 +37,124 @@
 <div id="affiliation-content">
     {% include "partials/affiliation_view.html" %}
 </div>
+
+{# Load Cytoscape on the page so it's available for HTMX swaps #}
+<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+<script>
+window._affGroups = {{ groups | tojson }};
+
+function initAffiliationCluster() {
+    var el = document.getElementById('cy-affiliation');
+    if (!el || typeof cytoscape === 'undefined') return;
+
+    var dracula = {
+        green: '#50fa7b', cyan: '#8be9fd', pink: '#ff79c6', yellow: '#f1fa8c',
+        purple: '#bd93f9', orange: '#ffb86c', red: '#ff5555', comment: '#6272a4',
+        fg: '#f8f8f2', current: '#44475a', bg: '#282a36', bgLight: '#2d2f3d'
+    };
+    var palette = [dracula.purple, dracula.pink, dracula.cyan, dracula.green, dracula.orange, dracula.yellow, dracula.red];
+    var groups = window._affGroups;
+    var elements = [];
+    var affNames = Object.keys(groups);
+
+    affNames.forEach(function(aff, i) {
+        elements.push({
+            data: { id: 'aff-' + i, label: aff + ' (' + groups[aff].length + ')' },
+            classes: 'affiliation-node'
+        });
+        groups[aff].forEach(function(c) {
+            elements.push({
+                data: {
+                    id: c.id,
+                    label: c.name,
+                    parent: 'aff-' + i,
+                    avatar: c.square_image || c.avatar_url || '',
+                    groupName: c.group_name || ''
+                },
+                classes: 'character-node'
+            });
+        });
+    });
+
+    var cy = cytoscape({
+        container: el,
+        elements: elements,
+        style: [
+            {
+                selector: '.affiliation-node',
+                style: {
+                    'background-color': dracula.current,
+                    'background-opacity': 0.5,
+                    'border-color': dracula.comment,
+                    'border-width': 2,
+                    'label': 'data(label)',
+                    'text-valign': 'top',
+                    'text-halign': 'center',
+                    'font-size': '14px',
+                    'color': dracula.fg,
+                    'font-weight': 600,
+                    'padding': '30px',
+                    'shape': 'roundrectangle'
+                }
+            },
+            {
+                selector: '.character-node',
+                style: {
+                    'width': 50,
+                    'height': 50,
+                    'background-color': dracula.bgLight,
+                    'background-image': 'data(avatar)',
+                    'background-fit': 'cover',
+                    'background-clip': 'node',
+                    'border-width': 3,
+                    'border-color': dracula.purple,
+                    'label': 'data(label)',
+                    'text-valign': 'bottom',
+                    'text-margin-y': 8,
+                    'font-size': '10px',
+                    'color': dracula.fg,
+                    'text-outline-color': dracula.bg,
+                    'text-outline-width': 2
+                }
+            }
+        ],
+        layout: {
+            name: 'cose',
+            padding: 40,
+            nodeRepulsion: 8000,
+            idealEdgeLength: 100,
+            gravity: 0.25,
+            nestingFactor: 1.2,
+            animate: true,
+            animationDuration: 500
+        },
+        minZoom: 0.3,
+        maxZoom: 3
+    });
+
+    affNames.forEach(function(aff, i) {
+        var color = palette[i % palette.length];
+        groups[aff].forEach(function(c) {
+            cy.getElementById(c.id).style('border-color', color);
+        });
+        cy.getElementById('aff-' + i).style('border-color', color);
+    });
+
+    cy.on('tap', '.character-node', function(e) {
+        window.location.href = '/character/' + e.target.id();
+    });
+    cy.on('mouseover', '.character-node', function() { document.body.style.cursor = 'pointer'; });
+    cy.on('mouseout', '.character-node', function() { document.body.style.cursor = 'default'; });
+}
+
+// Init on page load if cluster view is active
+initAffiliationCluster();
+
+// Re-init after HTMX swap
+document.body.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail.target && e.detail.target.id === 'affiliation-content') {
+        initAffiliationCluster();
+    }
+});
+</script>
 {% endblock %}
