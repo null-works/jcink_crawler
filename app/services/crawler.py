@@ -1712,3 +1712,64 @@ async def discover_characters(db_path: str) -> dict:
         "already_tracked": existing_count,
         "skipped": skipped_count,
     }
+
+
+async def crawl_all_profile_fields(db_path: str) -> dict:
+    """Lightweight profile-only crawl for all tracked characters.
+
+    Fetches each character's profile page via httpx (no Playwright),
+    parses profile fields (short_quote, face claim, etc.), and upserts
+    them. Does NOT crawl threads, quotes, or power grids.
+
+    Much faster than a full crawl — plain HTTP, no JS rendering.
+    """
+    async with connect_db(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, name FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
+        )
+        chars = await cursor.fetchall()
+
+    if not chars:
+        return {"updated": 0, "errors": 0}
+
+    base_url = settings.forum_base_url
+    updated = 0
+    errors = 0
+
+    log_debug(f"Starting profile fields crawl for {len(chars)} characters")
+
+    for i, char in enumerate(chars):
+        cid = char["id"]
+        name = char["name"]
+        set_activity(
+            f"({i + 1}/{len(chars)}) Profile fields: {name}",
+            character_id=cid,
+            character_name=name,
+        )
+
+        profile_url = f"{base_url}/index.php?showuser={cid}"
+        html = await fetch_page_with_delay(profile_url)
+
+        if not html or is_board_message(html):
+            log_debug(f"Profile {cid} ({name}): failed or board message", level="error")
+            errors += 1
+            continue
+
+        profile = parse_profile_page(html, cid)
+
+        if profile.fields:
+            async with connect_db(db_path) as db:
+                db.row_factory = aiosqlite.Row
+                for key, value in profile.fields.items():
+                    await upsert_profile_field(db, cid, key, value)
+                await update_character_crawl_time(db, cid, "profile")
+                await db.commit()
+            updated += 1
+            log_debug(f"Profile {cid} ({name}): {len(profile.fields)} fields updated", level="done")
+        else:
+            log_debug(f"Profile {cid} ({name}): no fields parsed")
+
+    clear_activity()
+    log_debug(f"Profile fields crawl complete: {updated} updated, {errors} errors", level="done")
+    return {"updated": updated, "errors": errors}

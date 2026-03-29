@@ -39,7 +39,7 @@ from app.models import (
 )
 from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden, set_approval_date, set_approval_dates
 from app.services import crawl_character_threads, crawl_character_profile, register_character
-from app.services.crawler import sync_posts_from_acp, crawl_quotes_only
+from app.services.crawler import sync_posts_from_acp, crawl_quotes_only, crawl_all_profile_fields
 from app.services.scheduler import _crawl_all_characters
 from app.services.activity import get_activity, get_debug_log, clear_debug_log
 
@@ -1105,8 +1105,10 @@ async def htmx_crawl(
     character_id = form.get("character_id", "").strip() or None
     crawl_type = form.get("crawl_type", "threads")
 
-    if crawl_type in ("discover", "all-threads", "all-profiles"):
+    if crawl_type in ("discover", "all-threads"):
         background_tasks.add_task(_crawl_all_characters)
+    elif crawl_type == "all-profiles":
+        background_tasks.add_task(crawl_all_profile_fields, settings.database_path)
     elif crawl_type == "sync-posts":
         background_tasks.add_task(sync_posts_from_acp, settings.database_path)
     elif crawl_type == "crawl-quotes":
