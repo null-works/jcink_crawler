@@ -475,8 +475,12 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         if alias_text and alias_text != "No Information":
             fields.setdefault("alias", alias_text)
 
-    # Extract short quote from .profile-short-quote or mini profile area (field_26)
-    short_quote_el = soup.select_one(".profile-short-quote")
+    # Extract short quote from profile (field_26)
+    # Different themes use different class names:
+    #   .profile-short-quote  (original expected)
+    #   .profile-quote        (modern theme)
+    #   .pf-i                 (legacy theme)
+    short_quote_el = soup.select_one(".profile-short-quote, .profile-quote, .pf-i")
     if short_quote_el:
         sq_text = short_quote_el.get_text(strip=True)
         if sq_text and sq_text != "No Information":
