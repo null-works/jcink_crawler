@@ -1,4 +1,5 @@
 import json
+import random
 import re
 import time
 
@@ -45,6 +46,19 @@ router = APIRouter()
 
 
 # --- Character Endpoints ---
+
+@router.get("/characters/random", response_model=list[CharacterSummary])
+async def random_characters(
+    n: int = Query(3, ge=1, le=20, description="Number of random characters to return"),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Return N random characters. Fresh results on every call."""
+    all_chars = await get_all_characters(db)
+    if not all_chars:
+        return []
+    count = min(n, len(all_chars))
+    return random.sample(all_chars, count)
+
 
 @router.get("/characters", response_model=list[CharacterSummary])
 async def list_characters(db: aiosqlite.Connection = Depends(get_db)):
