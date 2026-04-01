@@ -1261,11 +1261,13 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                         touched_char_ids.add(cid)
 
             if touched_char_ids:
+                from app.config import now_et_stamp
+                stamp = now_et_stamp()
                 placeholders = ",".join("?" * len(touched_char_ids))
                 await db.execute(
-                    f"UPDATE characters SET last_thread_crawl = CURRENT_TIMESTAMP, "
-                    f"updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
-                    list(touched_char_ids),
+                    f"UPDATE characters SET last_thread_crawl = ?, "
+                    f"updated_at = ? WHERE id IN ({placeholders})",
+                    [stamp, stamp] + list(touched_char_ids),
                 )
 
             await db.commit()
@@ -1311,7 +1313,8 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
 
         # Record last sync time
         async with connect_db(db_path) as db:
-            await set_crawl_status(db, "acp_last_sync", datetime.now(timezone.utc).isoformat())
+            from app.config import now_et_iso
+            await set_crawl_status(db, "acp_last_sync", now_et_iso())
 
         clear_activity()
         summary = {

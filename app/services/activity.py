@@ -4,7 +4,7 @@ Shared between the crawler (writes) and the API (reads).
 Ephemeral — resets on restart, which is fine since the TUI polls frequently.
 """
 
-from datetime import datetime, timezone
+from app.config import now_et
 
 _state: dict = {
     "active": False,
@@ -23,7 +23,7 @@ def log_debug(message: str, level: str = "info") -> None:
 
     Also prints to stdout for container logs.
     """
-    now = datetime.now(timezone.utc)
+    now = now_et()
     _debug_log.append({
         "time": now.strftime("%H:%M:%S"),
         "timestamp": now.isoformat(),
@@ -40,7 +40,7 @@ def set_activity(activity: str, character_id: str | None = None, character_name:
     _state["activity"] = activity
     _state["character_id"] = character_id
     _state["character_name"] = character_name
-    _state["started_at"] = datetime.now(timezone.utc).isoformat()
+    _state["started_at"] = now_et().isoformat()
     log_debug(activity, level="activity")
 
 

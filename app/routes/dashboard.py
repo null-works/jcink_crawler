@@ -57,18 +57,20 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 # --- Jinja2 custom filters ---
 
 def format_time(ts) -> str:
-    """Format a timestamp as relative time."""
+    """Format a timestamp as relative time, using America/New_York."""
     if not ts:
         return "Never"
     try:
+        from app.config import now_et
+        tz = ZoneInfo(settings.activity_timezone)
         if isinstance(ts, str):
             ts_clean = ts.replace("Z", "+00:00")
             dt = datetime.fromisoformat(ts_clean)
         else:
             dt = ts
-        now = datetime.now(timezone.utc)
+        now = now_et()
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=tz)
         delta = now - dt
         minutes = int(delta.total_seconds() / 60)
         if minutes < 1:

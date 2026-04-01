@@ -791,7 +791,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     threads_by_category = {r["category"]: r["cnt"] for r in rows}
 
     # Posts over last 3 months — grouped by month
-    now = datetime.now(timezone.utc)
+    now = datetime.now(ZoneInfo(settings.activity_timezone))
     three_months_ago = (now.replace(day=1) - timedelta(days=90)).replace(day=1)
     cursor = await db.execute(
         """SELECT strftime('%Y-%m', post_date) AS month, COUNT(*) AS cnt

@@ -9,7 +9,7 @@ Commit convention:
 """
 
 import aiosqlite
-from app.config import settings
+from app.config import settings, now_et_stamp
 import re
 from app.models.character import (
     CharacterSummary,
@@ -153,8 +153,8 @@ async def upsert_character(
             profile_url = excluded.profile_url,
             group_name = excluded.group_name,
             avatar_url = excluded.avatar_url,
-            updated_at = CURRENT_TIMESTAMP
-    """, (character_id, name, profile_url, group_name, avatar_url))
+            updated_at = ?
+    """, (character_id, name, profile_url, group_name, avatar_url, now_et_stamp()))
     await db.commit()
 
 
@@ -171,8 +171,8 @@ async def toggle_character_hidden(
         return None
     new_val = 0 if row["hidden"] else 1
     await db.execute(
-        "UPDATE characters SET hidden = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (new_val, character_id),
+        "UPDATE characters SET hidden = ?, updated_at = ? WHERE id = ?",
+        (new_val, now_et_stamp(), character_id),
     )
     await db.commit()
     return bool(new_val)
@@ -185,9 +185,10 @@ async def update_character_crawl_time(
 ) -> None:
     """Update the last crawl timestamp for a character."""
     column = "last_thread_crawl" if crawl_type == "threads" else "last_profile_crawl"
+    stamp = now_et_stamp()
     await db.execute(
-        f"UPDATE characters SET {column} = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (character_id,)
+        f"UPDATE characters SET {column} = ?, updated_at = ? WHERE id = ?",
+        (stamp, stamp, character_id)
     )
     await db.commit()
 
@@ -207,11 +208,12 @@ async def upsert_thread(
     last_poster_avatar: str | None = None,
 ) -> None:
     """Create or update a thread."""
+    stamp = now_et_stamp()
     await db.execute("""
         INSERT INTO threads (id, title, url, forum_id, forum_name, category,
                            last_poster_id, last_poster_name, last_poster_avatar,
                            last_crawled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             url = excluded.url,
@@ -221,10 +223,10 @@ async def upsert_thread(
             last_poster_id = excluded.last_poster_id,
             last_poster_name = excluded.last_poster_name,
             last_poster_avatar = COALESCE(excluded.last_poster_avatar, threads.last_poster_avatar),
-            last_crawled = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
+            last_crawled = ?,
+            updated_at = ?
     """, (thread_id, title, url, forum_id, forum_name, category,
-          last_poster_id, last_poster_name, last_poster_avatar))
+          last_poster_id, last_poster_name, last_poster_avatar, stamp, stamp, stamp))
 
 
 async def link_character_thread(
@@ -445,8 +447,8 @@ async def upsert_profile_field(
         VALUES (?, ?, ?)
         ON CONFLICT(character_id, field_key) DO UPDATE SET
             field_value = excluded.field_value,
-            updated_at = CURRENT_TIMESTAMP
-    """, (character_id, field_key, field_value))
+            updated_at = ?
+    """, (character_id, field_key, field_value, now_et_stamp()))
 
 
 async def get_profile_fields(
@@ -657,8 +659,8 @@ async def set_crawl_status(
         VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET
             value = excluded.value,
-            updated_at = CURRENT_TIMESTAMP
-    """, (key, value))
+            updated_at = ?
+    """, (key, value, now_et_stamp()))
     await db.commit()
 
 
@@ -700,8 +702,8 @@ async def set_approval_date(
 ) -> bool:
     """Set the approval date for a single character. Returns True if found."""
     cursor = await db.execute(
-        "UPDATE characters SET approval_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (approval_date, character_id),
+        "UPDATE characters SET approval_date = ?, updated_at = ? WHERE id = ?",
+        (approval_date, now_et_stamp(), character_id),
     )
     await db.commit()
     return cursor.rowcount > 0
@@ -774,12 +776,12 @@ async def record_user_activity(
     """Record or update a user's last-seen timestamp. Auto-commits."""
     await db.execute(
         """INSERT INTO user_activity (user_id, user_name, last_seen, source)
-           VALUES (?, ?, datetime('now'), ?)
+           VALUES (?, ?, ?, ?)
            ON CONFLICT(user_id) DO UPDATE SET
                user_name = excluded.user_name,
                last_seen = excluded.last_seen,
                source = excluded.source""",
-        (user_id, user_name, source),
+        (user_id, user_name, now_et_stamp(), source),
     )
     await db.commit()
 
@@ -789,12 +791,15 @@ async def get_recent_users(
     hours: int = 6,
 ) -> list[dict]:
     """Return users active within the last `hours` hours, most recent first."""
+    from datetime import timedelta
+    from app.config import now_et
+    cutoff = (now_et() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
     cursor = await db.execute(
         """SELECT user_id, user_name, last_seen, source
            FROM user_activity
-           WHERE last_seen >= datetime('now', ?)
+           WHERE last_seen >= ?
            ORDER BY last_seen DESC""",
-        (f"-{hours} hours",),
+        (cutoff,),
     )
     rows = await cursor.fetchall()
     excluded = settings.excluded_name_set
@@ -888,9 +893,9 @@ async def update_relationship(
     """Update a relationship's type and label. Auto-commits."""
     cursor = await db.execute(
         """UPDATE relationships
-           SET relationship_type = ?, label = ?, updated_at = datetime('now')
+           SET relationship_type = ?, label = ?, updated_at = ?
            WHERE id = ?""",
-        (rel_type, label, relationship_id),
+        (rel_type, label, now_et_stamp(), relationship_id),
     )
     await db.commit()
     return cursor.rowcount > 0

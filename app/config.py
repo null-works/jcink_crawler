@@ -1,10 +1,11 @@
 import base64
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "2.1.9"
+APP_VERSION = "2.2.0"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
@@ -57,3 +58,18 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def now_et() -> datetime:
+    """Current datetime in the configured activity timezone (America/New_York)."""
+    return datetime.now(ZoneInfo(settings.activity_timezone))
+
+
+def now_et_iso() -> str:
+    """Current datetime as ISO string in the configured timezone."""
+    return now_et().isoformat()
+
+
+def now_et_stamp() -> str:
+    """Current datetime as YYYY-MM-DD HH:MM:SS in the configured timezone."""
+    return now_et().strftime("%Y-%m-%d %H:%M:%S")
