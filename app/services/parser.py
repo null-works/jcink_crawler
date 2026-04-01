@@ -781,10 +781,13 @@ def _parse_jcink_date(text: str) -> str | None:
     from datetime import datetime, timedelta, timezone
 
     # Check for "Today" / "Yesterday" first (JCink replaces dates for recent posts)
+    from zoneinfo import ZoneInfo
+    from app.config import settings
+    tz = ZoneInfo(settings.activity_timezone)
     if _TODAY_RE.search(text):
-        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return datetime.now(tz).strftime("%Y-%m-%d")
     if _YESTERDAY_RE.search(text):
-        return (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        return (datetime.now(tz) - timedelta(days=1)).strftime("%Y-%m-%d")
 
     match = _DATE_RE.search(text)
     if not match:

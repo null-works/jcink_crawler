@@ -139,14 +139,16 @@ def _parse_sql_values(values_str: str) -> list | None:
 
 
 def _unix_to_iso(ts) -> str | None:
-    """Convert Unix timestamp to ISO date string (YYYY-MM-DD)."""
+    """Convert Unix timestamp to ISO date string (YYYY-MM-DD) in the configured timezone."""
     if ts is None:
         return None
     try:
         ts_int = int(ts)
         if ts_int <= 0:
             return None
-        return datetime.fromtimestamp(ts_int, tz=timezone.utc).strftime("%Y-%m-%d")
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(settings.activity_timezone)
+        return datetime.fromtimestamp(ts_int, tz=tz).strftime("%Y-%m-%d")
     except (ValueError, TypeError, OSError):
         return None
 
