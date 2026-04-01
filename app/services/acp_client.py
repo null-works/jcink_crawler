@@ -877,7 +877,12 @@ class ACPClient:
                         log_debug("ACP: login successful (from response body)")
                         return True
 
-                # Auth failure (not a connection issue) — don't retry
+                # Server-side errors (5xx) — retry like connection errors
+                if response.status_code >= 500:
+                    log_debug(f"ACP: server error (HTTP {response.status_code}), attempt {attempt + 1}/{max_retries}", level="warn")
+                    continue
+
+                # Auth failure (4xx or unexpected 200 without token) — don't retry
                 self._last_error = f"ACP login rejected (HTTP {response.status_code}) — check credentials"
                 log_debug(f"ACP: {self._last_error}", level="error")
                 return False
