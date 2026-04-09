@@ -149,6 +149,76 @@ async def register_new_character(
 
 # --- Thread Endpoints ---
 
+@router.get("/threads")
+async def get_threads_batch(
+    ids: str = Query(..., description="Comma-separated thread IDs"),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Batch-fetch threads with participants.
+
+    Returns {thread_id: {id, title, participants: [{id, name, codename}]}}
+    """
+    thread_ids = [tid.strip() for tid in ids.split(",") if tid.strip()]
+    if not thread_ids:
+        return {}
+
+    placeholders = ",".join("?" * len(thread_ids))
+
+    # Get thread metadata
+    cursor = await db.execute(
+        f"SELECT id, title, url, forum_id, forum_name, category FROM threads WHERE id IN ({placeholders})",
+        thread_ids,
+    )
+    thread_rows = await cursor.fetchall()
+    threads = {r["id"]: dict(r) for r in thread_rows}
+
+    # Get participants via character_threads join
+    cursor = await db.execute(
+        f"""SELECT ct.thread_id, c.id AS character_id, c.name, c.group_name,
+                   pf.field_value AS codename
+            FROM character_threads ct
+            JOIN characters c ON c.id = ct.character_id
+            LEFT JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = 'codename'
+            WHERE ct.thread_id IN ({placeholders})
+            ORDER BY ct.thread_id, c.name""",
+        thread_ids,
+    )
+    participant_rows = await cursor.fetchall()
+
+    # Also check posts table for participants not in character_threads
+    cursor = await db.execute(
+        f"""SELECT DISTINCT p.thread_id, p.character_id, c.name, c.group_name,
+                   pf.field_value AS codename
+            FROM posts p
+            JOIN characters c ON c.id = p.character_id
+            LEFT JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = 'codename'
+            WHERE p.thread_id IN ({placeholders})
+            ORDER BY p.thread_id, c.name""",
+        thread_ids,
+    )
+    post_participant_rows = await cursor.fetchall()
+
+    # Merge participants from both sources
+    for tid in threads:
+        threads[tid]["participants"] = []
+
+    seen = set()
+    for row in list(participant_rows) + list(post_participant_rows):
+        tid = row["thread_id"]
+        cid = row["character_id"]
+        if tid not in threads or (tid, cid) in seen:
+            continue
+        seen.add((tid, cid))
+        threads[tid]["participants"].append({
+            "id": cid,
+            "name": row["name"],
+            "codename": row["codename"],
+            "group_name": row["group_name"],
+        })
+
+    return threads
+
+
 @router.get("/character/{character_id}/threads", response_model=CharacterThreads)
 async def get_threads(
     character_id: str,
