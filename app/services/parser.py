@@ -415,10 +415,13 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
                     fields[field_key] = field_value
 
     # Grab codename from profile — multiple theme selectors:
-    #   h2.profile-codename    (original expected)
-    #   div.pf-s span.pf-1     (TWAI static skin)
-    #   .pr-sidebar > .pr-alias (Lover theme — field_19)
+    #   h2.profile-codename       (modern theme)
+    #   div.pf-t                  (legacy theme — field_19 as link)
+    #   .pr-sidebar > .pr-alias   (Lover theme)
+    #   div.pf-s span.pf-1        (TWAI static skin)
     codename_el = soup.select_one("h2.profile-codename")
+    if not codename_el:
+        codename_el = soup.select_one("div.pf-t")
     if not codename_el:
         codename_el = soup.select_one(".pr-sidebar > .pr-alias")
     if not codename_el:
