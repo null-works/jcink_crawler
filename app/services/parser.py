@@ -414,13 +414,18 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
                 if field_key and field_value and field_value != "No Information":
                     fields[field_key] = field_value
 
-    # Grab codename from h2.profile-codename or div.pf-s span.pf-1
+    # Grab codename from profile — multiple theme selectors:
+    #   h2.profile-codename    (original expected)
+    #   div.pf-s span.pf-1     (TWAI static skin)
+    #   .pr-sidebar > .pr-alias (Lover theme — field_19)
     codename_el = soup.select_one("h2.profile-codename")
+    if not codename_el:
+        codename_el = soup.select_one(".pr-sidebar > .pr-alias")
     if not codename_el:
         codename_el = soup.select_one("div.pf-s span.pf-1")
     if codename_el:
         codename = codename_el.get_text(strip=True)
-        if codename and codename.lower() != "code name" and codename != "No Information":
+        if codename and codename.lower() not in ("code name", "codename", "no information") and codename != "No Information":
             fields["codename"] = codename
 
     # Extract "played by" from div.pf-z (format: "played by <b>name</b>")
