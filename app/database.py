@@ -9,7 +9,7 @@ DATABASE_PATH = settings.database_path
 # Default busy timeout in milliseconds — how long SQLite waits for a lock
 # before raising "database is locked".  5 seconds is enough for the brief
 # writes this application performs.
-BUSY_TIMEOUT_MS = 5000
+BUSY_TIMEOUT_MS = 30000  # 30s — covers long-running batched writes (ACP sync)
 
 
 @asynccontextmanager

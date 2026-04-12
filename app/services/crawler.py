@@ -813,8 +813,14 @@ async def process_profile_html(character_id: str, html: str, db_path: str) -> di
     }
 
 
+_profile_batch_lock = asyncio.Lock()
+
+
 async def process_profile_html_batch(profiles: list[dict], db_path: str) -> dict:
     """Process a batch of pre-fetched profile HTML pages.
+
+    Serialized with a module-level lock so concurrent Browser Sync uploads
+    don't collide with each other or with the ACP Sync on DB writes.
 
     Args:
         profiles: List of {"character_id": "N", "html": "..."} dicts
@@ -823,27 +829,28 @@ async def process_profile_html_batch(profiles: list[dict], db_path: str) -> dict
     Returns:
         Summary dict with counts
     """
-    set_activity(f"Processing {len(profiles)} uploaded profiles")
-    log_debug(f"Processing {len(profiles)} browser-uploaded profiles")
+    async with _profile_batch_lock:
+        set_activity(f"Processing {len(profiles)} uploaded profiles")
+        log_debug(f"Processing {len(profiles)} browser-uploaded profiles")
 
-    processed = 0
-    errors = 0
-    for p in profiles:
-        cid = str(p.get("character_id", ""))
-        html = p.get("html", "")
-        if not cid or not html:
-            continue
-        try:
-            result = await process_profile_html(cid, html, db_path)
-            if "error" not in result:
-                processed += 1
-        except Exception as e:
-            errors += 1
-            log_debug(f"Error processing profile {cid}: {e}", level="error")
+        processed = 0
+        errors = 0
+        for p in profiles:
+            cid = str(p.get("character_id", ""))
+            html = p.get("html", "")
+            if not cid or not html:
+                continue
+            try:
+                result = await process_profile_html(cid, html, db_path)
+                if "error" not in result:
+                    processed += 1
+            except Exception as e:
+                errors += 1
+                log_debug(f"Error processing profile {cid}: {e}", level="error")
 
-    clear_activity()
-    log_debug(f"Browser profile sync: {processed} processed, {errors} errors", level="done")
-    return {"processed": processed, "errors": errors}
+        clear_activity()
+        log_debug(f"Browser profile sync: {processed} processed, {errors} errors", level="done")
+        return {"processed": processed, "errors": errors}
 
 
 async def register_character(user_id: str, db_path: str) -> dict:
