@@ -693,7 +693,10 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     log_debug(f"Starting profile crawl for {character_id}")
     set_activity(f"Crawling profile for #{character_id}", character_id=character_id)
 
-    html = await fetch_page_rendered(profile_url)
+    # Use httpx through CF Worker (server IP is banned, so Playwright direct
+    # fetch fails with ERR_CONNECTION_REFUSED). With bot auth cookies the
+    # Worker-proxied response serves the modern theme with dl.profile-dossier.
+    html = await fetch_page_with_delay(profile_url)
     if not html:
         return {"error": "Failed to fetch profile page"}
 
