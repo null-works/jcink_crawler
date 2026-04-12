@@ -87,6 +87,16 @@ async def authenticate() -> bool:
         if _is_cf_worker_enabled():
             actual_url = _cf_proxy_url(login_url)
             response = await client.post(actual_url, data=login_data)
+            # Worker renames Set-Cookie to X-Proxied-Set-Cookie to avoid browser
+            # interference; manually parse and inject into the httpx cookie jar.
+            proxied_cookie = response.headers.get("x-proxied-set-cookie", "")
+            if proxied_cookie:
+                from http.cookies import SimpleCookie
+                sc = SimpleCookie()
+                sc.load(proxied_cookie)
+                for name, morsel in sc.items():
+                    client.cookies.set(name, morsel.value, domain=settings.forum_base_url.replace("https://", "").replace("http://", ""))
+                print(f"[Fetcher] Parsed X-Proxied-Set-Cookie: {list(sc.keys())}")
         else:
             response = await client.post(login_url, data=login_data)
 
@@ -130,13 +140,12 @@ async def reauthenticate() -> bool:
 async def ensure_authenticated() -> None:
     """Ensure the client is authenticated if credentials are available.
 
-    Skipped when using CF Worker proxy — cookies can't be forwarded
-    through the proxy, and JCink thread/profile pages are public.
+    Authentication is required to see the modern (logged-in) JCink theme
+    which has dl.profile-dossier with character fields. Guest view shows
+    a different (legacy) template without those fields.
     """
     global _authenticated
-    if _is_cf_worker_enabled():
-        return
-    if not _authenticated and settings.bot_username:
+    if not _authenticated and settings.bot_username and settings.bot_password:
         await authenticate()
 
 
@@ -157,7 +166,11 @@ async def fetch_page(url: str) -> str | None:
         client = await get_client()
         if _is_cf_worker_enabled():
             actual_url = _cf_proxy_url(url)
-            response = await client.get(actual_url)
+            # Manually pass JCink session cookies as Cookie header since they're
+            # set for the JCink domain but we're requesting the Worker domain
+            jcink_cookies = "; ".join(f"{k}={v}" for k, v in client.cookies.items())
+            headers = {"Cookie": jcink_cookies} if jcink_cookies else {}
+            response = await client.get(actual_url, headers=headers)
         else:
             response = await client.get(url)
         response.raise_for_status()
