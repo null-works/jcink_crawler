@@ -440,6 +440,19 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         if codename and codename.lower() not in ("code name", "codename", "no information") and codename != "No Information":
             fields["codename"] = codename
 
+    # Power tag (field_18) — short label like "Telepath", "Hydrokinetic"
+    # Modern: .profile-badge.desktop-only inside .profile-hero-info
+    # Mini profile: .pr-power-tag
+    power_el = (
+        soup.select_one(".profile-hero-info .profile-badge.desktop-only")
+        or soup.select_one(".profile-badge.desktop-only")
+        or soup.select_one(".pr-power-tag")
+    )
+    if power_el:
+        power_tag = power_el.get_text(strip=True)
+        if power_tag and power_tag.lower() not in ("power tag", "no information"):
+            fields["power_tag"] = power_tag
+
     # Extract "played by" from div.pf-z (format: "played by <b>name</b>")
     pf_z = soup.select_one("div.pf-z")
     if pf_z:
