@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.3.1"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 

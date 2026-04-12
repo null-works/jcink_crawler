@@ -160,10 +160,6 @@
 {% for key in ic_order %}
     {% if fields.get(key) %}{% if ic_fields.append((field_labels.get(key, key), fields[key])) %}{% endif %}{% endif %}
 {% endfor %}
-{% set ooc_fields = [] %}
-{% for key in ooc_order %}
-    {% if fields.get(key) %}{% if ooc_fields.append((field_labels.get(key, key), fields[key])) %}{% endif %}{% endif %}
-{% endfor %}
 {% set known_keys = ic_order + ooc_order + image_keys + pg_keys %}
 {% set other_fields = [] %}
 {% for key, value in fields.items() %}
@@ -171,24 +167,12 @@
 {% endfor %}
 
 <div class="profile-columns">
-    {% if ic_fields or ooc_fields or other_fields %}
+    {% if ic_fields or other_fields %}
     <div class="card profile-col-fields">
         {% if ic_fields %}
         <h3 class="card-title" style="margin-bottom: 0.75rem;">Character</h3>
         <table class="fields-table" style="margin-bottom: 1rem;">
             {% for label, value in ic_fields %}
-            <tr>
-                <td class="field-key">{{ label }}</td>
-                <td class="field-value">{{ value }}</td>
-            </tr>
-            {% endfor %}
-        </table>
-        {% endif %}
-
-        {% if ooc_fields %}
-        <h3 class="card-title" style="margin-bottom: 0.75rem;">OOC</h3>
-        <table class="fields-table" style="margin-bottom: 1rem;">
-            {% for label, value in ooc_fields %}
             <tr>
                 <td class="field-key">{{ label }}</td>
                 <td class="field-value">{{ value }}</td>
