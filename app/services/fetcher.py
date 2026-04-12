@@ -89,14 +89,27 @@ async def authenticate() -> bool:
             response = await client.post(actual_url, data=login_data)
             # Worker renames Set-Cookie to X-Proxied-Set-Cookie to avoid browser
             # interference; manually parse and inject into the httpx cookie jar.
+            # Multiple cookies are merged with ", " which SimpleCookie can't
+            # handle reliably due to expires= commas, so parse manually.
             proxied_cookie = response.headers.get("x-proxied-set-cookie", "")
             if proxied_cookie:
-                from http.cookies import SimpleCookie
-                sc = SimpleCookie()
-                sc.load(proxied_cookie)
-                for name, morsel in sc.items():
-                    client.cookies.set(name, morsel.value, domain=settings.forum_base_url.replace("https://", "").replace("http://", ""))
-                print(f"[Fetcher] Parsed X-Proxied-Set-Cookie: {list(sc.keys())}")
+                import re as _re
+                # Split on ", " only when followed by a cookie-name= (handles
+                # "expires=Mon, 12-Apr-2027" embedded commas correctly)
+                parts = _re.split(r",\s*(?=[A-Za-z_][A-Za-z0-9_]*=)", proxied_cookie)
+                parsed_names = []
+                for part in parts:
+                    # First segment of each cookie: "name=value"
+                    first = part.split(";", 1)[0].strip()
+                    if "=" not in first:
+                        continue
+                    name, value = first.split("=", 1)
+                    name = name.strip()
+                    value = value.strip()
+                    if name:
+                        client.cookies.set(name, value)
+                        parsed_names.append(name)
+                print(f"[Fetcher] Parsed X-Proxied-Set-Cookie: {parsed_names}")
         else:
             response = await client.post(login_url, data=login_data)
 
