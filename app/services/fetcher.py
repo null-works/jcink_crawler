@@ -175,22 +175,37 @@ async def fetch_page(url: str) -> str | None:
         HTML string or None if fetch failed
     """
     await ensure_authenticated()
-    try:
-        client = await get_client()
-        if _is_cf_worker_enabled():
-            actual_url = _cf_proxy_url(url)
-            # Manually pass JCink session cookies as Cookie header since they're
-            # set for the JCink domain but we're requesting the Worker domain
-            jcink_cookies = "; ".join(f"{k}={v}" for k, v in client.cookies.items())
-            headers = {"Cookie": jcink_cookies} if jcink_cookies else {}
-            response = await client.get(actual_url, headers=headers)
-        else:
-            response = await client.get(url)
-        response.raise_for_status()
-        return response.text
-    except Exception as e:
-        print(f"[Fetcher] Failed to fetch {url}: {e}")
-        return None
+    client = await get_client()
+    max_retries = 4
+    for attempt in range(max_retries):
+        try:
+            if _is_cf_worker_enabled():
+                actual_url = _cf_proxy_url(url)
+                # Manually pass JCink session cookies as Cookie header since they're
+                # set for the JCink domain but we're requesting the Worker domain
+                jcink_cookies = "; ".join(f"{k}={v}" for k, v in client.cookies.items())
+                headers = {"Cookie": jcink_cookies} if jcink_cookies else {}
+                response = await client.get(actual_url, headers=headers)
+            else:
+                response = await client.get(url)
+            # Retry on 5xx (JCink/Cloudflare intermittent errors)
+            if response.status_code >= 500:
+                wait = 2 ** attempt
+                print(f"[Fetcher] {url}: HTTP {response.status_code}, retry {attempt + 1}/{max_retries} in {wait}s")
+                await asyncio.sleep(wait)
+                continue
+            response.raise_for_status()
+            return response.text
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"[Fetcher] {url}: {e}, retry {attempt + 1}/{max_retries} in {wait}s")
+                await asyncio.sleep(wait)
+                continue
+            print(f"[Fetcher] Failed to fetch {url}: {e}")
+            return None
+    print(f"[Fetcher] Failed to fetch {url} after {max_retries} retries")
+    return None
 
 
 async def fetch_page_with_delay(url: str) -> str | None:
