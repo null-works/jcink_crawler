@@ -595,19 +595,6 @@ async def affiliations_redirect(tab: str = "affiliations"):
     return RedirectResponse(url=f"/connections?tab={tab}", status_code=302)
 
 
-@router.get("/htmx/affiliations", response_class=HTMLResponse)
-async def htmx_affiliations(
-    request: Request,
-    view: str = "cards",
-    db: aiosqlite.Connection = Depends(get_db),
-):
-    groups = await get_characters_by_affiliation(db)
-    return templates.TemplateResponse(request, "partials/affiliation_view.html", {
-        "groups": groups,
-        "view": view,
-    })
-
-
 @router.get("/export/players", response_class=PlainTextResponse)
 async def export_players(
     request: Request,

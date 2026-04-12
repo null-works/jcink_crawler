@@ -189,9 +189,10 @@ async def fetch_page(url: str) -> str | None:
             else:
                 response = await client.get(url)
             # Retry on 5xx (JCink/Cloudflare intermittent errors)
-            if response.status_code >= 500:
+            status = getattr(response, "status_code", None)
+            if isinstance(status, int) and status >= 500:
                 wait = 2 ** attempt
-                print(f"[Fetcher] {url}: HTTP {response.status_code}, retry {attempt + 1}/{max_retries} in {wait}s")
+                print(f"[Fetcher] {url}: HTTP {status}, retry {attempt + 1}/{max_retries} in {wait}s")
                 await asyncio.sleep(wait)
                 continue
             response.raise_for_status()

@@ -198,6 +198,7 @@ class TestEnsureAuthenticated:
         fetcher._authenticated = False
 
         with patch.object(fetcher.settings, "bot_username", "Watcher"), \
+             patch.object(fetcher.settings, "bot_password", "secret"), \
              patch.object(fetcher, "authenticate", new_callable=AsyncMock) as mock_auth:
             await fetcher.ensure_authenticated()
             mock_auth.assert_awaited_once()
