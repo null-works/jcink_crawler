@@ -453,6 +453,20 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         if power_tag and power_tag.lower() not in ("power tag", "no information"):
             fields["power_tag"] = power_tag
 
+    # Species (field_15) — moved from dossier to hero-info badge in modern theme
+    # Modern: .profile-hero-info .profile-badge:not(.desktop-only)
+    # Legacy: dossier <dt>Species</dt><dd> (already handled above)
+    # Only override if not already set by dossier scrape.
+    if not fields.get("species"):
+        species_el = (
+            soup.select_one(".profile-hero-info .profile-badge:not(.desktop-only)")
+            or soup.select_one(".profile-hero-info .profile-badges > span:last-child")
+        )
+        if species_el:
+            species = species_el.get_text(strip=True)
+            if species and species.lower() not in ("species", "no information"):
+                fields["species"] = species
+
     # Extract "played by" from div.pf-z (format: "played by <b>name</b>")
     pf_z = soup.select_one("div.pf-z")
     if pf_z:
