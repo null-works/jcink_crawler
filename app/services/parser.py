@@ -392,6 +392,13 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     fields = {}
 
     # Method 1: dl.profile-dossier (dt/dd pairs)
+    # These are CHARACTER fields (in-universe age, birthday, etc.)
+    # Prefix keys that would conflict with OOC pf-ab fields
+    _DOSSIER_KEY_MAP = {
+        "age": "character_age",
+        "birthday": "character_birthday",
+        "pronouns": "character_pronouns",
+    }
     dossier = soup.select_one("dl.profile-dossier")
     if dossier:
         dts = dossier.select("dt")
@@ -400,6 +407,7 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
             field_key = dt.get_text(strip=True).lower()
             field_value = dd.get_text(strip=True)
             if field_key and field_value and field_value != "No Information":
+                field_key = _DOSSIER_KEY_MAP.get(field_key, field_key)
                 fields[field_key] = field_value
 
     # Method 2: div.pf-k / span.pf-l (TWAI static skin)
@@ -412,6 +420,7 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
                 label_el.extract()
                 field_value = pf_k.get_text(strip=True)
                 if field_key and field_value and field_value != "No Information":
+                    field_key = _DOSSIER_KEY_MAP.get(field_key, field_key)
                     fields[field_key] = field_value
 
     # Grab codename from profile — multiple theme selectors:

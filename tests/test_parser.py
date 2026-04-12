@@ -472,7 +472,7 @@ class TestParseProfilePage:
         assert profile.name == "Tony Stark"
         assert profile.group_name == "Red"
         assert profile.avatar_url == "https://img.com/tony.jpg"
-        assert profile.fields["age"] == "45"
+        assert profile.fields["character_age"] == "45"
         assert profile.fields["affiliation"] == "Avengers"
         assert profile.fields["codename"] == "Iron Man"
 
