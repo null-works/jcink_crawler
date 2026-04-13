@@ -553,6 +553,12 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
 
     print(f"[Parser] Profile {user_id}: {len(fields)} fields extracted")
 
+    # Fall back to square_image for avatar_url — the CSS background-image
+    # selectors above only work when JS renders them (Playwright), but httpx
+    # fetches static HTML where those styles don't exist yet.
+    if not avatar_url:
+        avatar_url = fields.get("square_image") or fields.get("portrait_image")
+
     return ParsedProfile(
         user_id=user_id,
         name=name,
