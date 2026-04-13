@@ -28,6 +28,8 @@ async def search_characters(
           ON pf.character_id = c.id AND pf.field_key = ?
         LEFT JOIN profile_fields pf_player
           ON pf_player.character_id = c.id AND pf_player.field_key = ?
+        LEFT JOIN profile_fields pf_sq
+          ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
     """
     params: list = [settings.affiliation_field_key, settings.player_field_key]
     wheres: list[str] = ["COALESCE(c.hidden, 0) = 0"]
@@ -73,7 +75,8 @@ async def search_characters(
 
     offset = (max(page, 1) - 1) * per_page
     select_sql = f"""
-        SELECT c.*, pf.field_value AS affiliation, pf_player.field_value AS player
+        SELECT c.*, pf.field_value AS affiliation, pf_player.field_value AS player,
+               pf_sq.field_value AS square_image
         {base}{where_clause}
         ORDER BY {order}
         LIMIT ? OFFSET ?
