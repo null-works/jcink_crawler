@@ -164,9 +164,20 @@ async def get_threads_batch(
 
     placeholders = ",".join("?" * len(thread_ids))
 
-    # Get thread metadata
+    # Get thread metadata — resolve last_poster_name + last_poster_avatar from the
+    # characters table using last_poster_id, so all three fields come from the
+    # same source and can't drift apart.
     cursor = await db.execute(
-        f"SELECT id, title, url, forum_id, forum_name, category FROM threads WHERE id IN ({placeholders})",
+        f"""SELECT t.id, t.title, t.url, t.forum_id, t.forum_name, t.category,
+                   t.last_poster_id,
+                   COALESCE(c.name, t.last_poster_name) AS last_poster_name,
+                   COALESCE(c.avatar_url,
+                            (SELECT field_value FROM profile_fields
+                             WHERE character_id = t.last_poster_id AND field_key = 'square_image'),
+                            t.last_poster_avatar) AS last_poster_avatar
+            FROM threads t
+            LEFT JOIN characters c ON c.id = t.last_poster_id
+            WHERE t.id IN ({placeholders})""",
         thread_ids,
     )
     thread_rows = await cursor.fetchall()
