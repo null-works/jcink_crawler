@@ -170,12 +170,19 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         # ── Last poster: always parse from the actual thread page ──
         # JCink's "posts by user" search shows the user's own last post
         # in the "Last Post" column, NOT the thread's actual last poster.
-        # So search-result data is unreliable for is_user_last_poster;
-        # we must check the real last page of the thread.
+        # If we can't parse the real last page, leave last_poster fields as
+        # None — upsert_thread uses COALESCE to preserve the existing DB
+        # value rather than overwriting with unreliable search-result data.
         thread_html_for_poster = last_page_html or thread_html
         last_poster = parse_last_poster(thread_html_for_poster)
-        last_poster_name = last_poster.name if last_poster else thread.last_poster_name
-        last_poster_id = last_poster.user_id if last_poster else thread.last_poster_id
+        last_poster_name = last_poster.name if last_poster else None
+        last_poster_id = last_poster.user_id if last_poster else None
+        if not last_poster:
+            log_debug(
+                f"parse_last_poster failed for thread {thread.id} ({thread.title}); "
+                f"preserving existing DB value",
+                level="warn",
+            )
 
         is_user_last = (
             last_poster_id == character_id
