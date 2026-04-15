@@ -264,12 +264,14 @@ async def get_character_threads(
                t.last_poster_id,
                COALESCE(c_poster.name, t.last_poster_name) AS last_poster_name,
                ct.category as char_category, ct.is_user_last_poster,
-               COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS resolved_avatar,
+               COALESCE(c_poster.avatar_url, pf_sq.field_value, t.last_poster_avatar) AS resolved_avatar,
                p_last.last_post_date,
                q_dialog.quote_text AS last_post_excerpt
         FROM threads t
         JOIN character_threads ct ON t.id = ct.thread_id
         LEFT JOIN characters c_poster ON c_poster.id = t.last_poster_id
+        LEFT JOIN profile_fields pf_sq
+          ON pf_sq.character_id = t.last_poster_id AND pf_sq.field_key = 'square_image'
         LEFT JOIN (
             SELECT thread_id, MAX(post_date) AS last_post_date
             FROM posts
