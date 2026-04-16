@@ -444,7 +444,21 @@ async def upsert_profile_field(
     field_key: str,
     field_value: str,
 ) -> None:
-    """Create or update a profile field."""
+    """Create or update a profile field. Logs changes to profile_changes."""
+    # Check for existing value to detect changes
+    cursor = await db.execute(
+        "SELECT field_value FROM profile_fields WHERE character_id = ? AND field_key = ?",
+        (character_id, field_key),
+    )
+    existing = await cursor.fetchone()
+    old_value = existing["field_value"] if existing else None
+
+    if old_value is not None and old_value != field_value:
+        await db.execute(
+            "INSERT INTO profile_changes (character_id, field_key, old_value, new_value, changed_at) VALUES (?, ?, ?, ?, ?)",
+            (character_id, field_key, old_value, field_value, now_et_stamp()),
+        )
+
     await db.execute("""
         INSERT INTO profile_fields (character_id, field_key, field_value)
         VALUES (?, ?, ?)
@@ -452,6 +466,34 @@ async def upsert_profile_field(
             field_value = excluded.field_value,
             updated_at = ?
     """, (character_id, field_key, field_value, now_et_stamp()))
+
+
+async def get_recent_profile_changes(
+    db: aiosqlite.Connection,
+    limit: int = 50,
+    undismissed_only: bool = True,
+) -> list[dict]:
+    """Get recent profile changes with character names."""
+    where = "WHERE pc.dismissed = 0" if undismissed_only else ""
+    cursor = await db.execute(f"""
+        SELECT pc.id, pc.character_id, c.name AS character_name,
+               pc.field_key, pc.old_value, pc.new_value, pc.changed_at
+        FROM profile_changes pc
+        JOIN characters c ON c.id = pc.character_id
+        {where}
+        ORDER BY pc.changed_at DESC
+        LIMIT ?
+    """, (limit,))
+    return [dict(r) for r in await cursor.fetchall()]
+
+
+async def dismiss_profile_changes(db: aiosqlite.Connection) -> int:
+    """Mark all profile changes as dismissed. Returns count."""
+    cursor = await db.execute(
+        "UPDATE profile_changes SET dismissed = 1 WHERE dismissed = 0"
+    )
+    await db.commit()
+    return cursor.rowcount
 
 
 async def get_profile_fields(

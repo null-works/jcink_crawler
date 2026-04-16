@@ -174,6 +174,28 @@ async def init_db():
             )
         """)
 
+        # Profile changes — audit log for field edits
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS profile_changes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                character_id TEXT NOT NULL,
+                field_key TEXT NOT NULL,
+                old_value TEXT,
+                new_value TEXT,
+                changed_at TEXT NOT NULL,
+                dismissed INTEGER DEFAULT 0,
+                FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+            )
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_profile_changes_char
+            ON profile_changes(character_id)
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_profile_changes_date
+            ON profile_changes(changed_at)
+        """)
+
         # Relationships - character-to-character connections
         await db.execute("""
             CREATE TABLE IF NOT EXISTS relationships (

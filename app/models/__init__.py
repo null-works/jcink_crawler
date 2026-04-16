@@ -41,6 +41,8 @@ from app.models.operations import (
     replace_thread_posts,
     record_user_activity,
     get_recent_users,
+    get_recent_profile_changes,
+    dismiss_profile_changes,
     get_all_relationships,
     get_relationships_for_character,
     create_relationship,

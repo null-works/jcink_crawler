@@ -35,6 +35,8 @@ from app.models import (
     update_relationship,
     delete_relationship,
     seed_relationships_from_connections,
+    get_recent_profile_changes,
+    dismiss_profile_changes,
     RELATIONSHIP_TYPES,
 )
 from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden, set_approval_date, set_approval_dates
@@ -547,6 +549,9 @@ async def admin_page(
     from app.routes.character import _banner_cache
     banner_count = len(_banner_cache["urls"]) if _banner_cache["urls"] else 0
 
+    # Profile changes
+    profile_changes = await get_recent_profile_changes(db, limit=50)
+
     return templates.TemplateResponse(request, "pages/admin.html", {
         "stats": stats,
         "activity": activity,
@@ -558,6 +563,7 @@ async def admin_page(
         "browser_sync_url": browser_sync_url,
         "banner_album_url": banner_album_url,
         "banner_count": banner_count,
+        "profile_changes": profile_changes,
     })
 
 
@@ -1315,6 +1321,18 @@ async def htmx_fix_last_posters(
     return HTMLResponse(
         f'<span class="text-green">Recomputed last_poster from posts table — {fixed} threads fixed, {skipped} unchanged</span>'
     )
+
+
+@router.post("/htmx/dismiss-profile-changes", response_class=HTMLResponse)
+async def htmx_dismiss_profile_changes(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+    count = await dismiss_profile_changes(db)
+    return HTMLResponse(f'<span class="text-comment">Dismissed {count} changes</span>')
 
 
 @router.post("/htmx/purge-excluded-forums", response_class=HTMLResponse)

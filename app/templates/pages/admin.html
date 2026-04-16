@@ -6,6 +6,44 @@
     <p class="subtitle">Service status and management</p>
 </div>
 
+{# Profile change notifications #}
+{% if profile_changes %}
+<div class="card" style="margin-bottom: 1.5rem; border-left: 4px solid var(--yellow);">
+    <div class="section-header" style="margin-bottom: 0.75rem;">
+        <h3 class="card-title" style="color: var(--yellow);">Profile Changes ({{ profile_changes|length }})</h3>
+        <button class="btn btn-ghost btn-sm"
+                hx-post="/htmx/dismiss-profile-changes"
+                hx-target="#profile-changes-card"
+                hx-swap="outerHTML"
+                hx-confirm="Dismiss all profile change notifications?">Dismiss All</button>
+    </div>
+    <div id="profile-changes-card" style="max-height: 300px; overflow-y: auto;">
+        <table class="data-table" style="font-size: 0.85rem;">
+            <thead>
+                <tr>
+                    <th>Character</th>
+                    <th>Field</th>
+                    <th>Old</th>
+                    <th>New</th>
+                    <th>When</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for change in profile_changes %}
+                <tr>
+                    <td><a href="/character/{{ change.character_id }}">{{ change.character_name }}</a></td>
+                    <td class="text-cyan">{{ change.field_key }}</td>
+                    <td class="text-red" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ change.old_value or '(empty)' }}</td>
+                    <td class="text-green" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ change.new_value or '(empty)' }}</td>
+                    <td class="text-comment">{{ change.changed_at|format_time }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 {# Stats #}
 <section class="stats-grid" id="admin-stats"
          hx-get="/htmx/stats" hx-trigger="every 30s" hx-swap="innerHTML">

@@ -206,7 +206,7 @@ class TestClaimsEndpoint:
 
 class TestWebhookEndpoint:
     async def test_webhook_profile_edit(self, client):
-        with patch("app.routes.character.sync_posts_from_acp", new_callable=AsyncMock):
+        with patch("app.routes.character.crawl_character_profile", new_callable=AsyncMock):
             response = await client.post("/api/webhook/activity", json={
                 "event": "profile_edit",
                 "user_id": "42",
@@ -214,7 +214,7 @@ class TestWebhookEndpoint:
         assert response.status_code == 202
         data = response.json()
         assert data["status"] == "accepted"
-        assert data["action"] == "acp_sync"
+        assert data["action"] == "profile_recrawl"
 
     async def test_webhook_new_post_triggers_acp_sync(self, client):
         """new_post should trigger ACP sync."""

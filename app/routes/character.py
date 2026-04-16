@@ -328,7 +328,15 @@ async def webhook_activity(
         user_name = row["name"] if row else f"User {data.user_id}"
         await record_user_activity(db, data.user_id, user_name, source="webhook")
 
-    # Debounced ACP Sync — skip if one ran in the last N seconds
+    # Profile edits → re-crawl that character's profile to detect field changes
+    if data.event == "profile_edit" and data.user_id:
+        log_debug(f"Webhook: profile_edit for user {data.user_id}, triggering profile crawl", level="webhook")
+        background_tasks.add_task(
+            crawl_character_profile, data.user_id, settings.database_path
+        )
+        return {"status": "accepted", "action": "profile_recrawl", "user_id": data.user_id}
+
+    # Posts/topics → debounced ACP Sync
     from app.services.activity import get_activity
     activity = get_activity()
     if activity["active"]:
