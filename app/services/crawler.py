@@ -1359,8 +1359,22 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                     "SELECT last_poster_id FROM threads WHERE id = ?", (r["thread_id"],),
                 )
                 existing = await cur.fetchone()
-                if not existing or existing["last_poster_id"] == r["character_id"]:
+                if not existing:
                     continue
+                current = existing["last_poster_id"]
+                # Already matches — nothing to do
+                if current == r["character_id"]:
+                    continue
+                # Safeguard: don't overwrite if current last_poster is an untracked
+                # character (not in our characters table). They might legitimately
+                # be the actual last poster, just not tracked by us — in which case
+                # the posts table (only tracked users) wouldn't know about them.
+                if current:
+                    cur = await db.execute(
+                        "SELECT 1 FROM characters WHERE id = ?", (current,),
+                    )
+                    if not await cur.fetchone():
+                        continue
                 await db.execute(
                     "UPDATE threads SET last_poster_id = ?, last_poster_name = ?, "
                     "last_poster_avatar = NULL WHERE id = ?",

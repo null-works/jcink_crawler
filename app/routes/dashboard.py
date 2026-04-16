@@ -1292,9 +1292,18 @@ async def htmx_fix_last_posters(
         if not existing:
             skipped += 1
             continue
-        if existing["last_poster_id"] == r["character_id"]:
+        current = existing["last_poster_id"]
+        if current == r["character_id"]:
             skipped += 1
             continue
+        # Safeguard: don't overwrite if stored last_poster is an untracked
+        # character — they might be the real last poster, and the posts
+        # table only contains tracked users.
+        if current:
+            cur = await db.execute("SELECT 1 FROM characters WHERE id = ?", (current,))
+            if not await cur.fetchone():
+                skipped += 1
+                continue
         # Clear avatar so the get_character_threads resolver picks fresh
         await db.execute(
             "UPDATE threads SET last_poster_id = ?, last_poster_name = ?, last_poster_avatar = NULL WHERE id = ?",
