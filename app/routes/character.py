@@ -294,10 +294,11 @@ async def webhook_activity(
     background_tasks: BackgroundTasks,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Receive activity webhooks from the theme for targeted re-crawls.
+    """Receive activity webhooks from the theme and trigger ACP Sync.
 
     Accepts new_post, new_topic, and profile_edit events.
-    Acknowledges immediately (202) and processes asynchronously.
+    Acknowledges immediately (202) and kicks off an ACP Sync in the
+    background if one isn't already running or was recently completed.
 
     Parses the body as JSON regardless of Content-Type so that
     theme JS using text/plain (e.g. navigator.sendBeacon) still works.
@@ -327,35 +328,32 @@ async def webhook_activity(
         user_name = row["name"] if row else f"User {data.user_id}"
         await record_user_activity(db, data.user_id, user_name, source="webhook")
 
-    if data.event == "profile_edit" and data.user_id:
-        background_tasks.add_task(
-            crawl_character_profile, data.user_id, settings.database_path
-        )
-        return {"status": "accepted", "action": "profile_recrawl", "user_id": data.user_id}
+    # Debounced ACP Sync — skip if one ran in the last N seconds
+    from app.services.activity import get_activity
+    activity = get_activity()
+    if activity["active"]:
+        log_debug("Webhook: ACP sync already running, skipping", level="webhook")
+        return {"status": "accepted", "action": "sync_already_running"}
 
-    if data.event in ("new_post", "new_topic"):
-        if data.user_id:
-            # Full character crawl — refreshes entire thread tracker
-            # (last poster, avatars, excerpts) instead of targeting one thread.
-            background_tasks.add_task(
-                crawl_character_threads, data.user_id, settings.database_path
-            )
-            return {"status": "accepted", "action": "character_recrawl", "user_id": data.user_id}
-        elif data.thread_id:
-            # Fallback: crawl just this thread if no user_id provided
-            background_tasks.add_task(
-                crawl_single_thread,
-                data.thread_id,
-                settings.database_path,
-                forum_id=data.forum_id,
-            )
-            return {"status": "accepted", "action": "thread_recrawl", "thread_id": data.thread_id}
+    cooldown = settings.webhook_crawl_delay_seconds
+    last_sync = await get_crawl_status(db, "acp_last_sync")
+    if last_sync:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        try:
+            tz = ZoneInfo(settings.activity_timezone)
+            last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
+            from app.config import now_et
+            elapsed = (now_et() - last_dt).total_seconds()
+            if elapsed < cooldown:
+                log_debug(f"Webhook: ACP sync ran {elapsed:.0f}s ago (cooldown={cooldown}s), skipping", level="webhook")
+                return {"status": "accepted", "action": "cooldown"}
+        except Exception:
+            pass
 
-    log_debug(
-        f"Webhook dropped: event={data.event} — no actionable data",
-        level="warn",
-    )
-    return {"status": "accepted", "action": "none"}
+    log_debug("Webhook: triggering ACP sync", level="webhook")
+    background_tasks.add_task(sync_posts_from_acp, settings.database_path)
+    return {"status": "accepted", "action": "acp_sync"}
 
 
 # Alias under a bland name to bypass content filters that match on

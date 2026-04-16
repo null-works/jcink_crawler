@@ -206,7 +206,7 @@ class TestClaimsEndpoint:
 
 class TestWebhookEndpoint:
     async def test_webhook_profile_edit(self, client):
-        with patch("app.routes.character.crawl_character_profile", new_callable=AsyncMock):
+        with patch("app.routes.character.sync_posts_from_acp", new_callable=AsyncMock):
             response = await client.post("/api/webhook/activity", json={
                 "event": "profile_edit",
                 "user_id": "42",
@@ -214,11 +214,11 @@ class TestWebhookEndpoint:
         assert response.status_code == 202
         data = response.json()
         assert data["status"] == "accepted"
-        assert data["action"] == "profile_recrawl"
+        assert data["action"] == "acp_sync"
 
-    async def test_webhook_new_post_with_user_id(self, client):
-        """new_post with user_id should trigger full character thread crawl."""
-        with patch("app.routes.character.crawl_character_threads", new_callable=AsyncMock):
+    async def test_webhook_new_post_triggers_acp_sync(self, client):
+        """new_post should trigger ACP sync."""
+        with patch("app.routes.character.sync_posts_from_acp", new_callable=AsyncMock):
             response = await client.post("/api/webhook/activity", json={
                 "event": "new_post",
                 "thread_id": "123",
@@ -226,22 +226,20 @@ class TestWebhookEndpoint:
             })
         assert response.status_code == 202
         data = response.json()
-        assert data["action"] == "character_recrawl"
-        assert data["user_id"] == "42"
+        assert data["action"] == "acp_sync"
 
-    async def test_webhook_new_post_thread_only_fallback(self, client):
-        """new_post without user_id falls back to single-thread crawl."""
-        with patch("app.routes.character.crawl_single_thread", new_callable=AsyncMock):
+    async def test_webhook_new_post_no_user(self, client):
+        """new_post without user_id still triggers ACP sync."""
+        with patch("app.routes.character.sync_posts_from_acp", new_callable=AsyncMock):
             response = await client.post("/api/webhook/activity", json={
                 "event": "new_post",
                 "thread_id": "123",
             })
         assert response.status_code == 202
-        assert response.json()["action"] == "thread_recrawl"
-        assert response.json()["thread_id"] == "123"
+        assert response.json()["action"] == "acp_sync"
 
     async def test_webhook_new_topic(self, client):
-        with patch("app.routes.character.crawl_character_threads", new_callable=AsyncMock):
+        with patch("app.routes.character.sync_posts_from_acp", new_callable=AsyncMock):
             response = await client.post("/api/webhook/activity", json={
                 "event": "new_topic",
                 "thread_id": "456",
@@ -249,23 +247,17 @@ class TestWebhookEndpoint:
                 "user_id": "42",
             })
         assert response.status_code == 202
-        assert response.json()["action"] == "character_recrawl"
-        assert response.json()["user_id"] == "42"
+        assert response.json()["action"] == "acp_sync"
 
-    async def test_webhook_no_user_id_no_thread_id(self, client):
-        response = await client.post("/api/webhook/activity", json={
-            "event": "new_post",
-        })
+    async def test_webhook_unknown_event_still_syncs(self, client):
+        """Even unknown events trigger ACP sync (data freshness)."""
+        with patch("app.routes.character.sync_posts_from_acp", new_callable=AsyncMock):
+            response = await client.post("/api/webhook/activity", json={
+                "event": "unknown_thing",
+                "user_id": "42",
+            })
         assert response.status_code == 202
-        assert response.json()["action"] == "none"
-
-    async def test_webhook_unknown_event(self, client):
-        response = await client.post("/api/webhook/activity", json={
-            "event": "unknown_thing",
-            "user_id": "42",
-        })
-        assert response.status_code == 202
-        assert response.json()["action"] == "none"
+        assert response.json()["action"] == "acp_sync"
 
     async def test_webhook_missing_event(self, client):
         response = await client.post("/api/webhook/activity", json={})
