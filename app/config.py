@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "2.5.1"
+APP_VERSION = "2.5.2"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     forums_excluded: str = "4,5,6,7,8,9,10,11,12,14,15,16,18,52,56,57,58,60,63,69,85,86,87,88,90,91,92,95,100"
     crawl_quotes_batch_size: int = 0  # 0 = unlimited, process all unscraped threads
     quote_min_words: int = 3
-    webhook_crawl_delay_seconds: float = 60.0
+    webhook_crawl_delay_seconds: float = 5.0
     request_delay_seconds: float = 2.0
     max_concurrent_requests: int = 5
     database_path: str = "/app/data/crawler.db"
