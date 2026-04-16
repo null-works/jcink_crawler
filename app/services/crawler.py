@@ -1328,10 +1328,48 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
 
         log_debug(f"Quote extraction: 100% — {quotes_added} new quotes from {processed} posts")
 
-        # Record last sync time
+        # Record last sync time + auto-correct any stale last_poster_id rows
+        # by recomputing from the posts table (same logic as the manual
+        # "Fix Stale Last Posters" admin button). The SQL dump's last-poster
+        # column is unreliable; our posts table has the actual MAX(post_date)
+        # per thread.
         async with connect_db(db_path) as db:
             from app.config import now_et_iso
             await set_crawl_status(db, "acp_last_sync", now_et_iso())
+
+            cursor = await db.execute("""
+                WITH ranked AS (
+                    SELECT thread_id, character_id, post_date,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY thread_id
+                               ORDER BY post_date DESC, id DESC
+                           ) AS rn
+                    FROM posts
+                    WHERE post_date IS NOT NULL
+                )
+                SELECT r.thread_id, r.character_id, c.name
+                FROM ranked r
+                JOIN characters c ON c.id = r.character_id
+                WHERE r.rn = 1
+            """)
+            poster_rows = await cursor.fetchall()
+            poster_fixes = 0
+            for r in poster_rows:
+                cur = await db.execute(
+                    "SELECT last_poster_id FROM threads WHERE id = ?", (r["thread_id"],),
+                )
+                existing = await cur.fetchone()
+                if not existing or existing["last_poster_id"] == r["character_id"]:
+                    continue
+                await db.execute(
+                    "UPDATE threads SET last_poster_id = ?, last_poster_name = ?, "
+                    "last_poster_avatar = NULL WHERE id = ?",
+                    (r["character_id"], r["name"], r["thread_id"]),
+                )
+                poster_fixes += 1
+            if poster_fixes:
+                await db.commit()
+                log_debug(f"Auto-corrected {poster_fixes} stale last_poster_id rows", level="done")
 
         clear_activity()
         summary = {
