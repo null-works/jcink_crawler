@@ -453,6 +453,26 @@ function startBrowserSync() {
     </p>
 </div>
 
+{# Repair tools #}
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Data Repair</h3>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Recompute every thread's last_poster_id/name/avatar from the posts table
+        (the actual MAX(post_date) per thread). Use this to fix stale "last poster"
+        data caused by older crawler bugs. Safe — only updates threads where the
+        computed value differs from what's stored. Avatars get cleared so they
+        re-resolve from the corrected character.
+    </p>
+    <button class="btn btn-purple"
+            hx-post="/htmx/fix-last-posters"
+            hx-target="#fix-result"
+            hx-swap="innerHTML"
+            hx-confirm="Recompute last_poster for all threads from the posts table. This is safe but may take a few seconds. Continue?">
+        Fix Stale Last Posters
+    </button>
+    <div id="fix-result" class="result" style="margin-top: 0.5rem;"></div>
+</div>
+
 {# Purge & re-crawl #}
 <div class="card" style="margin-top: 1.5rem;">
     <h3 class="card-title" style="margin-bottom: 0.5rem;">Purge &amp; Re-crawl</h3>

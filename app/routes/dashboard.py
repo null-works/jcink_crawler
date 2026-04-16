@@ -1247,6 +1247,67 @@ async def htmx_purge_recrawl(
     return HTMLResponse('<span class="text-green">Database purged. Re-crawling all characters (profile + threads + quotes).</span>')
 
 
+@router.post("/htmx/fix-last-posters", response_class=HTMLResponse)
+async def htmx_fix_last_posters(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Recompute threads.last_poster_id/name/avatar from the posts table.
+
+    Trusts our own scraped posts data (which has the actual MAX(post_date)
+    per thread) over the legacy stored values that were corrupted by the
+    search-result fallback bug.
+    """
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    # Find the actual last poster per thread: the character_id with the
+    # max post_date for each thread_id in the posts table.
+    cursor = await db.execute("""
+        WITH ranked AS (
+            SELECT thread_id, character_id, post_date,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY thread_id
+                       ORDER BY post_date DESC, id DESC
+                   ) AS rn
+            FROM posts
+            WHERE post_date IS NOT NULL
+        )
+        SELECT r.thread_id, r.character_id, c.name
+        FROM ranked r
+        JOIN characters c ON c.id = r.character_id
+        WHERE r.rn = 1
+    """)
+    rows = await cursor.fetchall()
+
+    fixed = 0
+    skipped = 0
+    for r in rows:
+        # Only update if it actually changed
+        cur = await db.execute(
+            "SELECT last_poster_id FROM threads WHERE id = ?", (r["thread_id"],),
+        )
+        existing = await cur.fetchone()
+        if not existing:
+            skipped += 1
+            continue
+        if existing["last_poster_id"] == r["character_id"]:
+            skipped += 1
+            continue
+        # Clear avatar so the get_character_threads resolver picks fresh
+        await db.execute(
+            "UPDATE threads SET last_poster_id = ?, last_poster_name = ?, last_poster_avatar = NULL WHERE id = ?",
+            (r["character_id"], r["name"], r["thread_id"]),
+        )
+        fixed += 1
+    await db.commit()
+
+    return HTMLResponse(
+        f'<span class="text-green">Recomputed last_poster from posts table — {fixed} threads fixed, {skipped} unchanged</span>'
+    )
+
+
 @router.post("/htmx/nuke-rebuild", response_class=HTMLResponse)
 async def htmx_nuke_rebuild(
     request: Request,
