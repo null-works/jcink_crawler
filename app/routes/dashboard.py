@@ -1308,6 +1308,47 @@ async def htmx_fix_last_posters(
     )
 
 
+@router.post("/htmx/purge-excluded-forums", response_class=HTMLResponse)
+async def htmx_purge_excluded_forums(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Delete threads (and their links/posts/quotes) from any forum_id in
+    settings.excluded_forum_ids. Used to clean up after adding a new forum
+    to the exclusion list, or to remove threads that slipped past the filter.
+    """
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    excluded = settings.excluded_forum_ids
+    if not excluded:
+        return HTMLResponse('<span class="text-yellow">No excluded forums configured.</span>')
+
+    placeholders = ",".join("?" * len(excluded))
+    excluded_list = list(excluded)
+
+    cursor = await db.execute(
+        f"SELECT id FROM threads WHERE forum_id IN ({placeholders})",
+        excluded_list,
+    )
+    thread_ids = [r["id"] for r in await cursor.fetchall()]
+    if not thread_ids:
+        return HTMLResponse('<span class="text-comment">No threads from excluded forums to remove.</span>')
+
+    tid_placeholders = ",".join("?" * len(thread_ids))
+    await db.execute(f"DELETE FROM character_threads WHERE thread_id IN ({tid_placeholders})", thread_ids)
+    await db.execute(f"DELETE FROM posts WHERE thread_id IN ({tid_placeholders})", thread_ids)
+    await db.execute(f"DELETE FROM quotes WHERE source_thread_id IN ({tid_placeholders})", thread_ids)
+    await db.execute(f"DELETE FROM quote_crawl_log WHERE thread_id IN ({tid_placeholders})", thread_ids)
+    await db.execute(f"DELETE FROM threads WHERE id IN ({tid_placeholders})", thread_ids)
+    await db.commit()
+
+    return HTMLResponse(
+        f'<span class="text-green">Purged {len(thread_ids)} threads from excluded forums (and their posts/quotes/links).</span>'
+    )
+
+
 @router.post("/htmx/nuke-rebuild", response_class=HTMLResponse)
 async def htmx_nuke_rebuild(
     request: Request,

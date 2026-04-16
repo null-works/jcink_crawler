@@ -471,6 +471,21 @@ function startBrowserSync() {
         Fix Stale Last Posters
     </button>
     <div id="fix-result" class="result" style="margin-top: 0.5rem;"></div>
+
+    <hr style="border-color: var(--current); margin: 1rem 0;">
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Delete threads (and their posts/quotes/links) belonging to any forum
+        in <code>forums_excluded</code>. Use this after adding a new OOC forum
+        to the exclusion list to clean up legacy data.
+    </p>
+    <button class="btn btn-pink"
+            hx-post="/htmx/purge-excluded-forums"
+            hx-target="#purge-excluded-result"
+            hx-swap="innerHTML"
+            hx-confirm="Delete every thread from currently-excluded forums. This is destructive and cannot be undone. Continue?">
+        Purge Excluded Forum Threads
+    </button>
+    <div id="purge-excluded-result" class="result" style="margin-top: 0.5rem;"></div>
 </div>
 
 {# Purge & re-crawl #}
