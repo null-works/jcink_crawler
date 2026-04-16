@@ -669,22 +669,37 @@ def parse_avatar_from_profile(html: str) -> str | None:
 _QUOTE_START_RE = re.compile(r'^["\'\u201C\u2018\u00AB]')
 _QUOTE_STRIP_START = re.compile(r'^["\'\u201C\u2018\u00AB]+')
 _QUOTE_STRIP_END = re.compile(r'["\'\u201D\u2019\u00BB]+$')
+# Allow longer bold runs that look like dialog without quote marks
+# (e.g. some authors style spoken lines with bold only).
+_DIALOG_END_RE = re.compile(r'[.!?,;\u2026]\s*$')
+_DIALOG_NO_QUOTES_MIN_WORDS = 5
 
 
 def _clean_quote(text: str, min_words: int) -> str | None:
     """Validate and clean a candidate quote string.
 
+    Accepts:
+    - Text starting with a quote mark (any length >= min_words after strip)
+    - Long bold text ending in sentence punctuation (>= 5 words, no quotes)
+      — many authors style dialog with bold only, no quote marks
     Returns cleaned text or None if it doesn't pass filters.
     """
-    if not _QUOTE_START_RE.match(text):
-        return None
+    has_quote_start = bool(_QUOTE_START_RE.match(text))
 
     cleaned = _QUOTE_STRIP_START.sub('', text)
     cleaned = _QUOTE_STRIP_END.sub('', cleaned)
     cleaned = cleaned.strip()
+    word_count = len(cleaned.split())
 
-    if len(cleaned.split()) < min_words:
-        return None
+    if has_quote_start:
+        if word_count < min_words:
+            return None
+    else:
+        # No quote marks — only accept longer dialog-shaped strings
+        if word_count < _DIALOG_NO_QUOTES_MIN_WORDS:
+            return None
+        if not _DIALOG_END_RE.search(cleaned):
+            return None
 
     if len(cleaned) > 500:
         cleaned = cleaned[:500].rsplit(" ", 1)[0] + "..."
