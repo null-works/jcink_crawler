@@ -73,7 +73,7 @@
             <a href="/character/{{ c.id }}" class="ac-lb-row" style="text-decoration: none;">
                 <span class="ac-lb-rank {% if loop.index <= 3 %}ac-lb-top3{% endif %}">{{ loop.index }}</span>
                 <span class="ac-lb-avatar">
-                    {% if c.avatar_url %}<img src="{{ c.avatar_url }}" alt="" loading="lazy">{% else %}<span class="avatar-placeholder" style="font-size: 0.6rem;">?</span>{% endif %}
+                    {% if c.square_image or c.avatar_url %}<img src="{{ c.square_image or c.avatar_url }}" alt="" loading="lazy">{% else %}<span class="avatar-placeholder" style="font-size: 0.6rem;">?</span>{% endif %}
                 </span>
                 <span class="ac-lb-name">{{ c.name }}</span>
                 <span class="text-comment" style="font-size: 0.75rem;">{{ c.player_name }}</span>
@@ -162,8 +162,8 @@
         {% for char in player.characters %}
         <a href="/character/{{ char.id }}" class="ac-char-card ac-char-{{ char.ac_status }}">
             <div class="ac-char-avatar">
-                {% if char.avatar_url %}
-                <img src="{{ char.avatar_url }}" alt="" loading="lazy">
+                {% if char.square_image or char.avatar_url %}
+                <img src="{{ char.square_image or char.avatar_url }}" alt="" loading="lazy">
                 {% else %}
                 <span class="avatar-placeholder">?</span>
                 {% endif %}

@@ -5,8 +5,9 @@
 {# Character header card #}
 <div class="card">
     <div class="char-header">
-        {% if character.avatar_url %}
-        <img src="{{ character.avatar_url }}" alt="{{ character.name }}" class="avatar-lg">
+        {% set avatar = character.square_image or character.avatar_url %}
+        {% if avatar %}
+        <img src="{{ avatar }}" alt="{{ character.name }}" class="avatar-lg">
         {% else %}
         <span class="avatar-placeholder" style="width: 80px; height: 80px; font-size: 2rem;">?</span>
         {% endif %}

@@ -399,9 +399,11 @@ async def search_players(
         d = dict(r)
         # Skip if all characters for this player are excluded
         chars_cursor = await db.execute(
-            """SELECT c.id, c.name, c.avatar_url, c.group_name
+            """SELECT c.id, c.name, c.avatar_url, c.group_name,
+                      pf_sq.field_value AS square_image
                FROM characters c
                JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
+               LEFT JOIN profile_fields pf_sq ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
                WHERE pf.field_value = ?""",
             (settings.player_field_key, d["player_name"]),
         )
@@ -446,10 +448,12 @@ async def get_player_detail(
 
     # Get all characters for this player
     cursor = await db.execute(
-        """SELECT c.*, pf_aff.field_value AS affiliation
+        """SELECT c.*, pf_aff.field_value AS affiliation,
+                  pf_sq.field_value AS square_image
            FROM characters c
            JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
            LEFT JOIN profile_fields pf_aff ON pf_aff.character_id = c.id AND pf_aff.field_key = ?
+           LEFT JOIN profile_fields pf_sq ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
            WHERE pf.field_value = ? AND COALESCE(c.hidden, 0) = 0""",
         (settings.player_field_key, settings.affiliation_field_key, player_name),
     )
@@ -588,12 +592,15 @@ async def get_activity_check_data(
     cursor = await db.execute(
         """SELECT c.id, c.name, c.avatar_url, c.group_name, c.approval_date,
                   pf_player.field_value AS player_name,
-                  pf_aff.field_value AS affiliation
+                  pf_aff.field_value AS affiliation,
+                  pf_sq.field_value AS square_image
            FROM characters c
            LEFT JOIN profile_fields pf_player
              ON pf_player.character_id = c.id AND pf_player.field_key = ?
            LEFT JOIN profile_fields pf_aff
              ON pf_aff.character_id = c.id AND pf_aff.field_key = ?
+           LEFT JOIN profile_fields pf_sq
+             ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
            WHERE pf_player.field_value IS NOT NULL AND pf_player.field_value != ''
              AND COALESCE(c.hidden, 0) = 0
            ORDER BY pf_player.field_value, c.name""",
@@ -894,9 +901,11 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     # Recent activity — most recently crawled characters
     cursor = await db.execute(
         """SELECT c.id, c.name, c.avatar_url, c.last_thread_crawl, c.last_profile_crawl,
-                  pf.field_value AS affiliation
+                  pf.field_value AS affiliation,
+                  pf_sq.field_value AS square_image
            FROM characters c
            LEFT JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
+           LEFT JOIN profile_fields pf_sq ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
            WHERE c.last_thread_crawl IS NOT NULL AND COALESCE(c.hidden, 0) = 0
            ORDER BY c.last_thread_crawl DESC
            LIMIT 10""",
