@@ -505,11 +505,20 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     for selectors, key in _IMAGE_SELECTORS:
         for selector in selectors:
             el = soup.select_one(selector)
-            if el:
-                style = el.get("style", "")
-                img_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
-                if img_match:
-                    fields[key] = img_match.group(1)
+            if not el:
+                continue
+            # Try inline background-image style first
+            style = el.get("style", "")
+            img_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
+            if img_match:
+                fields[key] = img_match.group(1)
+                break
+            # Fall back to <img src> inside the element (some profiles use this)
+            inner_img = el.select_one("img[src]")
+            if inner_img:
+                src = inner_img.get("src", "").strip()
+                if src.startswith(("http://", "https://")):
+                    fields[key] = src
                     break
 
     # Extract OOC alias from .profile-ooc-footer (field_1)
