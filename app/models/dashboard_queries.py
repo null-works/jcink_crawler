@@ -697,6 +697,7 @@ async def get_activity_check_data(
                 "player_name": p["player_name"],
                 "monthly_posts": c["monthly_posts"],
                 "avatar_url": c.get("avatar_url"),
+                "square_image": c.get("square_image"),
                 "id": c["id"],
             })
     top_posters = sorted(all_chars, key=lambda c: c["monthly_posts"], reverse=True)[:10]
