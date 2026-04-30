@@ -693,92 +693,159 @@ async def export_imagehut_urls(
         return redirect
 
     import re
+    from urllib.parse import urlparse
 
     url_re = re.compile(r'https?://(?:www\.)?imagehut\.ch/([^\s\'"<>\)\],;]+)', re.IGNORECASE)
     image_path_re = re.compile(r'^images/(\d{4})/(\d{2})/(\d{2})/(.+)$')
 
     def parse_r2_path(url: str) -> str:
         """Extract R2 bucket path from a direct image URL."""
-        from urllib.parse import urlparse
         path = urlparse(url).path.lstrip("/")
         m = image_path_re.match(path)
         if m:
             year, month, day, filename = m.groups()
-            # Strip thumbnail suffixes (.md.ext, .th.ext)
             full = re.sub(r'\.(md|th)(\.\w+)$', r'\2', filename)
             return f"images/{year}/{month}/{day}/{full}"
         return ""
 
+    def extract_urls(text: str) -> list[str]:
+        if not text or "imagehut.ch" not in text.lower():
+            return []
+        return [f"https://imagehut.ch/{m.group(1)}" for m in url_re.finditer(text)]
+
+    # Build player lookup: character_id → player name
+    cursor = await db.execute(
+        "SELECT character_id, field_value FROM profile_fields WHERE field_key = ? AND field_value IS NOT NULL",
+        (settings.player_field_key,),
+    )
+    player_map = {row["character_id"]: row["field_value"] for row in await cursor.fetchall()}
+
+    # Build character name lookup
+    cursor = await db.execute("SELECT id, name FROM characters")
+    char_names = {row["id"]: row["name"] for row in await cursor.fetchall()}
+
     rows: list[dict] = []
+    all_urls: set[str] = set()  # Deduplicated master list
 
     # 1. Profile fields containing imagehut.ch URLs
     cursor = await db.execute(
-        """SELECT pf.character_id, c.name AS character_name,
-                  pf_player.field_value AS player_name,
-                  pf.field_key, pf.field_value
-           FROM profile_fields pf
-           JOIN characters c ON c.id = pf.character_id
-           LEFT JOIN profile_fields pf_player
-             ON pf_player.character_id = pf.character_id AND pf_player.field_key = ?
-           WHERE pf.field_value LIKE '%imagehut.ch%'
-           ORDER BY c.name, pf.field_key""",
-        (settings.player_field_key,),
+        "SELECT character_id, field_key, field_value FROM profile_fields WHERE field_value LIKE '%imagehut.ch%'"
     )
     for row in await cursor.fetchall():
-        for match in url_re.finditer(row["field_value"]):
-            url = f"https://imagehut.ch/{match.group(1)}"
+        for url in extract_urls(row["field_value"]):
+            all_urls.add(url)
             rows.append({
+                "source": "profile_field",
                 "character_id": row["character_id"],
-                "character_name": row["character_name"],
-                "player_name": row["player_name"] or "",
-                "field_key": row["field_key"],
+                "character_name": char_names.get(row["character_id"], ""),
+                "player_name": player_map.get(row["character_id"], ""),
+                "detail": row["field_key"],
                 "url": url,
                 "r2_path": parse_r2_path(url),
             })
 
-    # 2. characters.avatar_url containing imagehut.ch
+    # 2. characters.avatar_url
     cursor = await db.execute(
-        """SELECT c.id, c.name, c.avatar_url,
-                  pf_player.field_value AS player_name
-           FROM characters c
-           LEFT JOIN profile_fields pf_player
-             ON pf_player.character_id = c.id AND pf_player.field_key = ?
-           WHERE c.avatar_url LIKE '%imagehut.ch%'
-           ORDER BY c.name""",
-        (settings.player_field_key,),
+        "SELECT id, name, avatar_url FROM characters WHERE avatar_url LIKE '%imagehut.ch%'"
     )
     for row in await cursor.fetchall():
-        for match in url_re.finditer(row["avatar_url"]):
-            url = f"https://imagehut.ch/{match.group(1)}"
+        for url in extract_urls(row["avatar_url"]):
+            all_urls.add(url)
             rows.append({
+                "source": "avatar",
                 "character_id": row["id"],
                 "character_name": row["name"],
-                "player_name": row["player_name"] or "",
-                "field_key": "avatar_url",
+                "player_name": player_map.get(row["id"], ""),
+                "detail": "avatar_url",
                 "url": url,
                 "r2_path": parse_r2_path(url),
             })
 
+    # 3. threads — url, title, last_poster_avatar
+    for col in ("url", "last_poster_avatar"):
+        cursor = await db.execute(
+            f"SELECT id, title, {col} FROM threads WHERE {col} LIKE '%imagehut.ch%'"
+        )
+        for row in await cursor.fetchall():
+            for url in extract_urls(row[col]):
+                all_urls.add(url)
+                rows.append({
+                    "source": f"thread.{col}",
+                    "character_id": "",
+                    "character_name": "",
+                    "player_name": "",
+                    "detail": f"thread {row['id']}: {row['title']}",
+                    "url": url,
+                    "r2_path": parse_r2_path(url),
+                })
+
+    # 4. quotes
+    cursor = await db.execute(
+        "SELECT character_id, quote_text, source_thread_title FROM quotes WHERE quote_text LIKE '%imagehut.ch%'"
+    )
+    for row in await cursor.fetchall():
+        for url in extract_urls(row["quote_text"]):
+            all_urls.add(url)
+            rows.append({
+                "source": "quote",
+                "character_id": row["character_id"],
+                "character_name": char_names.get(row["character_id"], ""),
+                "player_name": player_map.get(row["character_id"], ""),
+                "detail": f"quote in {row['source_thread_title'] or 'unknown'}",
+                "url": url,
+                "r2_path": parse_r2_path(url),
+            })
+
+    # 5. crawl_status (banner_album_url etc.)
+    cursor = await db.execute(
+        "SELECT key, value FROM crawl_status WHERE value LIKE '%imagehut.ch%'"
+    )
+    for row in await cursor.fetchall():
+        for url in extract_urls(row["value"]):
+            all_urls.add(url)
+            rows.append({
+                "source": "config",
+                "character_id": "",
+                "character_name": "",
+                "player_name": "",
+                "detail": row["key"],
+                "url": url,
+                "r2_path": parse_r2_path(url),
+            })
+
+    # Format: plain list of unique URLs
+    if format == "list":
+        sorted_urls = sorted(all_urls)
+        return PlainTextResponse("\n".join(sorted_urls))
+
+    # Format: JSON grouped by player
     if format == "json":
         import json
-        # Group by player
         by_player: dict[str, list] = {}
         for r in rows:
-            pname = r["player_name"] or "(unknown)"
+            pname = r["player_name"] or "(no player)"
             by_player.setdefault(pname, []).append(r)
         return PlainTextResponse(
-            json.dumps({"total": len(rows), "by_player": by_player}, indent=2),
+            json.dumps({
+                "total_occurrences": len(rows),
+                "unique_urls": len(all_urls),
+                "by_player": by_player,
+                "all_urls": sorted(all_urls),
+            }, indent=2),
             media_type="application/json",
         )
 
-    # TSV format (default)
-    header = "player\tcharacter\tcharacter_id\tfield\turl\tr2_path"
+    # Default: TSV with full context
+    header = "source\tplayer\tcharacter\tcharacter_id\tdetail\turl\tr2_path"
     lines = [header]
     for r in rows:
         lines.append(
-            f"{r['player_name']}\t{r['character_name']}\t{r['character_id']}"
-            f"\t{r['field_key']}\t{r['url']}\t{r['r2_path']}"
+            f"{r['source']}\t{r['player_name']}\t{r['character_name']}\t{r['character_id']}"
+            f"\t{r['detail']}\t{r['url']}\t{r['r2_path']}"
         )
+    lines.append("")
+    lines.append(f"# Unique URLs: {len(all_urls)}")
+    lines.append(f"# Total occurrences: {len(rows)}")
     return PlainTextResponse("\n".join(lines))
 
 

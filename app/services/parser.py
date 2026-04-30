@@ -468,21 +468,20 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
                 fields["species"] = species
 
     # Extract player (OOC) name
-    # Modern theme: div.profile-ooc-name
-    # Legacy theme: div.pf-z (format: "played by <b>name</b>")
-    player_el = soup.select_one("div.profile-ooc-name")
+    # Modern theme: div.profile-ooc-name (contains "played by <b>Name</b>")
+    # Legacy theme: div.pf-z (same structure)
+    player_el = soup.select_one("div.profile-ooc-name") or soup.select_one("div.pf-z")
     if player_el:
-        player_name = player_el.get_text(strip=True)
+        # Try <b> tag first — both themes wrap the name in bold
+        bold = player_el.select_one("b")
+        if bold:
+            player_name = bold.get_text(strip=True)
+        else:
+            # Fallback: strip "played by" prefix from full text
+            player_name = player_el.get_text(strip=True)
+            player_name = re.sub(r'^played\s*by\s*', '', player_name, flags=re.IGNORECASE).strip()
         if player_name:
             fields["player"] = player_name
-    else:
-        pf_z = soup.select_one("div.pf-z")
-        if pf_z:
-            bold = pf_z.select_one("b")
-            if bold:
-                player_name = bold.get_text(strip=True)
-                if player_name:
-                    fields["player"] = player_name
 
     # Extract player metadata from div.pf-ab (title attr = key, text = value)
     for pf_ab in soup.select("div.pf-ab"):
