@@ -688,32 +688,34 @@ async def export_imagehut_urls(
     format: str = "tsv",
     db: aiosqlite.Connection = Depends(get_db),
 ):
+    """Export ALL image URLs used by all players/characters.
+
+    Scans every image-related profile field and avatar_url.
+    Outputs are grouped by player so you can see exactly what
+    images each person uses and where they're hosted.
+
+    Formats:
+        ?format=tsv   — tab-separated (default)
+        ?format=json  — JSON grouped by player
+        ?format=list  — plain deduplicated URL list
+    """
     redirect = _require_auth(request)
     if redirect:
         return redirect
 
     import re
-    from urllib.parse import urlparse
 
-    url_re = re.compile(r'https?://(?:www\.)?imagehut\.ch/([^\s\'"<>\)\],;]+)', re.IGNORECASE)
-    image_path_re = re.compile(r'^images/(\d{4})/(\d{2})/(\d{2})/(.+)$')
+    # Image-related profile field keys
+    IMAGE_FIELDS = {
+        "square_image", "portrait_image", "secondary_square_image",
+        "rectangle_gif", "avatar_url", "header_image", "banner_image",
+        "face_claim_image",
+    }
 
-    def parse_r2_path(url: str) -> str:
-        """Extract R2 bucket path from a direct image URL."""
-        path = urlparse(url).path.lstrip("/")
-        m = image_path_re.match(path)
-        if m:
-            year, month, day, filename = m.groups()
-            full = re.sub(r'\.(md|th)(\.\w+)$', r'\2', filename)
-            return f"images/{year}/{month}/{day}/{full}"
-        return ""
+    # Also catch any field whose value looks like an image URL
+    img_url_re = re.compile(r'https?://\S+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|avif)', re.IGNORECASE)
 
-    def extract_urls(text: str) -> list[str]:
-        if not text or "imagehut.ch" not in text.lower():
-            return []
-        return [f"https://imagehut.ch/{m.group(1)}" for m in url_re.finditer(text)]
-
-    # Build player lookup: character_id → player name
+    # Build player lookup
     cursor = await db.execute(
         "SELECT character_id, field_value FROM profile_fields WHERE field_key = ? AND field_value IS NOT NULL",
         (settings.player_field_key,),
@@ -722,130 +724,105 @@ async def export_imagehut_urls(
 
     # Build character name lookup
     cursor = await db.execute("SELECT id, name FROM characters")
-    char_names = {row["id"]: row["name"] for row in await cursor.fetchall()}
+    char_map = {row["id"]: row["name"] for row in await cursor.fetchall()}
 
     rows: list[dict] = []
-    all_urls: set[str] = set()  # Deduplicated master list
+    all_urls: set[str] = set()
 
-    # 1. Profile fields containing imagehut.ch URLs
+    # 1. All profile fields that are known image fields OR contain image URLs
     cursor = await db.execute(
-        "SELECT character_id, field_key, field_value FROM profile_fields WHERE field_value LIKE '%imagehut.ch%'"
+        "SELECT character_id, field_key, field_value FROM profile_fields "
+        "WHERE field_value IS NOT NULL AND field_value != '' AND field_value != 'No Information'"
     )
     for row in await cursor.fetchall():
-        for url in extract_urls(row["field_value"]):
+        fk = row["field_key"]
+        fv = row["field_value"].strip()
+        urls = []
+
+        if fk in IMAGE_FIELDS:
+            # Known image field — the value IS the URL
+            if fv.startswith("http"):
+                urls.append(fv)
+        else:
+            # Other fields — scan for embedded image URLs
+            urls = img_url_re.findall(fv)
+
+        for url in urls:
             all_urls.add(url)
             rows.append({
-                "source": "profile_field",
+                "player": player_map.get(row["character_id"], ""),
+                "character": char_map.get(row["character_id"], ""),
                 "character_id": row["character_id"],
-                "character_name": char_names.get(row["character_id"], ""),
-                "player_name": player_map.get(row["character_id"], ""),
-                "detail": row["field_key"],
+                "field": fk,
                 "url": url,
-                "r2_path": parse_r2_path(url),
             })
 
     # 2. characters.avatar_url
     cursor = await db.execute(
-        "SELECT id, name, avatar_url FROM characters WHERE avatar_url LIKE '%imagehut.ch%'"
+        "SELECT id, name, avatar_url FROM characters WHERE avatar_url IS NOT NULL AND avatar_url != ''"
     )
     for row in await cursor.fetchall():
-        for url in extract_urls(row["avatar_url"]):
+        url = row["avatar_url"].strip()
+        if url.startswith("http"):
             all_urls.add(url)
             rows.append({
-                "source": "avatar",
+                "player": player_map.get(row["id"], ""),
+                "character": row["name"],
                 "character_id": row["id"],
-                "character_name": row["name"],
-                "player_name": player_map.get(row["id"], ""),
-                "detail": "avatar_url",
+                "field": "avatar_url",
                 "url": url,
-                "r2_path": parse_r2_path(url),
             })
 
-    # 3. threads — url, title, last_poster_avatar
-    for col in ("url", "last_poster_avatar"):
-        cursor = await db.execute(
-            f"SELECT id, title, {col} FROM threads WHERE {col} LIKE '%imagehut.ch%'"
-        )
-        for row in await cursor.fetchall():
-            for url in extract_urls(row[col]):
-                all_urls.add(url)
-                rows.append({
-                    "source": f"thread.{col}",
-                    "character_id": "",
-                    "character_name": "",
-                    "player_name": "",
-                    "detail": f"thread {row['id']}: {row['title']}",
-                    "url": url,
-                    "r2_path": parse_r2_path(url),
-                })
+    # Sort by player, then character
+    rows.sort(key=lambda r: (r["player"].lower() if r["player"] else "zzz", r["character"].lower()))
 
-    # 4. quotes
-    cursor = await db.execute(
-        "SELECT character_id, quote_text, source_thread_title FROM quotes WHERE quote_text LIKE '%imagehut.ch%'"
-    )
-    for row in await cursor.fetchall():
-        for url in extract_urls(row["quote_text"]):
-            all_urls.add(url)
-            rows.append({
-                "source": "quote",
-                "character_id": row["character_id"],
-                "character_name": char_names.get(row["character_id"], ""),
-                "player_name": player_map.get(row["character_id"], ""),
-                "detail": f"quote in {row['source_thread_title'] or 'unknown'}",
-                "url": url,
-                "r2_path": parse_r2_path(url),
-            })
+    # Dedupe: same character + same field + same URL
+    seen = set()
+    deduped = []
+    for r in rows:
+        key = (r["character_id"], r["field"], r["url"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+    rows = deduped
 
-    # 5. crawl_status (banner_album_url etc.)
-    cursor = await db.execute(
-        "SELECT key, value FROM crawl_status WHERE value LIKE '%imagehut.ch%'"
-    )
-    for row in await cursor.fetchall():
-        for url in extract_urls(row["value"]):
-            all_urls.add(url)
-            rows.append({
-                "source": "config",
-                "character_id": "",
-                "character_name": "",
-                "player_name": "",
-                "detail": row["key"],
-                "url": url,
-                "r2_path": parse_r2_path(url),
-            })
+    # Count by host
+    from urllib.parse import urlparse
+    host_counts: dict[str, int] = {}
+    for url in all_urls:
+        host = urlparse(url).netloc.lower()
+        host_counts[host] = host_counts.get(host, 0) + 1
 
-    # Format: plain list of unique URLs
+    # Format: plain list
     if format == "list":
-        sorted_urls = sorted(all_urls)
-        return PlainTextResponse("\n".join(sorted_urls))
+        return PlainTextResponse("\n".join(sorted(all_urls)))
 
-    # Format: JSON grouped by player
+    # Format: JSON
     if format == "json":
         import json
         by_player: dict[str, list] = {}
         for r in rows:
-            pname = r["player_name"] or "(no player)"
+            pname = r["player"] or "(no player)"
             by_player.setdefault(pname, []).append(r)
         return PlainTextResponse(
             json.dumps({
-                "total_occurrences": len(rows),
-                "unique_urls": len(all_urls),
+                "total_urls": len(all_urls),
+                "total_rows": len(rows),
+                "hosts": dict(sorted(host_counts.items(), key=lambda x: -x[1])),
                 "by_player": by_player,
-                "all_urls": sorted(all_urls),
             }, indent=2),
             media_type="application/json",
         )
 
-    # Default: TSV with full context
-    header = "source\tplayer\tcharacter\tcharacter_id\tdetail\turl\tr2_path"
+    # Default: TSV
+    header = "player\tcharacter\tcharacter_id\tfield\turl"
     lines = [header]
     for r in rows:
-        lines.append(
-            f"{r['source']}\t{r['player_name']}\t{r['character_name']}\t{r['character_id']}"
-            f"\t{r['detail']}\t{r['url']}\t{r['r2_path']}"
-        )
+        lines.append(f"{r['player']}\t{r['character']}\t{r['character_id']}\t{r['field']}\t{r['url']}")
     lines.append("")
     lines.append(f"# Unique URLs: {len(all_urls)}")
-    lines.append(f"# Total occurrences: {len(rows)}")
+    lines.append(f"# Rows: {len(rows)}")
+    lines.append(f"# Hosts: {', '.join(f'{h} ({c})' for h, c in sorted(host_counts.items(), key=lambda x: -x[1]))}")
     return PlainTextResponse("\n".join(lines))
 
 
