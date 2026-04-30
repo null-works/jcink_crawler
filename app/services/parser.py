@@ -467,14 +467,22 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
             if species and species.lower() not in ("species", "no information"):
                 fields["species"] = species
 
-    # Extract "played by" from div.pf-z (format: "played by <b>name</b>")
-    pf_z = soup.select_one("div.pf-z")
-    if pf_z:
-        bold = pf_z.select_one("b")
-        if bold:
-            player_name = bold.get_text(strip=True)
-            if player_name:
-                fields["player"] = player_name
+    # Extract player (OOC) name
+    # Modern theme: div.profile-ooc-name
+    # Legacy theme: div.pf-z (format: "played by <b>name</b>")
+    player_el = soup.select_one("div.profile-ooc-name")
+    if player_el:
+        player_name = player_el.get_text(strip=True)
+        if player_name:
+            fields["player"] = player_name
+    else:
+        pf_z = soup.select_one("div.pf-z")
+        if pf_z:
+            bold = pf_z.select_one("b")
+            if bold:
+                player_name = bold.get_text(strip=True)
+                if player_name:
+                    fields["player"] = player_name
 
     # Extract player metadata from div.pf-ab (title attr = key, text = value)
     for pf_ab in soup.select("div.pf-ab"):
