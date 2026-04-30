@@ -682,6 +682,106 @@ async def export_threads(
     return PlainTextResponse("\n".join(lines))
 
 
+@router.get("/export/imagehut-urls", response_class=PlainTextResponse)
+async def export_imagehut_urls(
+    request: Request,
+    format: str = "tsv",
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    import re
+
+    url_re = re.compile(r'https?://(?:www\.)?imagehut\.ch/([^\s\'"<>\)\],;]+)', re.IGNORECASE)
+    image_path_re = re.compile(r'^images/(\d{4})/(\d{2})/(\d{2})/(.+)$')
+
+    def parse_r2_path(url: str) -> str:
+        """Extract R2 bucket path from a direct image URL."""
+        from urllib.parse import urlparse
+        path = urlparse(url).path.lstrip("/")
+        m = image_path_re.match(path)
+        if m:
+            year, month, day, filename = m.groups()
+            # Strip thumbnail suffixes (.md.ext, .th.ext)
+            full = re.sub(r'\.(md|th)(\.\w+)$', r'\2', filename)
+            return f"images/{year}/{month}/{day}/{full}"
+        return ""
+
+    rows: list[dict] = []
+
+    # 1. Profile fields containing imagehut.ch URLs
+    cursor = await db.execute(
+        """SELECT pf.character_id, c.name AS character_name,
+                  pf_player.field_value AS player_name,
+                  pf.field_key, pf.field_value
+           FROM profile_fields pf
+           JOIN characters c ON c.id = pf.character_id
+           LEFT JOIN profile_fields pf_player
+             ON pf_player.character_id = pf.character_id AND pf_player.field_key = ?
+           WHERE pf.field_value LIKE '%imagehut.ch%'
+           ORDER BY c.name, pf.field_key""",
+        (settings.player_field_key,),
+    )
+    for row in await cursor.fetchall():
+        for match in url_re.finditer(row["field_value"]):
+            url = f"https://imagehut.ch/{match.group(1)}"
+            rows.append({
+                "character_id": row["character_id"],
+                "character_name": row["character_name"],
+                "player_name": row["player_name"] or "",
+                "field_key": row["field_key"],
+                "url": url,
+                "r2_path": parse_r2_path(url),
+            })
+
+    # 2. characters.avatar_url containing imagehut.ch
+    cursor = await db.execute(
+        """SELECT c.id, c.name, c.avatar_url,
+                  pf_player.field_value AS player_name
+           FROM characters c
+           LEFT JOIN profile_fields pf_player
+             ON pf_player.character_id = c.id AND pf_player.field_key = ?
+           WHERE c.avatar_url LIKE '%imagehut.ch%'
+           ORDER BY c.name""",
+        (settings.player_field_key,),
+    )
+    for row in await cursor.fetchall():
+        for match in url_re.finditer(row["avatar_url"]):
+            url = f"https://imagehut.ch/{match.group(1)}"
+            rows.append({
+                "character_id": row["id"],
+                "character_name": row["name"],
+                "player_name": row["player_name"] or "",
+                "field_key": "avatar_url",
+                "url": url,
+                "r2_path": parse_r2_path(url),
+            })
+
+    if format == "json":
+        import json
+        # Group by player
+        by_player: dict[str, list] = {}
+        for r in rows:
+            pname = r["player_name"] or "(unknown)"
+            by_player.setdefault(pname, []).append(r)
+        return PlainTextResponse(
+            json.dumps({"total": len(rows), "by_player": by_player}, indent=2),
+            media_type="application/json",
+        )
+
+    # TSV format (default)
+    header = "player\tcharacter\tcharacter_id\tfield\turl\tr2_path"
+    lines = [header]
+    for r in rows:
+        lines.append(
+            f"{r['player_name']}\t{r['character_name']}\t{r['character_id']}"
+            f"\t{r['field_key']}\t{r['url']}\t{r['r2_path']}"
+        )
+    return PlainTextResponse("\n".join(lines))
+
+
 @router.get("/players", response_class=HTMLResponse)
 async def players_page(
     request: Request,

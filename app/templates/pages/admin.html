@@ -489,6 +489,15 @@ function startBrowserSync() {
     <p class="text-comment" style="font-size: 0.75rem; margin-top: 0.5rem;">
         Face Claims, Species, and Threads export as tab-separated (character &rarr; value).
     </p>
+    <hr style="border-color: var(--current); margin: 1rem 0;">
+    <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--text-secondary);">ImageHut URL Export</h4>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        All <code>imagehut.ch</code> image URLs found in character profiles and avatars, mapped to players, characters, and R2 bucket paths. Use this to rebuild the Chevereto database.
+    </p>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+        <a href="/export/imagehut-urls" target="_blank" class="btn btn-purple">ImageHut URLs (TSV)</a>
+        <a href="/export/imagehut-urls?format=json" target="_blank" class="btn btn-ghost">ImageHut URLs (JSON)</a>
+    </div>
 </div>
 
 {# Repair tools #}
