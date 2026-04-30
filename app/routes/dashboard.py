@@ -826,6 +826,111 @@ async def export_imagehut_urls(
     return PlainTextResponse("\n".join(lines))
 
 
+@router.get("/export/imagehut-only", response_class=PlainTextResponse)
+async def export_imagehut_only(
+    request: Request,
+    format: str = "tsv",
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Export only imagehut.ch image URLs, with player/character context."""
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    import re
+    from urllib.parse import urlparse
+
+    url_re = re.compile(r'https?://(?:www\.)?imagehut\.ch/\S+', re.IGNORECASE)
+    image_path_re = re.compile(r'^/images/(\d{4})/(\d{2})/(\d{2})/(.+)$')
+
+    def parse_r2_path(url: str) -> str:
+        path = urlparse(url).path
+        m = image_path_re.match(path)
+        if m:
+            year, month, day, filename = m.groups()
+            full = re.sub(r'\.(md|th)(\.\w+)$', r'\2', filename)
+            return f"images/{year}/{month}/{day}/{full}"
+        return ""
+
+    # Lookups
+    cursor = await db.execute(
+        "SELECT character_id, field_value FROM profile_fields WHERE field_key = ? AND field_value IS NOT NULL",
+        (settings.player_field_key,),
+    )
+    player_map = {row["character_id"]: row["field_value"] for row in await cursor.fetchall()}
+
+    cursor = await db.execute("SELECT id, name FROM characters")
+    char_map = {row["id"]: row["name"] for row in await cursor.fetchall()}
+
+    rows: list[dict] = []
+    all_urls: set[str] = set()
+
+    # Profile fields
+    cursor = await db.execute(
+        "SELECT character_id, field_key, field_value FROM profile_fields WHERE field_value LIKE '%imagehut.ch%'"
+    )
+    for row in await cursor.fetchall():
+        for m in url_re.finditer(row["field_value"]):
+            url = m.group(0).rstrip("'\")}];,")
+            all_urls.add(url)
+            rows.append({
+                "player": player_map.get(row["character_id"], ""),
+                "character": char_map.get(row["character_id"], ""),
+                "character_id": row["character_id"],
+                "field": row["field_key"],
+                "url": url,
+                "r2_path": parse_r2_path(url),
+            })
+
+    # characters.avatar_url
+    cursor = await db.execute(
+        "SELECT id, name, avatar_url FROM characters WHERE avatar_url LIKE '%imagehut.ch%'"
+    )
+    for row in await cursor.fetchall():
+        url = row["avatar_url"].strip()
+        all_urls.add(url)
+        rows.append({
+            "player": player_map.get(row["id"], ""),
+            "character": row["name"],
+            "character_id": row["id"],
+            "field": "avatar_url",
+            "url": url,
+            "r2_path": parse_r2_path(url),
+        })
+
+    # Sort + dedupe
+    rows.sort(key=lambda r: (r["player"].lower() if r["player"] else "zzz", r["character"].lower()))
+    seen = set()
+    deduped = []
+    for r in rows:
+        key = (r["character_id"], r["field"], r["url"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+    rows = deduped
+
+    if format == "list":
+        return PlainTextResponse("\n".join(sorted(all_urls)))
+
+    if format == "json":
+        import json
+        by_player: dict[str, list] = {}
+        for r in rows:
+            by_player.setdefault(r["player"] or "(no player)", []).append(r)
+        return PlainTextResponse(
+            json.dumps({"total": len(all_urls), "rows": len(rows), "by_player": by_player}, indent=2),
+            media_type="application/json",
+        )
+
+    header = "player\tcharacter\tcharacter_id\tfield\turl\tr2_path"
+    lines = [header]
+    for r in rows:
+        lines.append(f"{r['player']}\t{r['character']}\t{r['character_id']}\t{r['field']}\t{r['url']}\t{r['r2_path']}")
+    lines.append("")
+    lines.append(f"# Unique imagehut.ch URLs: {len(all_urls)}")
+    lines.append(f"# Rows: {len(rows)}")
+    return PlainTextResponse("\n".join(lines))
+
 @router.get("/players", response_class=HTMLResponse)
 async def players_page(
     request: Request,

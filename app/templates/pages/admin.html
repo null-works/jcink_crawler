@@ -492,12 +492,20 @@ function startBrowserSync() {
     <hr style="border-color: var(--current); margin: 1rem 0;">
     <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--text-secondary);">Image URL Export</h4>
     <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
-        Every image URL used by every player/character — avatars, portraits, squares, GIFs, and any embedded images. Includes a host breakdown so you can see what's on ImageHut vs elsewhere.
+        Every image URL used by every player/character — avatars, portraits, squares, GIFs, and any embedded images. Includes a host breakdown.
     </p>
-    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
         <a href="/export/imagehut-urls?format=list" target="_blank" class="btn btn-green">All URLs (plain list)</a>
         <a href="/export/imagehut-urls" target="_blank" class="btn btn-purple">By Player (TSV)</a>
         <a href="/export/imagehut-urls?format=json" target="_blank" class="btn btn-ghost">By Player (JSON)</a>
+    </div>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        <code>imagehut.ch</code> only — filtered to ImageHut-hosted images with R2 bucket paths for Chevereto rebuild.
+    </p>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+        <a href="/export/imagehut-only?format=list" target="_blank" class="btn btn-green">ImageHut URLs (plain list)</a>
+        <a href="/export/imagehut-only" target="_blank" class="btn btn-purple">ImageHut By Player (TSV)</a>
+        <a href="/export/imagehut-only?format=json" target="_blank" class="btn btn-ghost">ImageHut By Player (JSON)</a>
     </div>
 </div>
 
