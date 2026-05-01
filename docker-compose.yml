@@ -13,8 +13,7 @@ services:
     env_file:
       - .env
     environment:
+      PYTHONUNBUFFERED: "1"
       CF_WORKER_URL: "https://cloudflare-worker.storycraftink-sys.workers.dev"
       CF_WORKER_KEY: "6eba7f5a6812790486a9fbc82c2e64967c555ed7f0924a34eb1b72d2ea6f82ced7a75b87ab7fbcded3171f414d70956eb7979d0c338afc59d93d204f264cd3ee1669587de06bcab015418105324332f3"
-      BOT_USERNAME: "Watcher"
-      BOT_PASSWORD: "5Qc43y$$$$K765103"
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--proxy-headers", "--forwarded-allow-ips", "*"]

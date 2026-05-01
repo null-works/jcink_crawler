@@ -84,9 +84,11 @@ async def authenticate() -> bool:
     }
 
     try:
+        print(f"[Fetcher] Attempting login as {settings.bot_username} via {'CF Worker' if _is_cf_worker_enabled() else 'direct'}...")
         if _is_cf_worker_enabled():
             actual_url = _cf_proxy_url(login_url)
             response = await client.post(actual_url, data=login_data)
+            print(f"[Fetcher] Login POST response: status={response.status_code}, history={len(response.history)} redirects")
             # Worker renames Set-Cookie to X-Proxied-Set-Cookie to avoid browser
             # interference; manually parse and inject into the httpx cookie jar.
             # Multiple cookies are merged with ", " which SimpleCookie can't
