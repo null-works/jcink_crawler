@@ -582,7 +582,7 @@ async def get_service_status(db: aiosqlite.Connection = Depends(get_db)):
 
 # --- Banner Album Endpoint ---
 
-BANNER_ALBUM_URL_DEFAULT = "https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+BANNER_ALBUM_URL_DEFAULT = "https://imagehut.ch/album/Banners.ygFX2"
 _banner_cache: dict = {"urls": [], "fetched_at": 0.0, "album_url": ""}
 BANNER_CACHE_TTL = 600  # 10 minutes
 

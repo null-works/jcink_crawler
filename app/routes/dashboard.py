@@ -544,7 +544,7 @@ async def admin_page(
     browser_sync_url = await get_crawl_status(db, "browser_sync_url") or ""
 
     # Banner album
-    banner_album_url = await get_crawl_status(db, "banner_album_url") or "https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+    banner_album_url = await get_crawl_status(db, "banner_album_url") or "https://imagehut.ch/album/Banners.ygFX2"
     # Import cache state to show count
     from app.routes.character import _banner_cache
     banner_count = len(_banner_cache["urls"]) if _banner_cache["urls"] else 0
@@ -1395,7 +1395,6 @@ async def htmx_save_acp_credentials(
     return HTMLResponse(f'<span class="text-green">ACP credentials saved for {username}.</span>')
 
 
-@router.post("/htmx/banner-album", response_class=HTMLResponse)
 @router.post("/htmx/save-sync-url", response_class=HTMLResponse)
 async def htmx_save_sync_url(
     request: Request,
