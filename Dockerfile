@@ -17,6 +17,7 @@ RUN useradd --create-home --uid 1000 appuser
 COPY app/ ./app/
 COPY cli.py ./cli.py
 COPY tui.py ./tui.py
+COPY scripts/ ./scripts/
 
 # Create data directory and set ownership
 RUN mkdir -p /app/data && chown -R appuser:appuser /app
