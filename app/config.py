@@ -1,10 +1,11 @@
 import base64
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "2.6.5"
 APP_BUILD_TIME = datetime.now(timezone.utc).strftime("%Y%m%d.%H%M%S")
 
 
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
     forum_complete_id: str = "49"
     forum_incomplete_id: str = "59"
     forum_comms_id: str = "31"
-    forums_excluded: str = "4,5,6,7,8,9,10,11,12,14,15,16,18,52,56,57,58,60,63,69,85,86,87,88,90,91,92,95"
+    forums_excluded: str = "4,5,6,7,8,9,10,11,12,14,15,16,18,48,52,56,57,58,60,63,69,85,86,87,88,90,91,92,95,100"
     crawl_quotes_batch_size: int = 0  # 0 = unlimited, process all unscraped threads
     quote_min_words: int = 3
     webhook_crawl_delay_seconds: float = 5.0
@@ -57,3 +58,18 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def now_et() -> datetime:
+    """Current datetime in the configured activity timezone (America/New_York)."""
+    return datetime.now(ZoneInfo(settings.activity_timezone))
+
+
+def now_et_iso() -> str:
+    """Current datetime as ISO string in the configured timezone."""
+    return now_et().isoformat()
+
+
+def now_et_stamp() -> str:
+    """Current datetime as YYYY-MM-DD HH:MM:SS in the configured timezone."""
+    return now_et().strftime("%Y-%m-%d %H:%M:%S")

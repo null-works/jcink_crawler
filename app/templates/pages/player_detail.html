@@ -88,8 +88,8 @@
             {% set char_ongoing = char.thread_counts.get('ongoing', 0) %}
             <tr class="clickable-row" onclick="window.location='/character/{{ char.id }}'">
                 <td>
-                    {% if char.avatar_url %}
-                    <img src="{{ char.avatar_url }}" alt="" class="avatar-sm" loading="lazy">
+                    {% if char.square_image or char.avatar_url %}
+                    <img src="{{ char.square_image or char.avatar_url }}" alt="" class="avatar-sm" loading="lazy">
                     {% else %}
                     <span class="avatar-placeholder">?</span>
                     {% endif %}

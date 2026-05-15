@@ -28,8 +28,9 @@
 {% for char in characters %}
 <tr class="clickable-row" onclick="window.location='/character/{{ char.id }}'">
     <td>
-        {% if char.avatar_url %}
-        <img src="{{ char.avatar_url }}" alt="" class="avatar-sm" loading="lazy">
+        {% set avatar = char.square_image or char.avatar_url %}
+        {% if avatar %}
+        <img src="{{ avatar }}" alt="" class="avatar-sm" loading="lazy">
         {% else %}
         <span class="avatar-placeholder">?</span>
         {% endif %}

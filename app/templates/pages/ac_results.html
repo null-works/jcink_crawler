@@ -68,8 +68,8 @@
         {% for char in player.characters %}
         <a href="/character/{{ char.id }}" class="ac-char-card ac-char-{{ char.ac_status }}">
             <div class="ac-char-avatar">
-                {% if char.avatar_url %}
-                <img src="{{ char.avatar_url }}" alt="" loading="lazy">
+                {% if char.square_image or char.avatar_url %}
+                <img src="{{ char.square_image or char.avatar_url }}" alt="" loading="lazy">
                 {% else %}
                 <span class="avatar-placeholder">?</span>
                 {% endif %}

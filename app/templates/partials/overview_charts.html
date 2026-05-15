@@ -59,8 +59,8 @@
         <div class="recent-activity">
             {% for item in chart_data.recent_crawls %}
             <a href="/character/{{ item.id }}" class="activity-item">
-                {% if item.avatar_url %}
-                <img src="{{ item.avatar_url }}" class="avatar-sm" alt="">
+                {% if item.square_image or item.avatar_url %}
+                <img src="{{ item.square_image or item.avatar_url }}" class="avatar-sm" alt="">
                 {% else %}
                 <span class="avatar-placeholder">?</span>
                 {% endif %}

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request, BackgroundTasks, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import aiosqlite
@@ -13,6 +13,7 @@ from app.config import settings, APP_VERSION, APP_BUILD_TIME
 from app.models import (
     get_character,
     get_all_characters,
+    get_all_claims,
     get_character_threads,
     get_profile_fields,
     get_all_quotes,
@@ -20,6 +21,7 @@ from app.models import (
     search_threads_global,
     search_quotes_global,
     get_unique_affiliations,
+    get_characters_by_affiliation,
     get_unique_groups,
     get_unique_players,
     search_players,
@@ -27,10 +29,19 @@ from app.models import (
     get_dashboard_stats,
     get_dashboard_chart_data,
     get_activity_check_data,
+    get_all_relationships,
+    get_relationships_for_character,
+    create_relationship,
+    update_relationship,
+    delete_relationship,
+    seed_relationships_from_connections,
+    get_recent_profile_changes,
+    dismiss_profile_changes,
+    RELATIONSHIP_TYPES,
 )
 from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden, set_approval_date, set_approval_dates
 from app.services import crawl_character_threads, crawl_character_profile, register_character
-from app.services.crawler import sync_posts_from_acp, crawl_quotes_only
+from app.services.crawler import sync_posts_from_acp, crawl_quotes_only, crawl_all_profile_fields
 from app.services.scheduler import _crawl_all_characters
 from app.services.activity import get_activity, get_debug_log, clear_debug_log
 
@@ -48,18 +59,20 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 # --- Jinja2 custom filters ---
 
 def format_time(ts) -> str:
-    """Format a timestamp as relative time."""
+    """Format a timestamp as relative time, using America/New_York."""
     if not ts:
         return "Never"
     try:
+        from app.config import now_et
+        tz = ZoneInfo(settings.activity_timezone)
         if isinstance(ts, str):
             ts_clean = ts.replace("Z", "+00:00")
             dt = datetime.fromisoformat(ts_clean)
         else:
             dt = ts
-        now = datetime.now(timezone.utc)
+        now = now_et()
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=tz)
         delta = now - dt
         minutes = int(delta.total_seconds() / 60)
         if minutes < 1:
@@ -256,6 +269,7 @@ async def character_detail_page(
     approval_date = row["approval_date"] if row else None
 
     total_quotes = len(quotes)
+    character_relationships = await get_relationships_for_character(db, character_id)
     return templates.TemplateResponse(request, "pages/character_detail.html", {
         "character": char,
         "fields": fields,
@@ -271,6 +285,7 @@ async def character_detail_page(
         "category": None,
         "is_hidden": is_hidden,
         "approval_date": approval_date,
+        "character_relationships": character_relationships,
     })
 
 
@@ -529,10 +544,13 @@ async def admin_page(
     browser_sync_url = await get_crawl_status(db, "browser_sync_url") or ""
 
     # Banner album
-    banner_album_url = await get_crawl_status(db, "banner_album_url") or "https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+    banner_album_url = await get_crawl_status(db, "banner_album_url") or "https://imagehut.ch/album/Banners.ygFX2"
     # Import cache state to show count
     from app.routes.character import _banner_cache
     banner_count = len(_banner_cache["urls"]) if _banner_cache["urls"] else 0
+
+    # Profile changes
+    profile_changes = await get_recent_profile_changes(db, limit=50)
 
     return templates.TemplateResponse(request, "pages/admin.html", {
         "stats": stats,
@@ -545,8 +563,373 @@ async def admin_page(
         "browser_sync_url": browser_sync_url,
         "banner_album_url": banner_album_url,
         "banner_count": banner_count,
+        "profile_changes": profile_changes,
     })
 
+
+@router.get("/connections", response_class=HTMLResponse)
+async def connections_page(
+    request: Request,
+    tab: str = "all",
+    focus: str | None = None,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    characters = await get_all_characters(db)
+    relationships = await get_all_relationships(db)
+    groups = await get_characters_by_affiliation(db)
+    stats = await get_dashboard_stats(db)
+    activity = get_activity()
+
+    return templates.TemplateResponse(request, "pages/connections.html", {
+        "characters": characters,
+        "relationships": relationships,
+        "relationship_types": RELATIONSHIP_TYPES,
+        "groups": groups,
+        "stats": stats,
+        "activity": activity,
+        "tab": tab,
+        "focus": focus,
+    })
+
+
+@router.get("/affiliations")
+async def affiliations_redirect(tab: str = "affiliations"):
+    return RedirectResponse(url=f"/connections?tab={tab}", status_code=302)
+
+
+@router.get("/export/players", response_class=PlainTextResponse)
+async def export_players(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    players = await get_unique_players(db)
+    return PlainTextResponse("\n".join(players))
+
+
+@router.get("/export/characters", response_class=PlainTextResponse)
+async def export_characters(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    characters = await get_all_characters(db)
+    return PlainTextResponse("\n".join(c.name for c in characters))
+
+
+@router.get("/export/face-claims", response_class=PlainTextResponse)
+async def export_face_claims(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    claims = await get_all_claims(db)
+    lines = [f"{c.name}\t{c.face_claim}" for c in claims if c.face_claim]
+    return PlainTextResponse("\n".join(lines))
+
+
+@router.get("/export/species", response_class=PlainTextResponse)
+async def export_species(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    claims = await get_all_claims(db)
+    lines = [f"{c.name}\t{c.species}" for c in claims if c.species]
+    return PlainTextResponse("\n".join(lines))
+
+
+@router.get("/export/affiliations", response_class=PlainTextResponse)
+async def export_affiliations(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    affiliations = await get_unique_affiliations(db)
+    return PlainTextResponse("\n".join(affiliations))
+
+
+@router.get("/export/threads", response_class=PlainTextResponse)
+async def export_threads(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    threads, _ = await search_threads_global(db, per_page=10000)
+    lines = [f"{t['char_name']}\t{t['title']}\t{t['char_category']}" for t in threads]
+    return PlainTextResponse("\n".join(lines))
+
+
+@router.get("/export/imagehut-urls", response_class=PlainTextResponse)
+async def export_imagehut_urls(
+    request: Request,
+    format: str = "tsv",
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Export ALL image URLs used by all players/characters.
+
+    Scans every image-related profile field and avatar_url.
+    Outputs are grouped by player so you can see exactly what
+    images each person uses and where they're hosted.
+
+    Formats:
+        ?format=tsv   — tab-separated (default)
+        ?format=json  — JSON grouped by player
+        ?format=list  — plain deduplicated URL list
+    """
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    import re
+
+    # Image-related profile field keys
+    IMAGE_FIELDS = {
+        "square_image", "portrait_image", "secondary_square_image",
+        "rectangle_gif", "avatar_url", "header_image", "banner_image",
+        "face_claim_image",
+    }
+
+    # Also catch any field whose value looks like an image URL
+    img_url_re = re.compile(r'https?://\S+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|avif)', re.IGNORECASE)
+
+    # Build player lookup
+    cursor = await db.execute(
+        "SELECT character_id, field_value FROM profile_fields WHERE field_key = ? AND field_value IS NOT NULL",
+        (settings.player_field_key,),
+    )
+    player_map = {row["character_id"]: row["field_value"] for row in await cursor.fetchall()}
+
+    # Build character name lookup
+    cursor = await db.execute("SELECT id, name FROM characters")
+    char_map = {row["id"]: row["name"] for row in await cursor.fetchall()}
+
+    rows: list[dict] = []
+    all_urls: set[str] = set()
+
+    # 1. All profile fields that are known image fields OR contain image URLs
+    cursor = await db.execute(
+        "SELECT character_id, field_key, field_value FROM profile_fields "
+        "WHERE field_value IS NOT NULL AND field_value != '' AND field_value != 'No Information'"
+    )
+    for row in await cursor.fetchall():
+        fk = row["field_key"]
+        fv = row["field_value"].strip()
+        urls = []
+
+        if fk in IMAGE_FIELDS:
+            # Known image field — the value IS the URL
+            if fv.startswith("http"):
+                urls.append(fv)
+        else:
+            # Other fields — scan for embedded image URLs
+            urls = img_url_re.findall(fv)
+
+        for url in urls:
+            all_urls.add(url)
+            rows.append({
+                "player": player_map.get(row["character_id"], ""),
+                "character": char_map.get(row["character_id"], ""),
+                "character_id": row["character_id"],
+                "field": fk,
+                "url": url,
+            })
+
+    # 2. characters.avatar_url
+    cursor = await db.execute(
+        "SELECT id, name, avatar_url FROM characters WHERE avatar_url IS NOT NULL AND avatar_url != ''"
+    )
+    for row in await cursor.fetchall():
+        url = row["avatar_url"].strip()
+        if url.startswith("http"):
+            all_urls.add(url)
+            rows.append({
+                "player": player_map.get(row["id"], ""),
+                "character": row["name"],
+                "character_id": row["id"],
+                "field": "avatar_url",
+                "url": url,
+            })
+
+    # Sort by player, then character
+    rows.sort(key=lambda r: (r["player"].lower() if r["player"] else "zzz", r["character"].lower()))
+
+    # Dedupe: same character + same field + same URL
+    seen = set()
+    deduped = []
+    for r in rows:
+        key = (r["character_id"], r["field"], r["url"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+    rows = deduped
+
+    # Count by host
+    from urllib.parse import urlparse
+    host_counts: dict[str, int] = {}
+    for url in all_urls:
+        host = urlparse(url).netloc.lower()
+        host_counts[host] = host_counts.get(host, 0) + 1
+
+    # Format: plain list
+    if format == "list":
+        return PlainTextResponse("\n".join(sorted(all_urls)))
+
+    # Format: JSON
+    if format == "json":
+        import json
+        by_player: dict[str, list] = {}
+        for r in rows:
+            pname = r["player"] or "(no player)"
+            by_player.setdefault(pname, []).append(r)
+        return PlainTextResponse(
+            json.dumps({
+                "total_urls": len(all_urls),
+                "total_rows": len(rows),
+                "hosts": dict(sorted(host_counts.items(), key=lambda x: -x[1])),
+                "by_player": by_player,
+            }, indent=2),
+            media_type="application/json",
+        )
+
+    # Default: TSV
+    header = "player\tcharacter\tcharacter_id\tfield\turl"
+    lines = [header]
+    for r in rows:
+        lines.append(f"{r['player']}\t{r['character']}\t{r['character_id']}\t{r['field']}\t{r['url']}")
+    lines.append("")
+    lines.append(f"# Unique URLs: {len(all_urls)}")
+    lines.append(f"# Rows: {len(rows)}")
+    lines.append(f"# Hosts: {', '.join(f'{h} ({c})' for h, c in sorted(host_counts.items(), key=lambda x: -x[1]))}")
+    return PlainTextResponse("\n".join(lines))
+
+
+@router.get("/export/imagehut-only", response_class=PlainTextResponse)
+async def export_imagehut_only(
+    request: Request,
+    format: str = "tsv",
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Export only imagehut.ch image URLs, with player/character context."""
+    redirect = _require_auth(request)
+    if redirect:
+        return redirect
+
+    import re
+    from urllib.parse import urlparse
+
+    url_re = re.compile(r'https?://(?:www\.)?imagehut\.ch/\S+', re.IGNORECASE)
+    image_path_re = re.compile(r'^/images/(\d{4})/(\d{2})/(\d{2})/(.+)$')
+
+    def parse_r2_path(url: str) -> str:
+        path = urlparse(url).path
+        m = image_path_re.match(path)
+        if m:
+            year, month, day, filename = m.groups()
+            full = re.sub(r'\.(md|th)(\.\w+)$', r'\2', filename)
+            return f"images/{year}/{month}/{day}/{full}"
+        return ""
+
+    # Lookups
+    cursor = await db.execute(
+        "SELECT character_id, field_value FROM profile_fields WHERE field_key = ? AND field_value IS NOT NULL",
+        (settings.player_field_key,),
+    )
+    player_map = {row["character_id"]: row["field_value"] for row in await cursor.fetchall()}
+
+    cursor = await db.execute("SELECT id, name FROM characters")
+    char_map = {row["id"]: row["name"] for row in await cursor.fetchall()}
+
+    rows: list[dict] = []
+    all_urls: set[str] = set()
+
+    # Profile fields
+    cursor = await db.execute(
+        "SELECT character_id, field_key, field_value FROM profile_fields WHERE field_value LIKE '%imagehut.ch%'"
+    )
+    for row in await cursor.fetchall():
+        for m in url_re.finditer(row["field_value"]):
+            url = m.group(0).rstrip("'\")}];,")
+            all_urls.add(url)
+            rows.append({
+                "player": player_map.get(row["character_id"], ""),
+                "character": char_map.get(row["character_id"], ""),
+                "character_id": row["character_id"],
+                "field": row["field_key"],
+                "url": url,
+                "r2_path": parse_r2_path(url),
+            })
+
+    # characters.avatar_url
+    cursor = await db.execute(
+        "SELECT id, name, avatar_url FROM characters WHERE avatar_url LIKE '%imagehut.ch%'"
+    )
+    for row in await cursor.fetchall():
+        url = row["avatar_url"].strip()
+        all_urls.add(url)
+        rows.append({
+            "player": player_map.get(row["id"], ""),
+            "character": row["name"],
+            "character_id": row["id"],
+            "field": "avatar_url",
+            "url": url,
+            "r2_path": parse_r2_path(url),
+        })
+
+    # Sort + dedupe
+    rows.sort(key=lambda r: (r["player"].lower() if r["player"] else "zzz", r["character"].lower()))
+    seen = set()
+    deduped = []
+    for r in rows:
+        key = (r["character_id"], r["field"], r["url"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+    rows = deduped
+
+    if format == "list":
+        return PlainTextResponse("\n".join(sorted(all_urls)))
+
+    if format == "json":
+        import json
+        by_player: dict[str, list] = {}
+        for r in rows:
+            by_player.setdefault(r["player"] or "(no player)", []).append(r)
+        return PlainTextResponse(
+            json.dumps({"total": len(all_urls), "rows": len(rows), "by_player": by_player}, indent=2),
+            media_type="application/json",
+        )
+
+    header = "player\tcharacter\tcharacter_id\tfield\turl\tr2_path"
+    lines = [header]
+    for r in rows:
+        lines.append(f"{r['player']}\t{r['character']}\t{r['character_id']}\t{r['field']}\t{r['url']}\t{r['r2_path']}")
+    lines.append("")
+    lines.append(f"# Unique imagehut.ch URLs: {len(all_urls)}")
+    lines.append(f"# Rows: {len(rows)}")
+    return PlainTextResponse("\n".join(lines))
 
 @router.get("/players", response_class=HTMLResponse)
 async def players_page(
@@ -966,8 +1349,10 @@ async def htmx_crawl(
     character_id = form.get("character_id", "").strip() or None
     crawl_type = form.get("crawl_type", "threads")
 
-    if crawl_type in ("discover", "all-threads", "all-profiles"):
+    if crawl_type in ("discover", "all-threads"):
         background_tasks.add_task(_crawl_all_characters)
+    elif crawl_type == "all-profiles":
+        background_tasks.add_task(crawl_all_profile_fields, settings.database_path)
     elif crawl_type == "sync-posts":
         background_tasks.add_task(sync_posts_from_acp, settings.database_path)
     elif crawl_type == "crawl-quotes":
@@ -1010,7 +1395,6 @@ async def htmx_save_acp_credentials(
     return HTMLResponse(f'<span class="text-green">ACP credentials saved for {username}.</span>')
 
 
-@router.post("/htmx/banner-album", response_class=HTMLResponse)
 @router.post("/htmx/save-sync-url", response_class=HTMLResponse)
 async def htmx_save_sync_url(
     request: Request,
@@ -1117,6 +1501,129 @@ async def htmx_purge_recrawl(
     return HTMLResponse('<span class="text-green">Database purged. Re-crawling all characters (profile + threads + quotes).</span>')
 
 
+@router.post("/htmx/fix-last-posters", response_class=HTMLResponse)
+async def htmx_fix_last_posters(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Recompute threads.last_poster_id/name/avatar from the posts table.
+
+    Trusts our own scraped posts data (which has the actual MAX(post_date)
+    per thread) over the legacy stored values that were corrupted by the
+    search-result fallback bug.
+    """
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    # Find the actual last poster per thread: the character_id with the
+    # max post_date for each thread_id in the posts table.
+    cursor = await db.execute("""
+        WITH ranked AS (
+            SELECT thread_id, character_id, post_date,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY thread_id
+                       ORDER BY post_date DESC, id DESC
+                   ) AS rn
+            FROM posts
+            WHERE post_date IS NOT NULL
+        )
+        SELECT r.thread_id, r.character_id, c.name
+        FROM ranked r
+        JOIN characters c ON c.id = r.character_id
+        WHERE r.rn = 1
+    """)
+    rows = await cursor.fetchall()
+
+    fixed = 0
+    skipped = 0
+    for r in rows:
+        # Only update if it actually changed
+        cur = await db.execute(
+            "SELECT last_poster_id FROM threads WHERE id = ?", (r["thread_id"],),
+        )
+        existing = await cur.fetchone()
+        if not existing:
+            skipped += 1
+            continue
+        current = existing["last_poster_id"]
+        if current == r["character_id"]:
+            skipped += 1
+            continue
+        # Safeguard: don't overwrite if stored last_poster is an untracked
+        # character — they might be the real last poster, and the posts
+        # table only contains tracked users.
+        if current:
+            cur = await db.execute("SELECT 1 FROM characters WHERE id = ?", (current,))
+            if not await cur.fetchone():
+                skipped += 1
+                continue
+        # Clear avatar so the get_character_threads resolver picks fresh
+        await db.execute(
+            "UPDATE threads SET last_poster_id = ?, last_poster_name = ?, last_poster_avatar = NULL WHERE id = ?",
+            (r["character_id"], r["name"], r["thread_id"]),
+        )
+        fixed += 1
+    await db.commit()
+
+    return HTMLResponse(
+        f'<span class="text-green">Recomputed last_poster from posts table — {fixed} threads fixed, {skipped} unchanged</span>'
+    )
+
+
+@router.post("/htmx/dismiss-profile-changes", response_class=HTMLResponse)
+async def htmx_dismiss_profile_changes(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+    count = await dismiss_profile_changes(db)
+    return HTMLResponse(f'<span class="text-comment">Dismissed {count} changes</span>')
+
+
+@router.post("/htmx/purge-excluded-forums", response_class=HTMLResponse)
+async def htmx_purge_excluded_forums(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Delete threads (and their links/posts/quotes) from any forum_id in
+    settings.excluded_forum_ids. Used to clean up after adding a new forum
+    to the exclusion list, or to remove threads that slipped past the filter.
+    """
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    excluded = settings.excluded_forum_ids
+    if not excluded:
+        return HTMLResponse('<span class="text-yellow">No excluded forums configured.</span>')
+
+    placeholders = ",".join("?" * len(excluded))
+    excluded_list = list(excluded)
+
+    cursor = await db.execute(
+        f"SELECT id FROM threads WHERE forum_id IN ({placeholders})",
+        excluded_list,
+    )
+    thread_ids = [r["id"] for r in await cursor.fetchall()]
+    if not thread_ids:
+        return HTMLResponse('<span class="text-comment">No threads from excluded forums to remove.</span>')
+
+    tid_placeholders = ",".join("?" * len(thread_ids))
+    await db.execute(f"DELETE FROM character_threads WHERE thread_id IN ({tid_placeholders})", thread_ids)
+    await db.execute(f"DELETE FROM posts WHERE thread_id IN ({tid_placeholders})", thread_ids)
+    await db.execute(f"DELETE FROM quotes WHERE source_thread_id IN ({tid_placeholders})", thread_ids)
+    await db.execute(f"DELETE FROM quote_crawl_log WHERE thread_id IN ({tid_placeholders})", thread_ids)
+    await db.execute(f"DELETE FROM threads WHERE id IN ({tid_placeholders})", thread_ids)
+    await db.commit()
+
+    return HTMLResponse(
+        f'<span class="text-green">Purged {len(thread_ids)} threads from excluded forums (and their posts/quotes/links).</span>'
+    )
+
+
 @router.post("/htmx/nuke-rebuild", response_class=HTMLResponse)
 async def htmx_nuke_rebuild(
     request: Request,
@@ -1138,3 +1645,145 @@ async def htmx_nuke_rebuild(
 
     background_tasks.add_task(_crawl_all_characters)
     return HTMLResponse('<span class="text-green">Everything nuked. Re-crawling all user IDs from scratch.</span>')
+
+
+# --- Relationships ---
+
+@router.get("/relationships")
+async def relationships_redirect(focus: str | None = None):
+    url = "/connections?tab=relationships"
+    if focus:
+        url += f"&focus={focus}"
+    return RedirectResponse(url=url, status_code=302)
+
+
+@router.get("/api/relationships")
+async def get_relationship_graph(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Returns graph data as JSON for Force-Graph."""
+    characters = await get_all_characters(db)
+    relationships = await get_all_relationships(db)
+    affiliations = await get_unique_affiliations(db)
+
+    connected_ids = set()
+    for r in relationships:
+        connected_ids.add(r.character_a_id)
+        connected_ids.add(r.character_b_id)
+
+    nodes = []
+    for c in characters:
+        node = {
+            "id": c.id,
+            "name": c.name,
+            "affiliation": c.affiliation or "Unaffiliated",
+            "connected": c.id in connected_ids,
+        }
+        avatar = getattr(c, "square_image", None) or c.avatar_url
+        if avatar:
+            node["avatar"] = avatar
+        nodes.append(node)
+
+    links = [
+        {
+            "source": r.character_a_id,
+            "target": r.character_b_id,
+            "type": r.relationship_type,
+            "label": r.label or r.relationship_type,
+        }
+        for r in relationships
+    ]
+    return {"nodes": nodes, "links": links, "affiliations": affiliations}
+
+
+@router.post("/htmx/relationship/add", response_class=HTMLResponse)
+async def htmx_relationship_add(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    char_a = form.get("character_a", "").strip()
+    char_b = form.get("character_b", "").strip()
+    rel_type = form.get("relationship_type", "other").strip()
+    label = form.get("label", "").strip() or None
+
+    if not char_a or not char_b:
+        return HTMLResponse('<span class="text-red">Both characters are required</span>')
+    if char_a == char_b:
+        return HTMLResponse('<span class="text-red">Cannot create a relationship with the same character</span>')
+
+    result = await create_relationship(db, char_a, char_b, rel_type, label)
+    if result is None:
+        return HTMLResponse('<span class="text-yellow">Relationship already exists</span>')
+
+    relationships = await get_all_relationships(db)
+    return templates.TemplateResponse(request, "partials/relationship_list.html", {
+        "relationships": relationships,
+    })
+
+
+@router.post("/htmx/relationship/{rel_id}/edit", response_class=HTMLResponse)
+async def htmx_relationship_edit(
+    request: Request,
+    rel_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    form = await request.form()
+    rel_type = form.get("relationship_type", "other").strip()
+    label = form.get("label", "").strip() or None
+
+    await update_relationship(db, rel_id, rel_type, label)
+    relationships = await get_all_relationships(db)
+    return templates.TemplateResponse(request, "partials/relationship_list.html", {
+        "relationships": relationships,
+    })
+
+
+@router.post("/htmx/relationship/{rel_id}/delete", response_class=HTMLResponse)
+async def htmx_relationship_delete(
+    request: Request,
+    rel_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    await delete_relationship(db, rel_id)
+    relationships = await get_all_relationships(db)
+    return templates.TemplateResponse(request, "partials/relationship_list.html", {
+        "relationships": relationships,
+    })
+
+
+@router.post("/htmx/relationships/seed", response_class=HTMLResponse)
+async def htmx_relationships_seed(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    count = await seed_relationships_from_connections(db)
+    return HTMLResponse(f'<span class="text-green">Imported {count} new relationship{"s" if count != 1 else ""} from connections data</span>')
+
+
+@router.get("/htmx/relationship-list", response_class=HTMLResponse)
+async def htmx_relationship_list(
+    request: Request,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    relationships = await get_all_relationships(db)
+    return templates.TemplateResponse(request, "partials/relationship_list.html", {
+        "relationships": relationships,
+    })

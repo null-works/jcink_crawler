@@ -5,8 +5,9 @@
 {# Character header card #}
 <div class="card">
     <div class="char-header">
-        {% if character.avatar_url %}
-        <img src="{{ character.avatar_url }}" alt="{{ character.name }}" class="avatar-lg">
+        {% set avatar = character.square_image or character.avatar_url %}
+        {% if avatar %}
+        <img src="{{ avatar }}" alt="{{ character.name }}" class="avatar-lg">
         {% else %}
         <span class="avatar-placeholder" style="width: 80px; height: 80px; font-size: 2rem;">?</span>
         {% endif %}
@@ -130,22 +131,68 @@
     ('rectangle_gif', 'Rectangle / GIF', 'rectangle_gif'),
 ] %}
 {% set image_keys = ['portrait_image', 'square_image', 'secondary_square_image', 'rectangle_gif'] %}
-{% set regular_fields = {} %}
-{% for key, value in fields.items() %}
-    {% if key not in pg_keys and key not in image_keys %}{% if regular_fields.update({key: value}) %}{% endif %}{% endif %}
+
+{# Friendly labels + prioritized ordering #}
+{% set field_labels = {
+    'codename': 'Codename',
+    'character_age': 'Age',
+    'character_pronouns': 'Pronouns',
+    'character_birthday': 'Birthday',
+    'species': 'Species',
+    'affiliation': 'Affiliation',
+    'occupation': 'Occupation',
+    'birthplace': 'Birthplace',
+    'residence': 'Residence',
+    'face claim': 'Face Claim',
+    'short_quote': 'Short Quote',
+    'connections': 'Connections',
+    'age': 'Player Age',
+    'pronouns': 'Player Pronouns',
+    'birthday': 'Player Birthday',
+    'player': 'Player',
+    'timezone': 'Timezone',
+    'rpg rating': 'RPG Rating',
+    'triggers': 'Triggers',
+} %}
+{% set ic_order = ['codename', 'character_age', 'character_pronouns', 'character_birthday', 'species', 'affiliation', 'occupation', 'birthplace', 'residence', 'face claim', 'short_quote', 'connections'] %}
+{% set ooc_order = ['player', 'age', 'pronouns', 'birthday', 'timezone', 'rpg rating', 'triggers'] %}
+
+{% set ic_fields = [] %}
+{% for key in ic_order %}
+    {% if fields.get(key) %}{% if ic_fields.append((field_labels.get(key, key), fields[key])) %}{% endif %}{% endif %}
 {% endfor %}
+{% set known_keys = ic_order + ooc_order + image_keys + pg_keys %}
+{% set other_fields = [] %}
+{% for key, value in fields.items() %}
+    {% if key not in known_keys %}{% if other_fields.append((field_labels.get(key, key|replace('_', ' ')|title), value)) %}{% endif %}{% endif %}
+{% endfor %}
+
 <div class="profile-columns">
-    {% if regular_fields %}
+    {% if ic_fields or other_fields %}
     <div class="card profile-col-fields">
-        <h3 class="card-title" style="margin-bottom: 0.75rem;">Profile Fields</h3>
-        <table class="fields-table">
-            {% for key, value in regular_fields.items() %}
+        {% if ic_fields %}
+        <h3 class="card-title" style="margin-bottom: 0.75rem;">Character</h3>
+        <table class="fields-table" style="margin-bottom: 1rem;">
+            {% for label, value in ic_fields %}
             <tr>
-                <td class="field-key">{{ key }}</td>
+                <td class="field-key">{{ label }}</td>
                 <td class="field-value">{{ value }}</td>
             </tr>
             {% endfor %}
         </table>
+        {% endif %}
+
+        {% if other_fields %}
+        <h3 class="card-title" style="margin-bottom: 0.75rem;">Other</h3>
+        <table class="fields-table">
+            {% for label, value in other_fields %}
+            <tr>
+                <td class="field-key">{{ label }}</td>
+                <td class="field-value">{{ value }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% endif %}
     </div>
     {% endif %}
 
@@ -257,5 +304,33 @@
         {% include "partials/character_quotes_section.html" %}
     </div>
 </div>
+
+{# Relationships section #}
+{% if character_relationships %}
+<div class="card">
+    <div class="section-header">
+        <h3 class="card-title">Relationships ({{ character_relationships|length }})</h3>
+        <a href="/relationships?focus={{ character.id }}" class="btn btn-ghost btn-sm">View in Graph</a>
+    </div>
+    <div class="relationship-list" style="margin-top: 0.5rem;">
+        {% for r in character_relationships %}
+        {% set other_id = r.character_b_id if r.character_a_id == character.id else r.character_a_id %}
+        {% set other_name = r.character_b_name if r.character_a_id == character.id else r.character_a_name %}
+        {% set other_avatar = r.character_b_avatar if r.character_a_id == character.id else r.character_a_avatar %}
+        <a href="/character/{{ other_id }}" class="relationship-item" style="text-decoration: none;">
+            {% if other_avatar %}
+            <img src="{{ other_avatar }}" class="avatar-sm" alt="">
+            {% else %}
+            <span class="avatar-placeholder" style="width: 32px; height: 32px; font-size: 0.8rem;">?</span>
+            {% endif %}
+            <div class="rel-names">
+                <span style="color: var(--fg);">{{ other_name }}</span>
+            </div>
+            <span class="rel-badge rel-badge-{{ r.relationship_type }}">{{ r.label or r.relationship_type }}</span>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
 
 {% endblock %}

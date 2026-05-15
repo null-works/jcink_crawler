@@ -170,12 +170,19 @@ async def crawl_character_threads(character_id: str, db_path: str) -> dict:
         # ── Last poster: always parse from the actual thread page ──
         # JCink's "posts by user" search shows the user's own last post
         # in the "Last Post" column, NOT the thread's actual last poster.
-        # So search-result data is unreliable for is_user_last_poster;
-        # we must check the real last page of the thread.
+        # If we can't parse the real last page, leave last_poster fields as
+        # None — upsert_thread uses COALESCE to preserve the existing DB
+        # value rather than overwriting with unreliable search-result data.
         thread_html_for_poster = last_page_html or thread_html
         last_poster = parse_last_poster(thread_html_for_poster)
-        last_poster_name = last_poster.name if last_poster else thread.last_poster_name
-        last_poster_id = last_poster.user_id if last_poster else thread.last_poster_id
+        last_poster_name = last_poster.name if last_poster else None
+        last_poster_id = last_poster.user_id if last_poster else None
+        if not last_poster:
+            log_debug(
+                f"parse_last_poster failed for thread {thread.id} ({thread.title}); "
+                f"preserving existing DB value",
+                level="warn",
+            )
 
         is_user_last = (
             last_poster_id == character_id
@@ -693,7 +700,10 @@ async def crawl_character_profile(character_id: str, db_path: str) -> dict:
     log_debug(f"Starting profile crawl for {character_id}")
     set_activity(f"Crawling profile for #{character_id}", character_id=character_id)
 
-    html = await fetch_page_rendered(profile_url)
+    # Use httpx through CF Worker (server IP is banned, so Playwright direct
+    # fetch fails with ERR_CONNECTION_REFUSED). With bot auth cookies the
+    # Worker-proxied response serves the modern theme with dl.profile-dossier.
+    html = await fetch_page_with_delay(profile_url)
     if not html:
         return {"error": "Failed to fetch profile page"}
 
@@ -810,8 +820,14 @@ async def process_profile_html(character_id: str, html: str, db_path: str) -> di
     }
 
 
+_profile_batch_lock = asyncio.Lock()
+
+
 async def process_profile_html_batch(profiles: list[dict], db_path: str) -> dict:
     """Process a batch of pre-fetched profile HTML pages.
+
+    Serialized with a module-level lock so concurrent Browser Sync uploads
+    don't collide with each other or with the ACP Sync on DB writes.
 
     Args:
         profiles: List of {"character_id": "N", "html": "..."} dicts
@@ -820,27 +836,28 @@ async def process_profile_html_batch(profiles: list[dict], db_path: str) -> dict
     Returns:
         Summary dict with counts
     """
-    set_activity(f"Processing {len(profiles)} uploaded profiles")
-    log_debug(f"Processing {len(profiles)} browser-uploaded profiles")
+    async with _profile_batch_lock:
+        set_activity(f"Processing {len(profiles)} uploaded profiles")
+        log_debug(f"Processing {len(profiles)} browser-uploaded profiles")
 
-    processed = 0
-    errors = 0
-    for p in profiles:
-        cid = str(p.get("character_id", ""))
-        html = p.get("html", "")
-        if not cid or not html:
-            continue
-        try:
-            result = await process_profile_html(cid, html, db_path)
-            if "error" not in result:
-                processed += 1
-        except Exception as e:
-            errors += 1
-            log_debug(f"Error processing profile {cid}: {e}", level="error")
+        processed = 0
+        errors = 0
+        for p in profiles:
+            cid = str(p.get("character_id", ""))
+            html = p.get("html", "")
+            if not cid or not html:
+                continue
+            try:
+                result = await process_profile_html(cid, html, db_path)
+                if "error" not in result:
+                    processed += 1
+            except Exception as e:
+                errors += 1
+                log_debug(f"Error processing profile {cid}: {e}", level="error")
 
-    clear_activity()
-    log_debug(f"Browser profile sync: {processed} processed, {errors} errors", level="done")
-    return {"processed": processed, "errors": errors}
+        clear_activity()
+        log_debug(f"Browser profile sync: {processed} processed, {errors} errors", level="done")
+        return {"processed": processed, "errors": errors}
 
 
 async def register_character(user_id: str, db_path: str) -> dict:
@@ -1261,11 +1278,13 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                         touched_char_ids.add(cid)
 
             if touched_char_ids:
+                from app.config import now_et_stamp
+                stamp = now_et_stamp()
                 placeholders = ",".join("?" * len(touched_char_ids))
                 await db.execute(
-                    f"UPDATE characters SET last_thread_crawl = CURRENT_TIMESTAMP, "
-                    f"updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
-                    list(touched_char_ids),
+                    f"UPDATE characters SET last_thread_crawl = ?, "
+                    f"updated_at = ? WHERE id IN ({placeholders})",
+                    [stamp, stamp] + list(touched_char_ids),
                 )
 
             await db.commit()
@@ -1309,9 +1328,62 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
 
         log_debug(f"Quote extraction: 100% — {quotes_added} new quotes from {processed} posts")
 
-        # Record last sync time
+        # Record last sync time + auto-correct any stale last_poster_id rows
+        # by recomputing from the posts table (same logic as the manual
+        # "Fix Stale Last Posters" admin button). The SQL dump's last-poster
+        # column is unreliable; our posts table has the actual MAX(post_date)
+        # per thread.
         async with connect_db(db_path) as db:
-            await set_crawl_status(db, "acp_last_sync", datetime.now(timezone.utc).isoformat())
+            from app.config import now_et_iso
+            await set_crawl_status(db, "acp_last_sync", now_et_iso())
+
+            cursor = await db.execute("""
+                WITH ranked AS (
+                    SELECT thread_id, character_id, post_date,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY thread_id
+                               ORDER BY post_date DESC, id DESC
+                           ) AS rn
+                    FROM posts
+                    WHERE post_date IS NOT NULL
+                )
+                SELECT r.thread_id, r.character_id, c.name
+                FROM ranked r
+                JOIN characters c ON c.id = r.character_id
+                WHERE r.rn = 1
+            """)
+            poster_rows = await cursor.fetchall()
+            poster_fixes = 0
+            for r in poster_rows:
+                cur = await db.execute(
+                    "SELECT last_poster_id FROM threads WHERE id = ?", (r["thread_id"],),
+                )
+                existing = await cur.fetchone()
+                if not existing:
+                    continue
+                current = existing["last_poster_id"]
+                # Already matches — nothing to do
+                if current == r["character_id"]:
+                    continue
+                # Safeguard: don't overwrite if current last_poster is an untracked
+                # character (not in our characters table). They might legitimately
+                # be the actual last poster, just not tracked by us — in which case
+                # the posts table (only tracked users) wouldn't know about them.
+                if current:
+                    cur = await db.execute(
+                        "SELECT 1 FROM characters WHERE id = ?", (current,),
+                    )
+                    if not await cur.fetchone():
+                        continue
+                await db.execute(
+                    "UPDATE threads SET last_poster_id = ?, last_poster_name = ?, "
+                    "last_poster_avatar = NULL WHERE id = ?",
+                    (r["character_id"], r["name"], r["thread_id"]),
+                )
+                poster_fixes += 1
+            if poster_fixes:
+                await db.commit()
+                log_debug(f"Auto-corrected {poster_fixes} stale last_poster_id rows", level="done")
 
         clear_activity()
         summary = {
@@ -1712,3 +1784,49 @@ async def discover_characters(db_path: str) -> dict:
         "already_tracked": existing_count,
         "skipped": skipped_count,
     }
+
+
+async def crawl_all_profile_fields(db_path: str) -> dict:
+    """Crawl profile pages for all tracked characters using Playwright.
+
+    Uses headless Chromium to render each profile page (JS-rendered fields
+    like short_quote, power grid, images). Does NOT crawl threads or quotes.
+    """
+    async with connect_db(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, name FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
+        )
+        chars = await cursor.fetchall()
+
+    if not chars:
+        return {"updated": 0, "errors": 0}
+
+    updated = 0
+    errors = 0
+
+    log_debug(f"Starting profile crawl for {len(chars)} characters (Playwright)")
+
+    for i, char in enumerate(chars):
+        cid = char["id"]
+        name = char["name"]
+        set_activity(
+            f"({i + 1}/{len(chars)}) Profile: {name}",
+            character_id=cid,
+            character_name=name,
+        )
+
+        try:
+            result = await crawl_character_profile(cid, db_path)
+            if result.get("error") or result.get("removed"):
+                errors += 1
+            else:
+                updated += 1
+                log_debug(f"Profile {cid} ({name}): {result.get('fields_count', 0)} fields", level="done")
+        except Exception as e:
+            log_debug(f"Profile {cid} ({name}): {e}", level="error")
+            errors += 1
+
+    clear_activity()
+    log_debug(f"Profile crawl complete: {updated} updated, {errors} errors", level="done")
+    return {"updated": updated, "errors": errors}

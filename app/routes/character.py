@@ -1,4 +1,5 @@
 import json
+import random
 import re
 import time
 
@@ -45,6 +46,19 @@ router = APIRouter()
 
 
 # --- Character Endpoints ---
+
+@router.get("/characters/random", response_model=list[CharacterSummary])
+async def random_characters(
+    n: int = Query(3, ge=1, le=20, description="Number of random characters to return"),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Return N random characters. Fresh results on every call."""
+    all_chars = await get_all_characters(db)
+    if not all_chars:
+        return []
+    count = min(n, len(all_chars))
+    return random.sample(all_chars, count)
+
 
 @router.get("/characters", response_model=list[CharacterSummary])
 async def list_characters(db: aiosqlite.Connection = Depends(get_db)):
@@ -135,6 +149,87 @@ async def register_new_character(
 
 # --- Thread Endpoints ---
 
+@router.get("/threads")
+async def get_threads_batch(
+    ids: str = Query(..., description="Comma-separated thread IDs"),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Batch-fetch threads with participants.
+
+    Returns {thread_id: {id, title, participants: [{id, name, codename}]}}
+    """
+    thread_ids = [tid.strip() for tid in ids.split(",") if tid.strip()]
+    if not thread_ids:
+        return {}
+
+    placeholders = ",".join("?" * len(thread_ids))
+
+    # Get thread metadata — resolve last_poster_name + last_poster_avatar from the
+    # characters table using last_poster_id, so all three fields come from the
+    # same source and can't drift apart.
+    cursor = await db.execute(
+        f"""SELECT t.id, t.title, t.url, t.forum_id, t.forum_name, t.category,
+                   t.last_poster_id,
+                   COALESCE(c.name, t.last_poster_name) AS last_poster_name,
+                   COALESCE(c.avatar_url,
+                            (SELECT field_value FROM profile_fields
+                             WHERE character_id = t.last_poster_id AND field_key = 'square_image'),
+                            t.last_poster_avatar) AS last_poster_avatar
+            FROM threads t
+            LEFT JOIN characters c ON c.id = t.last_poster_id
+            WHERE t.id IN ({placeholders})""",
+        thread_ids,
+    )
+    thread_rows = await cursor.fetchall()
+    threads = {r["id"]: dict(r) for r in thread_rows}
+
+    # Get participants via character_threads join
+    cursor = await db.execute(
+        f"""SELECT ct.thread_id, c.id AS character_id, c.name, c.group_name,
+                   pf.field_value AS codename
+            FROM character_threads ct
+            JOIN characters c ON c.id = ct.character_id
+            LEFT JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = 'codename'
+            WHERE ct.thread_id IN ({placeholders})
+            ORDER BY ct.thread_id, c.name""",
+        thread_ids,
+    )
+    participant_rows = await cursor.fetchall()
+
+    # Also check posts table for participants not in character_threads
+    cursor = await db.execute(
+        f"""SELECT DISTINCT p.thread_id, p.character_id, c.name, c.group_name,
+                   pf.field_value AS codename
+            FROM posts p
+            JOIN characters c ON c.id = p.character_id
+            LEFT JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = 'codename'
+            WHERE p.thread_id IN ({placeholders})
+            ORDER BY p.thread_id, c.name""",
+        thread_ids,
+    )
+    post_participant_rows = await cursor.fetchall()
+
+    # Merge participants from both sources
+    for tid in threads:
+        threads[tid]["participants"] = []
+
+    seen = set()
+    for row in list(participant_rows) + list(post_participant_rows):
+        tid = row["thread_id"]
+        cid = row["character_id"]
+        if tid not in threads or (tid, cid) in seen:
+            continue
+        seen.add((tid, cid))
+        threads[tid]["participants"].append({
+            "id": cid,
+            "name": row["name"],
+            "codename": row["codename"],
+            "group_name": row["group_name"],
+        })
+
+    return threads
+
+
 @router.get("/character/{character_id}/threads", response_model=CharacterThreads)
 async def get_threads(
     character_id: str,
@@ -199,10 +294,11 @@ async def webhook_activity(
     background_tasks: BackgroundTasks,
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Receive activity webhooks from the theme for targeted re-crawls.
+    """Receive activity webhooks from the theme and trigger ACP Sync.
 
     Accepts new_post, new_topic, and profile_edit events.
-    Acknowledges immediately (202) and processes asynchronously.
+    Acknowledges immediately (202) and kicks off an ACP Sync in the
+    background if one isn't already running or was recently completed.
 
     Parses the body as JSON regardless of Content-Type so that
     theme JS using text/plain (e.g. navigator.sendBeacon) still works.
@@ -232,35 +328,40 @@ async def webhook_activity(
         user_name = row["name"] if row else f"User {data.user_id}"
         await record_user_activity(db, data.user_id, user_name, source="webhook")
 
+    # Profile edits → re-crawl that character's profile to detect field changes
     if data.event == "profile_edit" and data.user_id:
+        log_debug(f"Webhook: profile_edit for user {data.user_id}, triggering profile crawl", level="webhook")
         background_tasks.add_task(
             crawl_character_profile, data.user_id, settings.database_path
         )
         return {"status": "accepted", "action": "profile_recrawl", "user_id": data.user_id}
 
-    if data.event in ("new_post", "new_topic"):
-        if data.user_id:
-            # Full character crawl — refreshes entire thread tracker
-            # (last poster, avatars, excerpts) instead of targeting one thread.
-            background_tasks.add_task(
-                crawl_character_threads, data.user_id, settings.database_path
-            )
-            return {"status": "accepted", "action": "character_recrawl", "user_id": data.user_id}
-        elif data.thread_id:
-            # Fallback: crawl just this thread if no user_id provided
-            background_tasks.add_task(
-                crawl_single_thread,
-                data.thread_id,
-                settings.database_path,
-                forum_id=data.forum_id,
-            )
-            return {"status": "accepted", "action": "thread_recrawl", "thread_id": data.thread_id}
+    # Posts/topics → debounced ACP Sync
+    from app.services.activity import get_activity
+    activity = get_activity()
+    if activity["active"]:
+        log_debug("Webhook: ACP sync already running, skipping", level="webhook")
+        return {"status": "accepted", "action": "sync_already_running"}
 
-    log_debug(
-        f"Webhook dropped: event={data.event} — no actionable data",
-        level="warn",
-    )
-    return {"status": "accepted", "action": "none"}
+    cooldown = settings.webhook_crawl_delay_seconds
+    last_sync = await get_crawl_status(db, "acp_last_sync")
+    if last_sync:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        try:
+            tz = ZoneInfo(settings.activity_timezone)
+            last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
+            from app.config import now_et
+            elapsed = (now_et() - last_dt).total_seconds()
+            if elapsed < cooldown:
+                log_debug(f"Webhook: ACP sync ran {elapsed:.0f}s ago (cooldown={cooldown}s), skipping", level="webhook")
+                return {"status": "accepted", "action": "cooldown"}
+        except Exception:
+            pass
+
+    log_debug("Webhook: triggering ACP sync", level="webhook")
+    background_tasks.add_task(sync_posts_from_acp, settings.database_path)
+    return {"status": "accepted", "action": "acp_sync"}
 
 
 # Alias under a bland name to bypass content filters that match on
@@ -481,7 +582,7 @@ async def get_service_status(db: aiosqlite.Connection = Depends(get_db)):
 
 # --- Banner Album Endpoint ---
 
-BANNER_ALBUM_URL_DEFAULT = "https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+BANNER_ALBUM_URL_DEFAULT = "https://imagehut.ch/album/Banners.ygFX2"
 _banner_cache: dict = {"urls": [], "fetched_at": 0.0, "album_url": ""}
 BANNER_CACHE_TTL = 600  # 10 minutes
 

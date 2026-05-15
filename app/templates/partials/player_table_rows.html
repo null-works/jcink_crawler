@@ -31,8 +31,8 @@
     <td>
         <div class="avatar-stack">
             {% for c in p.characters[:5] %}
-            {% if c.avatar_url %}
-            <img src="{{ c.avatar_url }}" alt="{{ c.name }}" class="avatar-sm" title="{{ c.name }}" loading="lazy">
+            {% if c.square_image or c.avatar_url %}
+            <img src="{{ c.square_image or c.avatar_url }}" alt="{{ c.name }}" class="avatar-sm" title="{{ c.name }}" loading="lazy">
             {% else %}
             <span class="avatar-placeholder" title="{{ c.name }}">{{ c.name[0] }}</span>
             {% endif %}

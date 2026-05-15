@@ -139,14 +139,16 @@ def _parse_sql_values(values_str: str) -> list | None:
 
 
 def _unix_to_iso(ts) -> str | None:
-    """Convert Unix timestamp to ISO date string (YYYY-MM-DD)."""
+    """Convert Unix timestamp to ISO date string (YYYY-MM-DD) in the configured timezone."""
     if ts is None:
         return None
     try:
         ts_int = int(ts)
         if ts_int <= 0:
             return None
-        return datetime.fromtimestamp(ts_int, tz=timezone.utc).strftime("%Y-%m-%d")
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(settings.activity_timezone)
+        return datetime.fromtimestamp(ts_int, tz=tz).strftime("%Y-%m-%d")
     except (ValueError, TypeError, OSError):
         return None
 
@@ -877,7 +879,12 @@ class ACPClient:
                         log_debug("ACP: login successful (from response body)")
                         return True
 
-                # Auth failure (not a connection issue) — don't retry
+                # Server-side errors (5xx) — retry like connection errors
+                if response.status_code >= 500:
+                    log_debug(f"ACP: server error (HTTP {response.status_code}), attempt {attempt + 1}/{max_retries}", level="warn")
+                    continue
+
+                # Auth failure (4xx or unexpected 200 without token) — don't retry
                 self._last_error = f"ACP login rejected (HTTP {response.status_code}) — check credentials"
                 log_debug(f"ACP: {self._last_error}", level="error")
                 return False

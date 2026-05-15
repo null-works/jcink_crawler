@@ -151,11 +151,35 @@ async def _cleanup_orphaned_data():
         log_debug(f"Error during orphan cleanup: {e}", level="error")
 
 
+async def _daily_profile_crawl_loop():
+    """Background loop that crawls all profiles once every 24 hours.
+
+    Runs crawl_all_profile_fields which uses httpx through the CF Worker
+    (authenticated as Watcher bot). Any field changes are logged to the
+    profile_changes table by upsert_profile_field.
+    """
+    from app.services.crawler import crawl_all_profile_fields
+
+    while True:
+        await asyncio.sleep(86400)  # 24 hours
+        try:
+            log_debug("Daily profile crawl starting", level="activity")
+            result = await crawl_all_profile_fields(settings.database_path)
+            log_debug(
+                f"Daily profile crawl complete: {result.get('updated', 0)} updated, "
+                f"{result.get('errors', 0)} errors",
+                level="done",
+            )
+        except Exception as e:
+            log_debug(f"Daily profile crawl failed: {e}", level="error")
+
+
 async def run_startup_tasks():
-    """Run one-time cleanup tasks on application startup."""
+    """Run one-time cleanup tasks on application startup, then start daily profile crawl."""
     await _clear_quote_crawl_log()
     await _cleanup_orphaned_data()
-    log_debug("Startup cleanup complete (no automatic scheduling — all crawls are manual)")
+    log_debug("Startup cleanup complete (daily profile crawl scheduled)")
+    asyncio.create_task(_daily_profile_crawl_loop())
 
 
 async def _acp_sync_cycle():

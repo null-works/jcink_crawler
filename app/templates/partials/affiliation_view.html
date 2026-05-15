@@ -1,0 +1,24 @@
+{% for aff_name, chars in groups.items() %}
+<div class="affiliation-group">
+    <div class="affiliation-header">
+        <h2>{{ aff_name }}</h2>
+        <span class="count-badge purple">{{ chars|length }}</span>
+    </div>
+    <div class="affiliation-grid">
+        {% for c in chars %}
+        <a href="/character/{{ c.id }}" class="char-mini-card char-mini-card-vertical">
+            {% set thumb = c.square_image or c.avatar_url %}
+            {% if thumb %}
+            <img src="{{ thumb }}" class="avatar-aff" alt="">
+            {% else %}
+            <span class="avatar-placeholder avatar-aff">?</span>
+            {% endif %}
+            <span class="char-mini-name">{{ c.name }}</span>
+            {% if c.group_name %}
+            <span class="char-mini-group text-comment">{{ c.group_name }}</span>
+            {% endif %}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}

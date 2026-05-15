@@ -392,6 +392,13 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     fields = {}
 
     # Method 1: dl.profile-dossier (dt/dd pairs)
+    # These are CHARACTER fields (in-universe age, birthday, etc.)
+    # Prefix keys that would conflict with OOC pf-ab fields
+    _DOSSIER_KEY_MAP = {
+        "age": "character_age",
+        "birthday": "character_birthday",
+        "pronouns": "character_pronouns",
+    }
     dossier = soup.select_one("dl.profile-dossier")
     if dossier:
         dts = dossier.select("dt")
@@ -400,6 +407,7 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
             field_key = dt.get_text(strip=True).lower()
             field_value = dd.get_text(strip=True)
             if field_key and field_value and field_value != "No Information":
+                field_key = _DOSSIER_KEY_MAP.get(field_key, field_key)
                 fields[field_key] = field_value
 
     # Method 2: div.pf-k / span.pf-l (TWAI static skin)
@@ -412,25 +420,68 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
                 label_el.extract()
                 field_value = pf_k.get_text(strip=True)
                 if field_key and field_value and field_value != "No Information":
+                    field_key = _DOSSIER_KEY_MAP.get(field_key, field_key)
                     fields[field_key] = field_value
 
-    # Grab codename from h2.profile-codename or div.pf-s span.pf-1
+    # Grab codename from profile — multiple theme selectors:
+    #   h2.profile-codename       (modern theme)
+    #   div.pf-t                  (legacy theme — field_19 as link)
+    #   .pr-sidebar > .pr-alias   (Lover theme)
+    #   div.pf-s span.pf-1        (TWAI static skin)
     codename_el = soup.select_one("h2.profile-codename")
+    if not codename_el:
+        codename_el = soup.select_one("div.pf-t")
+    if not codename_el:
+        codename_el = soup.select_one(".pr-sidebar > .pr-alias")
     if not codename_el:
         codename_el = soup.select_one("div.pf-s span.pf-1")
     if codename_el:
         codename = codename_el.get_text(strip=True)
-        if codename and codename.lower() != "code name" and codename != "No Information":
+        if codename and codename.lower() not in ("code name", "codename", "no information") and codename != "No Information":
             fields["codename"] = codename
 
-    # Extract "played by" from div.pf-z (format: "played by <b>name</b>")
-    pf_z = soup.select_one("div.pf-z")
-    if pf_z:
-        bold = pf_z.select_one("b")
+    # Power tag (field_18) — short label like "Telepath", "Hydrokinetic"
+    # Modern: .profile-badge.desktop-only inside .profile-hero-info
+    # Mini profile: .pr-power-tag
+    power_el = (
+        soup.select_one(".profile-hero-info .profile-badge.desktop-only")
+        or soup.select_one(".profile-badge.desktop-only")
+        or soup.select_one(".pr-power-tag")
+    )
+    if power_el:
+        power_tag = power_el.get_text(strip=True)
+        if power_tag and power_tag.lower() not in ("power tag", "no information"):
+            fields["power_tag"] = power_tag
+
+    # Species (field_15) — moved from dossier to hero-info badge in modern theme
+    # Modern: .profile-hero-info .profile-badge:not(.desktop-only)
+    # Legacy: dossier <dt>Species</dt><dd> (already handled above)
+    # Only override if not already set by dossier scrape.
+    if not fields.get("species"):
+        species_el = (
+            soup.select_one(".profile-hero-info .profile-badge:not(.desktop-only)")
+            or soup.select_one(".profile-hero-info .profile-badges > span:last-child")
+        )
+        if species_el:
+            species = species_el.get_text(strip=True)
+            if species and species.lower() not in ("species", "no information"):
+                fields["species"] = species
+
+    # Extract player (OOC) name
+    # Modern theme: div.profile-ooc-name (contains "played by <b>Name</b>")
+    # Legacy theme: div.pf-z (same structure)
+    player_el = soup.select_one("div.profile-ooc-name") or soup.select_one("div.pf-z")
+    if player_el:
+        # Try <b> tag first — both themes wrap the name in bold
+        bold = player_el.select_one("b")
         if bold:
             player_name = bold.get_text(strip=True)
-            if player_name:
-                fields["player"] = player_name
+        else:
+            # Fallback: strip "played by" prefix from full text
+            player_name = player_el.get_text(strip=True)
+            player_name = re.sub(r'^played\s*by\s*', '', player_name, flags=re.IGNORECASE).strip()
+        if player_name:
+            fields["player"] = player_name
 
     # Extract player metadata from div.pf-ab (title attr = key, text = value)
     for pf_ab in soup.select("div.pf-ab"):
@@ -461,11 +512,20 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
     for selectors, key in _IMAGE_SELECTORS:
         for selector in selectors:
             el = soup.select_one(selector)
-            if el:
-                style = el.get("style", "")
-                img_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
-                if img_match:
-                    fields[key] = img_match.group(1)
+            if not el:
+                continue
+            # Try inline background-image style first
+            style = el.get("style", "")
+            img_match = re.search(r"url\(['\"]?(https?://[^'\"\)\s,]+)['\"]?\)", style, re.I)
+            if img_match:
+                fields[key] = img_match.group(1)
+                break
+            # Fall back to <img src> inside the element (some profiles use this)
+            inner_img = el.select_one("img[src]")
+            if inner_img:
+                src = inner_img.get("src", "").strip()
+                if src.startswith(("http://", "https://")):
+                    fields[key] = src
                     break
 
     # Extract OOC alias from .profile-ooc-footer (field_1)
@@ -475,8 +535,12 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         if alias_text and alias_text != "No Information":
             fields.setdefault("alias", alias_text)
 
-    # Extract short quote from .profile-short-quote or mini profile area (field_26)
-    short_quote_el = soup.select_one(".profile-short-quote")
+    # Extract short quote from profile (field_26)
+    # Different themes use different class names:
+    #   .profile-short-quote  (original expected)
+    #   .profile-quote        (modern theme)
+    #   .pf-i                 (legacy theme)
+    short_quote_el = soup.select_one(".profile-short-quote, .profile-quote, .pf-i")
     if short_quote_el:
         sq_text = short_quote_el.get_text(strip=True)
         if sq_text and sq_text != "No Information":
@@ -504,6 +568,12 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
             fields[f"power grid - {label}"] = value
 
     print(f"[Parser] Profile {user_id}: {len(fields)} fields extracted")
+
+    # Fall back to square_image for avatar_url — the CSS background-image
+    # selectors above only work when JS renders them (Playwright), but httpx
+    # fetches static HTML where those styles don't exist yet.
+    if not avatar_url:
+        avatar_url = fields.get("square_image") or fields.get("portrait_image")
 
     return ParsedProfile(
         user_id=user_id,
@@ -615,22 +685,37 @@ def parse_avatar_from_profile(html: str) -> str | None:
 _QUOTE_START_RE = re.compile(r'^["\'\u201C\u2018\u00AB]')
 _QUOTE_STRIP_START = re.compile(r'^["\'\u201C\u2018\u00AB]+')
 _QUOTE_STRIP_END = re.compile(r'["\'\u201D\u2019\u00BB]+$')
+# Allow longer bold runs that look like dialog without quote marks
+# (e.g. some authors style spoken lines with bold only).
+_DIALOG_END_RE = re.compile(r'[.!?,;\u2026]\s*$')
+_DIALOG_NO_QUOTES_MIN_WORDS = 5
 
 
 def _clean_quote(text: str, min_words: int) -> str | None:
     """Validate and clean a candidate quote string.
 
+    Accepts:
+    - Text starting with a quote mark (any length >= min_words after strip)
+    - Long bold text ending in sentence punctuation (>= 5 words, no quotes)
+      — many authors style dialog with bold only, no quote marks
     Returns cleaned text or None if it doesn't pass filters.
     """
-    if not _QUOTE_START_RE.match(text):
-        return None
+    has_quote_start = bool(_QUOTE_START_RE.match(text))
 
     cleaned = _QUOTE_STRIP_START.sub('', text)
     cleaned = _QUOTE_STRIP_END.sub('', cleaned)
     cleaned = cleaned.strip()
+    word_count = len(cleaned.split())
 
-    if len(cleaned.split()) < min_words:
-        return None
+    if has_quote_start:
+        if word_count < min_words:
+            return None
+    else:
+        # No quote marks — only accept longer dialog-shaped strings
+        if word_count < _DIALOG_NO_QUOTES_MIN_WORDS:
+            return None
+        if not _DIALOG_END_RE.search(cleaned):
+            return None
 
     if len(cleaned) > 500:
         cleaned = cleaned[:500].rsplit(" ", 1)[0] + "..."
@@ -777,10 +862,13 @@ def _parse_jcink_date(text: str) -> str | None:
     from datetime import datetime, timedelta, timezone
 
     # Check for "Today" / "Yesterday" first (JCink replaces dates for recent posts)
+    from zoneinfo import ZoneInfo
+    from app.config import settings
+    tz = ZoneInfo(settings.activity_timezone)
     if _TODAY_RE.search(text):
-        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        return datetime.now(tz).strftime("%Y-%m-%d")
     if _YESTERDAY_RE.search(text):
-        return (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        return (datetime.now(tz) - timedelta(days=1)).strftime("%Y-%m-%d")
 
     match = _DATE_RE.search(text)
     if not match:

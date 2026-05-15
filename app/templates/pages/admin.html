@@ -6,6 +6,44 @@
     <p class="subtitle">Service status and management</p>
 </div>
 
+{# Profile change notifications #}
+{% if profile_changes %}
+<div class="card" style="margin-bottom: 1.5rem; border-left: 4px solid var(--yellow);">
+    <div class="section-header" style="margin-bottom: 0.75rem;">
+        <h3 class="card-title" style="color: var(--yellow);">Profile Changes ({{ profile_changes|length }})</h3>
+        <button class="btn btn-ghost btn-sm"
+                hx-post="/htmx/dismiss-profile-changes"
+                hx-target="#profile-changes-card"
+                hx-swap="outerHTML"
+                hx-confirm="Dismiss all profile change notifications?">Dismiss All</button>
+    </div>
+    <div id="profile-changes-card" style="max-height: 300px; overflow-y: auto;">
+        <table class="data-table" style="font-size: 0.85rem;">
+            <thead>
+                <tr>
+                    <th>Character</th>
+                    <th>Field</th>
+                    <th>Old</th>
+                    <th>New</th>
+                    <th>When</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for change in profile_changes %}
+                <tr>
+                    <td><a href="/character/{{ change.character_id }}">{{ change.character_name }}</a></td>
+                    <td class="text-cyan">{{ change.field_key }}</td>
+                    <td class="text-red" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ change.old_value or '(empty)' }}</td>
+                    <td class="text-green" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ change.new_value or '(empty)' }}</td>
+                    <td class="text-comment">{{ change.changed_at|format_time }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 {# Stats #}
 <section class="stats-grid" id="admin-stats"
          hx-get="/htmx/stats" hx-trigger="every 30s" hx-swap="innerHTML">
@@ -418,7 +456,7 @@ function startBrowserSync() {
     <form hx-post="/htmx/banner-album" hx-target="#banner-result" hx-swap="innerHTML">
         <input type="url" name="banner_album_url" class="form-input"
                value="{{ banner_album_url }}"
-               placeholder="https://imagehut.ch/album/TWAI-BANNER-IMAGES.u6h"
+               placeholder="https://imagehut.ch/album/Banners.ygFX2"
                style="width: 100%; margin-bottom: 0.75rem;">
         <div style="display: flex; gap: 0.5rem; align-items: center;">
             <button type="submit" class="btn btn-purple">Save URL</button>
@@ -432,6 +470,78 @@ function startBrowserSync() {
         </div>
     </form>
     <div id="banner-result" class="result"></div>
+</div>
+
+{# Export tools #}
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Export</h3>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Quick data exports as plain text. Opens in a new tab.
+    </p>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+        <a href="/export/players" target="_blank" class="btn btn-green">Players</a>
+        <a href="/export/characters" target="_blank" class="btn btn-green">Characters</a>
+        <a href="/export/face-claims" target="_blank" class="btn btn-green">Face Claims</a>
+        <a href="/export/species" target="_blank" class="btn btn-green">Species</a>
+        <a href="/export/affiliations" target="_blank" class="btn btn-green">Affiliations</a>
+        <a href="/export/threads" target="_blank" class="btn btn-green">Threads</a>
+    </div>
+    <p class="text-comment" style="font-size: 0.75rem; margin-top: 0.5rem;">
+        Face Claims, Species, and Threads export as tab-separated (character &rarr; value).
+    </p>
+    <hr style="border-color: var(--current); margin: 1rem 0;">
+    <h4 style="font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; color: var(--text-secondary);">Image URL Export</h4>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Every image URL used by every player/character — avatars, portraits, squares, GIFs, and any embedded images. Includes a host breakdown.
+    </p>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
+        <a href="/export/imagehut-urls?format=list" target="_blank" class="btn btn-green">All URLs (plain list)</a>
+        <a href="/export/imagehut-urls" target="_blank" class="btn btn-purple">By Player (TSV)</a>
+        <a href="/export/imagehut-urls?format=json" target="_blank" class="btn btn-ghost">By Player (JSON)</a>
+    </div>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        <code>imagehut.ch</code> only — filtered to ImageHut-hosted images with R2 bucket paths for Chevereto rebuild.
+    </p>
+    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+        <a href="/export/imagehut-only?format=list" target="_blank" class="btn btn-green">ImageHut URLs (plain list)</a>
+        <a href="/export/imagehut-only" target="_blank" class="btn btn-purple">ImageHut By Player (TSV)</a>
+        <a href="/export/imagehut-only?format=json" target="_blank" class="btn btn-ghost">ImageHut By Player (JSON)</a>
+    </div>
+</div>
+
+{# Repair tools #}
+<div class="card" style="margin-top: 1.5rem;">
+    <h3 class="card-title" style="margin-bottom: 0.5rem;">Data Repair</h3>
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Recompute every thread's last_poster_id/name/avatar from the posts table
+        (the actual MAX(post_date) per thread). Use this to fix stale "last poster"
+        data caused by older crawler bugs. Safe — only updates threads where the
+        computed value differs from what's stored. Avatars get cleared so they
+        re-resolve from the corrected character.
+    </p>
+    <button class="btn btn-purple"
+            hx-post="/htmx/fix-last-posters"
+            hx-target="#fix-result"
+            hx-swap="innerHTML"
+            hx-confirm="Recompute last_poster for all threads from the posts table. This is safe but may take a few seconds. Continue?">
+        Fix Stale Last Posters
+    </button>
+    <div id="fix-result" class="result" style="margin-top: 0.5rem;"></div>
+
+    <hr style="border-color: var(--current); margin: 1rem 0;">
+    <p class="text-comment" style="font-size: 0.85rem; margin-bottom: 0.75rem;">
+        Delete threads (and their posts/quotes/links) belonging to any forum
+        in <code>forums_excluded</code>. Use this after adding a new OOC forum
+        to the exclusion list to clean up legacy data.
+    </p>
+    <button class="btn btn-pink"
+            hx-post="/htmx/purge-excluded-forums"
+            hx-target="#purge-excluded-result"
+            hx-swap="innerHTML"
+            hx-confirm="Delete every thread from currently-excluded forums. This is destructive and cannot be undone. Continue?">
+        Purge Excluded Forum Threads
+    </button>
+    <div id="purge-excluded-result" class="result" style="margin-top: 0.5rem;"></div>
 </div>
 
 {# Purge & re-crawl #}

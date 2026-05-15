@@ -1,0 +1,26 @@
+{% if relationships %}
+<div class="relationship-list">
+    {% for r in relationships %}
+    <div class="relationship-item" id="rel-{{ r.id }}">
+        <div class="rel-names">
+            <span><a href="/character/{{ r.character_a_id }}" class="text-fg">{{ r.character_a_name }}</a></span>
+            <span class="text-comment" style="font-size: 0.75rem;">&amp;
+                <a href="/character/{{ r.character_b_id }}" class="text-fg">{{ r.character_b_name }}</a>
+            </span>
+        </div>
+        <span class="rel-badge rel-badge-{{ r.relationship_type }}">{{ r.label or r.relationship_type }}</span>
+        <button class="btn btn-ghost btn-sm"
+                style="padding: 0.15rem 0.3rem; font-size: 0.7rem;"
+                hx-post="/htmx/relationship/{{ r.id }}/delete"
+                hx-target="#relationship-list-container"
+                hx-swap="innerHTML"
+                hx-confirm="Remove this relationship?"
+                title="Delete">&times;</button>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-comment" style="padding: 1rem; text-align: center;">
+    No relationships yet. Add one above or import from connections data.
+</div>
+{% endif %}

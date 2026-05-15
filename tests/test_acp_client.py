@@ -199,7 +199,7 @@ class TestExtractTopicRecords:
         assert topic["state"] == "open"
         assert topic["last_poster_id"] == "42"
         assert topic["last_poster_name"] == "Tony Stark"
-        assert topic["last_post_date"] == "2023-11-16"
+        assert topic["last_post_date"] == "2023-11-15"  # 1700100000 = Nov 15 8:20pm ET
 
 
 # ---------------------------------------------------------------------------

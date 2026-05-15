@@ -28,6 +28,8 @@ async def search_characters(
           ON pf.character_id = c.id AND pf.field_key = ?
         LEFT JOIN profile_fields pf_player
           ON pf_player.character_id = c.id AND pf_player.field_key = ?
+        LEFT JOIN profile_fields pf_sq
+          ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
     """
     params: list = [settings.affiliation_field_key, settings.player_field_key]
     wheres: list[str] = ["COALESCE(c.hidden, 0) = 0"]
@@ -73,7 +75,8 @@ async def search_characters(
 
     offset = (max(page, 1) - 1) * per_page
     select_sql = f"""
-        SELECT c.*, pf.field_value AS affiliation, pf_player.field_value AS player
+        SELECT c.*, pf.field_value AS affiliation, pf_player.field_value AS player,
+               pf_sq.field_value AS square_image
         {base}{where_clause}
         ORDER BY {order}
         LIMIT ? OFFSET ?
@@ -239,6 +242,66 @@ async def get_unique_affiliations(db: aiosqlite.Connection) -> list[str]:
     return [r["field_value"] for r in rows]
 
 
+async def get_characters_by_affiliation(db: aiosqlite.Connection) -> dict[str, list[dict]]:
+    """Get all non-hidden characters grouped by affiliation.
+
+    Returns an ordered dict of affiliation → list of character dicts.
+    Characters with no affiliation are grouped under "Unaffiliated".
+    """
+    excluded = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
+
+    cursor = await db.execute(
+        """SELECT c.id, c.name, c.avatar_url, c.group_name,
+                  COALESCE(pf_aff.field_value, 'Unaffiliated') AS affiliation,
+                  pf_sq.field_value AS square_image
+           FROM characters c
+           LEFT JOIN profile_fields pf_aff
+             ON pf_aff.character_id = c.id AND pf_aff.field_key = ?
+           LEFT JOIN profile_fields pf_sq
+             ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
+           WHERE COALESCE(c.hidden, 0) = 0
+           ORDER BY affiliation, c.name""",
+        (settings.affiliation_field_key,),
+    )
+    rows = await cursor.fetchall()
+
+    # Get thread counts in bulk
+    char_ids = [
+        r["id"] for r in rows
+        if r["name"].lower() not in excluded and r["id"] not in excluded_ids
+    ]
+    counts_map: dict[str, int] = {}
+    if char_ids:
+        placeholders = ",".join("?" * len(char_ids))
+        cursor = await db.execute(
+            f"""SELECT character_id, COUNT(*) AS cnt
+                FROM character_threads WHERE category = 'ongoing'
+                AND character_id IN ({placeholders})
+                GROUP BY character_id""",
+            char_ids,
+        )
+        for cr in await cursor.fetchall():
+            counts_map[cr["character_id"]] = cr["cnt"]
+
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        if row["name"].lower() in excluded or row["id"] in excluded_ids:
+            continue
+        aff = row["affiliation"] or "Unaffiliated"
+        if aff not in groups:
+            groups[aff] = []
+        groups[aff].append({
+            "id": row["id"],
+            "name": row["name"],
+            "avatar_url": row["avatar_url"],
+            "group_name": row["group_name"],
+            "square_image": row["square_image"],
+            "ongoing_count": counts_map.get(row["id"], 0),
+        })
+    return groups
+
+
 async def get_unique_groups(db: aiosqlite.Connection) -> list[str]:
     """Get all distinct group names."""
     cursor = await db.execute(
@@ -336,9 +399,11 @@ async def search_players(
         d = dict(r)
         # Skip if all characters for this player are excluded
         chars_cursor = await db.execute(
-            """SELECT c.id, c.name, c.avatar_url, c.group_name
+            """SELECT c.id, c.name, c.avatar_url, c.group_name,
+                      pf_sq.field_value AS square_image
                FROM characters c
                JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
+               LEFT JOIN profile_fields pf_sq ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
                WHERE pf.field_value = ?""",
             (settings.player_field_key, d["player_name"]),
         )
@@ -383,10 +448,12 @@ async def get_player_detail(
 
     # Get all characters for this player
     cursor = await db.execute(
-        """SELECT c.*, pf_aff.field_value AS affiliation
+        """SELECT c.*, pf_aff.field_value AS affiliation,
+                  pf_sq.field_value AS square_image
            FROM characters c
            JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
            LEFT JOIN profile_fields pf_aff ON pf_aff.character_id = c.id AND pf_aff.field_key = ?
+           LEFT JOIN profile_fields pf_sq ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
            WHERE pf.field_value = ? AND COALESCE(c.hidden, 0) = 0""",
         (settings.player_field_key, settings.affiliation_field_key, player_name),
     )
@@ -525,12 +592,15 @@ async def get_activity_check_data(
     cursor = await db.execute(
         """SELECT c.id, c.name, c.avatar_url, c.group_name, c.approval_date,
                   pf_player.field_value AS player_name,
-                  pf_aff.field_value AS affiliation
+                  pf_aff.field_value AS affiliation,
+                  pf_sq.field_value AS square_image
            FROM characters c
            LEFT JOIN profile_fields pf_player
              ON pf_player.character_id = c.id AND pf_player.field_key = ?
            LEFT JOIN profile_fields pf_aff
              ON pf_aff.character_id = c.id AND pf_aff.field_key = ?
+           LEFT JOIN profile_fields pf_sq
+             ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
            WHERE pf_player.field_value IS NOT NULL AND pf_player.field_value != ''
              AND COALESCE(c.hidden, 0) = 0
            ORDER BY pf_player.field_value, c.name""",
@@ -627,6 +697,7 @@ async def get_activity_check_data(
                 "player_name": p["player_name"],
                 "monthly_posts": c["monthly_posts"],
                 "avatar_url": c.get("avatar_url"),
+                "square_image": c.get("square_image"),
                 "id": c["id"],
             })
     top_posters = sorted(all_chars, key=lambda c: c["monthly_posts"], reverse=True)[:10]
@@ -731,7 +802,7 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     threads_by_category = {r["category"]: r["cnt"] for r in rows}
 
     # Posts over last 3 months — grouped by month
-    now = datetime.now(timezone.utc)
+    now = datetime.now(ZoneInfo(settings.activity_timezone))
     three_months_ago = (now.replace(day=1) - timedelta(days=90)).replace(day=1)
     cursor = await db.execute(
         """SELECT strftime('%Y-%m', post_date) AS month, COUNT(*) AS cnt
@@ -831,9 +902,11 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     # Recent activity — most recently crawled characters
     cursor = await db.execute(
         """SELECT c.id, c.name, c.avatar_url, c.last_thread_crawl, c.last_profile_crawl,
-                  pf.field_value AS affiliation
+                  pf.field_value AS affiliation,
+                  pf_sq.field_value AS square_image
            FROM characters c
            LEFT JOIN profile_fields pf ON pf.character_id = c.id AND pf.field_key = ?
+           LEFT JOIN profile_fields pf_sq ON pf_sq.character_id = c.id AND pf_sq.field_key = 'square_image'
            WHERE c.last_thread_crawl IS NOT NULL AND COALESCE(c.hidden, 0) = 0
            ORDER BY c.last_thread_crawl DESC
            LIMIT 10""",

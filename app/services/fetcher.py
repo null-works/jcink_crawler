@@ -84,9 +84,34 @@ async def authenticate() -> bool:
     }
 
     try:
+        print(f"[Fetcher] Attempting login as {settings.bot_username} via {'CF Worker' if _is_cf_worker_enabled() else 'direct'}...")
         if _is_cf_worker_enabled():
             actual_url = _cf_proxy_url(login_url)
             response = await client.post(actual_url, data=login_data)
+            print(f"[Fetcher] Login POST response: status={response.status_code}, history={len(response.history)} redirects")
+            # Worker renames Set-Cookie to X-Proxied-Set-Cookie to avoid browser
+            # interference; manually parse and inject into the httpx cookie jar.
+            # Multiple cookies are merged with ", " which SimpleCookie can't
+            # handle reliably due to expires= commas, so parse manually.
+            proxied_cookie = response.headers.get("x-proxied-set-cookie", "")
+            if proxied_cookie:
+                import re as _re
+                # Split on ", " only when followed by a cookie-name= (handles
+                # "expires=Mon, 12-Apr-2027" embedded commas correctly)
+                parts = _re.split(r",\s*(?=[A-Za-z_][A-Za-z0-9_]*=)", proxied_cookie)
+                parsed_names = []
+                for part in parts:
+                    # First segment of each cookie: "name=value"
+                    first = part.split(";", 1)[0].strip()
+                    if "=" not in first:
+                        continue
+                    name, value = first.split("=", 1)
+                    name = name.strip()
+                    value = value.strip()
+                    if name:
+                        client.cookies.set(name, value)
+                        parsed_names.append(name)
+                print(f"[Fetcher] Parsed X-Proxied-Set-Cookie: {parsed_names}")
         else:
             response = await client.post(login_url, data=login_data)
 
@@ -130,13 +155,12 @@ async def reauthenticate() -> bool:
 async def ensure_authenticated() -> None:
     """Ensure the client is authenticated if credentials are available.
 
-    Skipped when using CF Worker proxy — cookies can't be forwarded
-    through the proxy, and JCink thread/profile pages are public.
+    Authentication is required to see the modern (logged-in) JCink theme
+    which has dl.profile-dossier with character fields. Guest view shows
+    a different (legacy) template without those fields.
     """
     global _authenticated
-    if _is_cf_worker_enabled():
-        return
-    if not _authenticated and settings.bot_username:
+    if not _authenticated and settings.bot_username and settings.bot_password:
         await authenticate()
 
 
@@ -153,18 +177,38 @@ async def fetch_page(url: str) -> str | None:
         HTML string or None if fetch failed
     """
     await ensure_authenticated()
-    try:
-        client = await get_client()
-        if _is_cf_worker_enabled():
-            actual_url = _cf_proxy_url(url)
-            response = await client.get(actual_url)
-        else:
-            response = await client.get(url)
-        response.raise_for_status()
-        return response.text
-    except Exception as e:
-        print(f"[Fetcher] Failed to fetch {url}: {e}")
-        return None
+    client = await get_client()
+    max_retries = 4
+    for attempt in range(max_retries):
+        try:
+            if _is_cf_worker_enabled():
+                actual_url = _cf_proxy_url(url)
+                # Manually pass JCink session cookies as Cookie header since they're
+                # set for the JCink domain but we're requesting the Worker domain
+                jcink_cookies = "; ".join(f"{k}={v}" for k, v in client.cookies.items())
+                headers = {"Cookie": jcink_cookies} if jcink_cookies else {}
+                response = await client.get(actual_url, headers=headers)
+            else:
+                response = await client.get(url)
+            # Retry on 5xx (JCink/Cloudflare intermittent errors)
+            status = getattr(response, "status_code", None)
+            if isinstance(status, int) and status >= 500:
+                wait = 2 ** attempt
+                print(f"[Fetcher] {url}: HTTP {status}, retry {attempt + 1}/{max_retries} in {wait}s")
+                await asyncio.sleep(wait)
+                continue
+            response.raise_for_status()
+            return response.text
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = 2 ** attempt
+                print(f"[Fetcher] {url}: {e}, retry {attempt + 1}/{max_retries} in {wait}s")
+                await asyncio.sleep(wait)
+                continue
+            print(f"[Fetcher] Failed to fetch {url}: {e}")
+            return None
+    print(f"[Fetcher] Failed to fetch {url} after {max_retries} retries")
+    return None
 
 
 async def fetch_page_with_delay(url: str) -> str | None:

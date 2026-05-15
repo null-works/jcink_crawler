@@ -9,7 +9,8 @@ Commit convention:
 """
 
 import aiosqlite
-from app.config import settings
+from app.config import settings, now_et_stamp
+import re
 from app.models.character import (
     CharacterSummary,
     ClaimsSummary,
@@ -17,6 +18,7 @@ from app.models.character import (
     ThreadCategory,
     CharacterThreads,
     Quote,
+    Relationship,
 )
 
 
@@ -151,8 +153,8 @@ async def upsert_character(
             profile_url = excluded.profile_url,
             group_name = excluded.group_name,
             avatar_url = excluded.avatar_url,
-            updated_at = CURRENT_TIMESTAMP
-    """, (character_id, name, profile_url, group_name, avatar_url))
+            updated_at = ?
+    """, (character_id, name, profile_url, group_name, avatar_url, now_et_stamp()))
     await db.commit()
 
 
@@ -169,8 +171,8 @@ async def toggle_character_hidden(
         return None
     new_val = 0 if row["hidden"] else 1
     await db.execute(
-        "UPDATE characters SET hidden = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (new_val, character_id),
+        "UPDATE characters SET hidden = ?, updated_at = ? WHERE id = ?",
+        (new_val, now_et_stamp(), character_id),
     )
     await db.commit()
     return bool(new_val)
@@ -183,9 +185,10 @@ async def update_character_crawl_time(
 ) -> None:
     """Update the last crawl timestamp for a character."""
     column = "last_thread_crawl" if crawl_type == "threads" else "last_profile_crawl"
+    stamp = now_et_stamp()
     await db.execute(
-        f"UPDATE characters SET {column} = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (character_id,)
+        f"UPDATE characters SET {column} = ?, updated_at = ? WHERE id = ?",
+        (stamp, stamp, character_id)
     )
     await db.commit()
 
@@ -205,24 +208,25 @@ async def upsert_thread(
     last_poster_avatar: str | None = None,
 ) -> None:
     """Create or update a thread."""
+    stamp = now_et_stamp()
     await db.execute("""
         INSERT INTO threads (id, title, url, forum_id, forum_name, category,
                            last_poster_id, last_poster_name, last_poster_avatar,
                            last_crawled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             url = excluded.url,
             forum_id = excluded.forum_id,
             forum_name = excluded.forum_name,
             category = excluded.category,
-            last_poster_id = excluded.last_poster_id,
-            last_poster_name = excluded.last_poster_name,
+            last_poster_id = COALESCE(excluded.last_poster_id, threads.last_poster_id),
+            last_poster_name = COALESCE(excluded.last_poster_name, threads.last_poster_name),
             last_poster_avatar = COALESCE(excluded.last_poster_avatar, threads.last_poster_avatar),
-            last_crawled = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
+            last_crawled = ?,
+            updated_at = ?
     """, (thread_id, title, url, forum_id, forum_name, category,
-          last_poster_id, last_poster_name, last_poster_avatar))
+          last_poster_id, last_poster_name, last_poster_avatar, stamp, stamp, stamp))
 
 
 async def link_character_thread(
@@ -257,14 +261,17 @@ async def get_character_threads(
 
     cursor = await db.execute("""
         SELECT t.id, t.title, t.url, t.forum_id, t.forum_name,
-               t.last_poster_id, t.last_poster_name,
+               t.last_poster_id,
+               COALESCE(c_poster.name, t.last_poster_name) AS last_poster_name,
                ct.category as char_category, ct.is_user_last_poster,
-               COALESCE(t.last_poster_avatar, c_poster.avatar_url) AS resolved_avatar,
+               COALESCE(c_poster.avatar_url, pf_sq.field_value, t.last_poster_avatar) AS resolved_avatar,
                p_last.last_post_date,
                q_dialog.quote_text AS last_post_excerpt
         FROM threads t
         JOIN character_threads ct ON t.id = ct.thread_id
         LEFT JOIN characters c_poster ON c_poster.id = t.last_poster_id
+        LEFT JOIN profile_fields pf_sq
+          ON pf_sq.character_id = t.last_poster_id AND pf_sq.field_key = 'square_image'
         LEFT JOIN (
             SELECT thread_id, MAX(post_date) AS last_post_date
             FROM posts
@@ -437,14 +444,56 @@ async def upsert_profile_field(
     field_key: str,
     field_value: str,
 ) -> None:
-    """Create or update a profile field."""
+    """Create or update a profile field. Logs changes to profile_changes."""
+    # Check for existing value to detect changes
+    cursor = await db.execute(
+        "SELECT field_value FROM profile_fields WHERE character_id = ? AND field_key = ?",
+        (character_id, field_key),
+    )
+    existing = await cursor.fetchone()
+    old_value = existing["field_value"] if existing else None
+
+    if old_value is not None and old_value != field_value:
+        await db.execute(
+            "INSERT INTO profile_changes (character_id, field_key, old_value, new_value, changed_at) VALUES (?, ?, ?, ?, ?)",
+            (character_id, field_key, old_value, field_value, now_et_stamp()),
+        )
+
     await db.execute("""
         INSERT INTO profile_fields (character_id, field_key, field_value)
         VALUES (?, ?, ?)
         ON CONFLICT(character_id, field_key) DO UPDATE SET
             field_value = excluded.field_value,
-            updated_at = CURRENT_TIMESTAMP
-    """, (character_id, field_key, field_value))
+            updated_at = ?
+    """, (character_id, field_key, field_value, now_et_stamp()))
+
+
+async def get_recent_profile_changes(
+    db: aiosqlite.Connection,
+    limit: int = 50,
+    undismissed_only: bool = True,
+) -> list[dict]:
+    """Get recent profile changes with character names."""
+    where = "WHERE pc.dismissed = 0" if undismissed_only else ""
+    cursor = await db.execute(f"""
+        SELECT pc.id, pc.character_id, c.name AS character_name,
+               pc.field_key, pc.old_value, pc.new_value, pc.changed_at
+        FROM profile_changes pc
+        JOIN characters c ON c.id = pc.character_id
+        {where}
+        ORDER BY pc.changed_at DESC
+        LIMIT ?
+    """, (limit,))
+    return [dict(r) for r in await cursor.fetchall()]
+
+
+async def dismiss_profile_changes(db: aiosqlite.Connection) -> int:
+    """Mark all profile changes as dismissed. Returns count."""
+    cursor = await db.execute(
+        "UPDATE profile_changes SET dismissed = 1 WHERE dismissed = 0"
+    )
+    await db.commit()
+    return cursor.rowcount
 
 
 async def get_profile_fields(
@@ -498,9 +547,9 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     excluded = settings.excluded_name_set
     excluded_ids = settings.excluded_id_set
 
-    # 1. All characters
+    # 1. All characters (include approval_date)
     cursor = await db.execute(
-        "SELECT id, name, profile_url, group_name, avatar_url FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
+        "SELECT id, name, profile_url, group_name, avatar_url, approval_date FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
     )
     char_rows = await cursor.fetchall()
 
@@ -543,6 +592,19 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     for row in count_rows:
         counts_map.setdefault(row["character_id"], {})[row["category"]] = row["count"]
 
+    # 3b. Batch-load total post counts
+    cursor = await db.execute(
+        f"""SELECT character_id, SUM(post_count) as total_posts
+            FROM character_threads
+            WHERE character_id IN ({placeholders_ids})
+            GROUP BY character_id""",
+        char_ids,
+    )
+    post_count_rows = await cursor.fetchall()
+    post_counts_map: dict[str, int] = {
+        row["character_id"]: row["total_posts"] or 0 for row in post_count_rows
+    }
+
     # 4. Assemble results
     results = []
     for row in char_rows:
@@ -578,6 +640,8 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
             affiliation=fields.get("affiliation"),
             connections=fields.get("connections"),
             thread_counts=thread_counts,
+            approval_date=char.get("approval_date"),
+            post_count=post_counts_map.get(cid, 0),
         ))
 
     return results
@@ -640,8 +704,8 @@ async def set_crawl_status(
         VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET
             value = excluded.value,
-            updated_at = CURRENT_TIMESTAMP
-    """, (key, value))
+            updated_at = ?
+    """, (key, value, now_et_stamp()))
     await db.commit()
 
 
@@ -683,8 +747,8 @@ async def set_approval_date(
 ) -> bool:
     """Set the approval date for a single character. Returns True if found."""
     cursor = await db.execute(
-        "UPDATE characters SET approval_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-        (approval_date, character_id),
+        "UPDATE characters SET approval_date = ?, updated_at = ? WHERE id = ?",
+        (approval_date, now_et_stamp(), character_id),
     )
     await db.commit()
     return cursor.rowcount > 0
@@ -757,12 +821,12 @@ async def record_user_activity(
     """Record or update a user's last-seen timestamp. Auto-commits."""
     await db.execute(
         """INSERT INTO user_activity (user_id, user_name, last_seen, source)
-           VALUES (?, ?, datetime('now'), ?)
+           VALUES (?, ?, ?, ?)
            ON CONFLICT(user_id) DO UPDATE SET
                user_name = excluded.user_name,
                last_seen = excluded.last_seen,
                source = excluded.source""",
-        (user_id, user_name, source),
+        (user_id, user_name, now_et_stamp(), source),
     )
     await db.commit()
 
@@ -772,12 +836,15 @@ async def get_recent_users(
     hours: int = 6,
 ) -> list[dict]:
     """Return users active within the last `hours` hours, most recent first."""
+    from datetime import timedelta
+    from app.config import now_et
+    cutoff = (now_et() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
     cursor = await db.execute(
         """SELECT user_id, user_name, last_seen, source
            FROM user_activity
-           WHERE last_seen >= datetime('now', ?)
+           WHERE last_seen >= ?
            ORDER BY last_seen DESC""",
-        (f"-{hours} hours",),
+        (cutoff,),
     )
     rows = await cursor.fetchall()
     excluded = settings.excluded_name_set
@@ -794,3 +861,201 @@ async def get_recent_users(
         for row in rows
         if row["user_name"].lower() not in excluded and row["user_id"] not in excluded_ids
     ]
+
+
+# --- Relationship Operations ---
+
+_RELATIONSHIP_JOIN_SQL = """
+    SELECT r.*,
+           ca.name AS character_a_name, ca.avatar_url AS character_a_avatar,
+           cb.name AS character_b_name, cb.avatar_url AS character_b_avatar
+    FROM relationships r
+    JOIN characters ca ON ca.id = r.character_a_id
+    JOIN characters cb ON cb.id = r.character_b_id
+"""
+
+
+def _row_to_relationship(row) -> Relationship:
+    return Relationship(
+        id=row["id"],
+        character_a_id=row["character_a_id"],
+        character_b_id=row["character_b_id"],
+        relationship_type=row["relationship_type"],
+        label=row["label"],
+        character_a_name=row["character_a_name"],
+        character_b_name=row["character_b_name"],
+        character_a_avatar=row["character_a_avatar"],
+        character_b_avatar=row["character_b_avatar"],
+    )
+
+
+async def get_all_relationships(db: aiosqlite.Connection) -> list[Relationship]:
+    """Get all relationships with joined character info."""
+    cursor = await db.execute(
+        _RELATIONSHIP_JOIN_SQL + " ORDER BY r.created_at DESC"
+    )
+    return [_row_to_relationship(r) for r in await cursor.fetchall()]
+
+
+async def get_relationships_for_character(
+    db: aiosqlite.Connection, character_id: str
+) -> list[Relationship]:
+    """Get all relationships involving a specific character."""
+    cursor = await db.execute(
+        _RELATIONSHIP_JOIN_SQL
+        + " WHERE r.character_a_id = ? OR r.character_b_id = ? ORDER BY r.relationship_type",
+        (character_id, character_id),
+    )
+    return [_row_to_relationship(r) for r in await cursor.fetchall()]
+
+
+async def create_relationship(
+    db: aiosqlite.Connection,
+    char_a_id: str,
+    char_b_id: str,
+    rel_type: str = "other",
+    label: str | None = None,
+) -> int | None:
+    """Create a relationship between two characters. Auto-commits."""
+    # Normalize order so (A,B) and (B,A) are the same unique pair
+    a, b = sorted([char_a_id, char_b_id])
+    cursor = await db.execute(
+        """INSERT OR IGNORE INTO relationships
+           (character_a_id, character_b_id, relationship_type, label)
+           VALUES (?, ?, ?, ?)""",
+        (a, b, rel_type, label),
+    )
+    await db.commit()
+    return cursor.lastrowid if cursor.rowcount > 0 else None
+
+
+async def update_relationship(
+    db: aiosqlite.Connection,
+    relationship_id: int,
+    rel_type: str,
+    label: str | None = None,
+) -> bool:
+    """Update a relationship's type and label. Auto-commits."""
+    cursor = await db.execute(
+        """UPDATE relationships
+           SET relationship_type = ?, label = ?, updated_at = ?
+           WHERE id = ?""",
+        (rel_type, label, now_et_stamp(), relationship_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def delete_relationship(db: aiosqlite.Connection, relationship_id: int) -> bool:
+    """Delete a relationship. Auto-commits."""
+    cursor = await db.execute(
+        "DELETE FROM relationships WHERE id = ?", (relationship_id,)
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+# Mapping from parenthetical hints to relationship types
+_HINT_MAP = {
+    "twin": "family", "sister": "family", "brother": "family",
+    "mother": "family", "father": "family", "parent": "family",
+    "daughter": "family", "son": "family", "sibling": "family",
+    "cousin": "family", "uncle": "family", "aunt": "family",
+    "family": "family", "adopted": "family",
+    "partner": "romantic", "wife": "romantic", "husband": "romantic",
+    "girlfriend": "romantic", "boyfriend": "romantic", "fiancé": "romantic",
+    "fiancee": "romantic", "lover": "romantic", "romantic": "romantic",
+    "ex": "romantic",
+    "mentor": "mentor", "mentee": "mentor", "student": "mentor",
+    "teacher": "mentor", "protégé": "mentor",
+    "rival": "enemy", "enemy": "enemy", "nemesis": "enemy",
+    "adversary": "enemy", "antagonist": "enemy",
+}
+
+
+def _guess_relationship_type(hint: str) -> str:
+    """Map a parenthetical hint to a relationship type."""
+    hint_lower = hint.lower().strip()
+    for keyword, rel_type in _HINT_MAP.items():
+        if keyword in hint_lower:
+            return rel_type
+    return "ally"
+
+
+async def seed_relationships_from_connections(db: aiosqlite.Connection) -> int:
+    """Parse 'connections' profile fields and create relationships. Auto-commits.
+
+    Returns the number of new relationships created.
+    """
+    # Get all connections fields
+    cursor = await db.execute(
+        "SELECT character_id, field_value FROM profile_fields "
+        "WHERE field_key = 'connections' AND field_value IS NOT NULL AND field_value != ''"
+    )
+    conn_rows = await cursor.fetchall()
+
+    # Build name→id lookups (case-insensitive): exact name, first name, and contains
+    cursor = await db.execute("SELECT id, name FROM characters")
+    char_rows = await cursor.fetchall()
+    name_to_id: dict[str, str] = {}
+    first_name_to_id: dict[str, str] = {}
+    for row in char_rows:
+        full = row["name"].lower()
+        name_to_id[full] = row["id"]
+        first = full.split()[0] if " " in full else full
+        # Only use first-name lookup if it's unambiguous
+        if first not in first_name_to_id:
+            first_name_to_id[first] = row["id"]
+        else:
+            first_name_to_id[first] = None  # Ambiguous — multiple characters share first name
+
+    def _find_character(name: str) -> str | None:
+        key = name.lower().strip()
+        # Exact match
+        if key in name_to_id:
+            return name_to_id[key]
+        # First name match (only if unambiguous)
+        first = key.split()[0] if " " in key else key
+        candidate = first_name_to_id.get(first)
+        if candidate:
+            return candidate
+        # Substring match — find character whose name contains this string
+        for full_name, cid in name_to_id.items():
+            if key in full_name or full_name in key:
+                return cid
+        return None
+
+    created = 0
+    for row in conn_rows:
+        source_id = row["character_id"]
+        entries = [e.strip() for e in row["field_value"].split(",")]
+        for entry in entries:
+            if not entry:
+                continue
+            # Parse "Name (hint)" pattern
+            match = re.match(r"^(.+?)\s*\(([^)]+)\)\s*$", entry)
+            if match:
+                name, hint = match.group(1).strip(), match.group(2).strip()
+                rel_type = _guess_relationship_type(hint)
+                label = hint
+            else:
+                name = entry.strip()
+                rel_type = "ally"
+                label = None
+
+            target_id = _find_character(name)
+            if not target_id or target_id == source_id:
+                continue
+
+            a, b = sorted([source_id, target_id])
+            cur = await db.execute(
+                """INSERT OR IGNORE INTO relationships
+                   (character_a_id, character_b_id, relationship_type, label)
+                   VALUES (?, ?, ?, ?)""",
+                (a, b, rel_type, label),
+            )
+            if cur.rowcount > 0:
+                created += 1
+
+    await db.commit()
+    return created

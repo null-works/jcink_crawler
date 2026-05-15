@@ -82,6 +82,23 @@ class ClaimsSummary(BaseModel):
     affiliation: str | None = None
     connections: str | None = None
     thread_counts: dict[str, int] = {}
+    approval_date: str | None = None
+    post_count: int = 0
+
+
+RELATIONSHIP_TYPES = ("ally", "enemy", "family", "romantic", "mentor", "other")
+
+
+class Relationship(BaseModel):
+    id: int | None = None
+    character_a_id: str
+    character_b_id: str
+    relationship_type: str = "other"
+    label: str | None = None
+    character_a_name: str | None = None
+    character_b_name: str | None = None
+    character_a_avatar: str | None = None
+    character_b_avatar: str | None = None
 
 
 class CharacterProfile(BaseModel):
