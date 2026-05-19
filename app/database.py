@@ -261,6 +261,14 @@ async def init_db():
         except Exception:
             pass  # Column already exists
 
+        # Add is_tagged_only to character_threads if it doesn't exist.
+        # 1 = the character was @-tagged in the thread's opening post but has
+        # not posted yet; cleared to 0 once they actually post.
+        try:
+            await db.execute("ALTER TABLE character_threads ADD COLUMN is_tagged_only INTEGER DEFAULT 0")
+        except Exception:
+            pass  # Column already exists
+
         # Add hidden flag to characters if it doesn't exist
         try:
             await db.execute("ALTER TABLE characters ADD COLUMN hidden INTEGER DEFAULT 0")

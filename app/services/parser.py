@@ -834,6 +834,74 @@ def extract_quotes_from_post_body(post_html: str) -> list[dict]:
     return _extract_from_post_body(soup, settings.quote_min_words)
 
 
+# An <a> open tag, capturing its attribute blob (everything between "a" and ">").
+_ANCHOR_RE = re.compile(r"<a\b([^>]*)>", re.IGNORECASE)
+# class="..." or class='...' — value captured.
+_CLASS_RE = re.compile(r"""class\s*=\s*["']([^"']*)["']""", re.IGNORECASE)
+# showuser=<digits> anywhere in an href (relative or absolute, with or without &).
+_SHOWUSER_RE = re.compile(r"showuser=(\d+)", re.IGNORECASE)
+# Source-form member tag the editor produces, e.g. "[user=277,6]Yelena Belova[/user]"
+# (group id after the comma is optional). Some dump rows keep this unconverted.
+_BBCODE_USER_RE = re.compile(r"\[user=(\d+)(?:\s*,\s*\d+)?\s*\]", re.IGNORECASE)
+# Defensive: literal "@[Display Name]" if a tag was ever typed raw, not converted.
+_LITERAL_TAG_RE = re.compile(r"@\[\s*([^\]\r\n]{1,80}?)\s*\]")
+
+
+def extract_tagged_member_ids(post_html: str) -> tuple[set[str], set[str]]:
+    """Extract characters tagged in a post's tag list.
+
+    On *There Was an Idea* the theme converts an ``@[Name]`` tag at post time
+    into a profile anchor carrying the ``user-tagged`` CSS class, e.g.::
+
+        <a href='index.php?showuser=54' rel='nofollow' alt='profile link'
+           class='user-tagged mgroup-7'>Devyn Shaw</a>
+
+    The ``user-tagged`` class is the deliberate "tagged for this thread"
+    marker (it renders the post's tag list); other profile links — face-claim
+    cards, dossier blocks — must NOT count. ``showuser=`` gives the member ID
+    directly, so no name matching is needed for the common case.
+
+    The pre-conversion source form is the IPB-style bbcode the editor
+    produces, e.g. ``[user=277,6]Yelena Belova[/user]`` (the number after the
+    comma is the member group); some dump rows keep it unconverted, so the
+    leading member ID is read from those too.
+
+    Returns ``(member_ids, literal_names)``:
+      * ``member_ids`` — IDs from ``user-tagged`` anchors and ``[user=ID,..]``
+        bbcode tags (authoritative; both resolve to the showuser ID).
+      * ``literal_names`` — any raw ``@[Name]`` text that wasn't converted to
+        a tag; the caller resolves these against character display names.
+
+    A regex (not BeautifulSoup) is used because ~80% of SQL-dump post bodies
+    are mis-parsed (unescaped quotes, comma-joined fragments); the clean
+    single-quoted anchors survive, and attribute order is not assumed.
+    """
+    if not post_html or not isinstance(post_html, str):
+        return set(), set()
+
+    member_ids: set[str] = set()
+    for m in _ANCHOR_RE.finditer(post_html):
+        attrs = m.group(1)
+        class_match = _CLASS_RE.search(attrs)
+        if not class_match:
+            continue
+        classes = class_match.group(1).split()
+        if "user-tagged" not in classes:
+            continue
+        su = _SHOWUSER_RE.search(attrs)
+        if su:
+            member_ids.add(su.group(1))
+
+    # Source-form [user=ID,GROUP]Name[/user] tags (unconverted bbcode).
+    for uid in _BBCODE_USER_RE.findall(post_html):
+        member_ids.add(uid)
+
+    literal_names = {
+        n.strip() for n in _LITERAL_TAG_RE.findall(post_html) if n.strip()
+    }
+    return member_ids, literal_names
+
+
 _MONTH_MAP = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
