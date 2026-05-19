@@ -84,6 +84,25 @@ Get full profile for a single character including all profile fields.
 
 ---
 
+### GET /api/character/{character_id}/square-image
+
+302-redirects to the character's `square_image` (profile field_8). Lets any
+HTML/CSS use a plain image URL with **zero JavaScript**, e.g.
+`background-image: url('https://imagehut.ch:8943/api/character/129/square-image')`.
+
+Always reflects the current DB value (no caching), so it auto-tracks profile
+image changes. `http://` URLs are upgraded to `https://` (the forum is HTTPS;
+mixed content is otherwise blocked).
+
+**Used by:** the theme's "Team Dev Board" post (`templates/team_dossier.html`),
+keyed by hand-set JCink user IDs.
+
+**Response:**
+- `302 Found` — `Location:` the character's `square_image` (`https://...`)
+- `404 Not Found` — character has no usable `square_image`
+
+---
+
 ### POST /api/character/register
 
 Register a new character for tracking.

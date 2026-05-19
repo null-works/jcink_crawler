@@ -333,6 +333,46 @@ class TestBatchFieldsEndpoint:
         assert "rectangle_gif" not in data["44"]
 
 
+class TestSquareImageRedirect:
+    async def _seed(self, character_id, square_image=None):
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(db, character_id, f"Char {character_id}",
+                                   f"https://example.com/{character_id}")
+            if square_image is not None:
+                await upsert_profile_field(db, character_id, "square_image", square_image)
+            await db.commit()
+
+    async def test_redirects_to_square_image(self, client):
+        await self._seed("129", "https://example.com/sq.gif")
+        response = await client.get(
+            "/api/character/129/square-image", follow_redirects=False
+        )
+        assert response.status_code == 302
+        assert response.headers["location"] == "https://example.com/sq.gif"
+
+    async def test_http_url_upgraded_to_https(self, client):
+        await self._seed("347", "http://example.com/x.gif")
+        response = await client.get(
+            "/api/character/347/square-image", follow_redirects=False
+        )
+        assert response.status_code == 302
+        assert response.headers["location"] == "https://example.com/x.gif"
+
+    async def test_no_square_image_returns_404(self, client):
+        await self._seed("350")  # character exists but no square_image field
+        response = await client.get(
+            "/api/character/350/square-image", follow_redirects=False
+        )
+        assert response.status_code == 404
+
+    async def test_unknown_character_returns_404(self, client):
+        response = await client.get(
+            "/api/character/999999/square-image", follow_redirects=False
+        )
+        assert response.status_code == 404
+
+
 class TestCrawlTriggerAllProfiles:
     async def test_trigger_all_profiles(self, client):
         """all-profiles crawl type should trigger profile-only re-crawl."""

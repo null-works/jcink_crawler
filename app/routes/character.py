@@ -6,6 +6,7 @@ import time
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request, Response
+from fastapi.responses import RedirectResponse
 import aiosqlite
 
 from app.database import get_db
@@ -117,6 +118,25 @@ async def get_character_detail(
         fields=fields,
         threads=threads,
     )
+
+
+@router.get("/character/{character_id}/square-image")
+async def get_square_image(
+    character_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """302-redirect to the character's square_image (field_8).
+
+    Lets any template/CSS use a plain image URL with no JavaScript, e.g.
+    https://imagehut.ch:8943/api/character/129/square-image
+    """
+    fields = await get_profile_fields(db, character_id)
+    url = (fields.get("square_image") or "").strip()
+    if url.startswith("http://"):
+        url = "https://" + url[len("http://"):]
+    if not url.startswith("https://"):
+        raise HTTPException(status_code=404, detail="No square image for this character")
+    return RedirectResponse(url, status_code=302)
 
 
 @router.post("/character/register", response_model=dict)
