@@ -236,16 +236,24 @@ async def link_character_thread(
     category: str,
     is_user_last_poster: bool = False,
     post_count: int = 0,
+    is_tagged_only: bool = False,
 ) -> None:
-    """Link a character to a thread."""
+    """Link a character to a thread.
+
+    ``is_tagged_only=True`` marks a character who was @-tagged in the
+    thread's opening post but hasn't posted yet. The poster path always
+    passes ``False``, so once a tagged character actually posts the next
+    sync clears the flag (ON CONFLICT writes the new value).
+    """
     await db.execute("""
-        INSERT INTO character_threads (character_id, thread_id, category, is_user_last_poster, post_count)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO character_threads (character_id, thread_id, category, is_user_last_poster, post_count, is_tagged_only)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(character_id, thread_id) DO UPDATE SET
             category = excluded.category,
             is_user_last_poster = excluded.is_user_last_poster,
-            post_count = excluded.post_count
-    """, (character_id, thread_id, category, int(is_user_last_poster), post_count))
+            post_count = excluded.post_count,
+            is_tagged_only = excluded.is_tagged_only
+    """, (character_id, thread_id, category, int(is_user_last_poster), post_count, int(is_tagged_only)))
 
 
 async def get_character_threads(
@@ -264,6 +272,7 @@ async def get_character_threads(
                t.last_poster_id,
                COALESCE(c_poster.name, t.last_poster_name) AS last_poster_name,
                ct.category as char_category, ct.is_user_last_poster,
+               ct.is_tagged_only,
                COALESCE(c_poster.avatar_url, pf_sq.field_value, t.last_poster_avatar) AS resolved_avatar,
                p_last.last_post_date,
                q_dialog.quote_text AS last_post_excerpt
@@ -313,6 +322,7 @@ async def get_character_threads(
             last_poster_name=r.get("last_poster_name"),
             last_poster_avatar=r.get("resolved_avatar"),
             is_user_last_poster=bool(r.get("is_user_last_poster", 0)),
+            is_tagged_only=bool(r.get("is_tagged_only", 0)),
             last_post_date=r.get("last_post_date"),
             last_post_excerpt=excerpt,
         )

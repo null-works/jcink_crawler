@@ -12,6 +12,7 @@ from app.services.parser import (
     parse_search_results,
     parse_thread_pagination,
     parse_profile_page,
+    extract_tagged_member_ids,
     ParsedThread,
     ParsedLastPoster,
     ParsedProfile,
@@ -107,6 +108,64 @@ class TestExtractQuotes:
         quotes = extract_quotes_from_html(html, "Tony Stark")
         assert len(quotes) == 1
         assert "fancy curly" in quotes[0]["text"]
+
+
+class TestExtractTaggedMembers:
+    # Real shape from the live ACP dump: theme converts an @[Name] tag into a
+    # profile anchor carrying the "user-tagged" class.
+    REAL = (
+        "<r><i class=\"lab la-slack\"></i></r><br><br>"
+        "<a href='index.php?showuser=54' rel='nofollow' alt='profile link' "
+        "class='user-tagged mgroup-7'>Devyn Shaw</a> | "
+        "<a href='https://tenor.com/view/x' target='_blank'>visual ref</a>"
+        "<br></div></div></div></center>[/dohtml]"
+    )
+
+    def test_extracts_user_tagged_showuser_id(self):
+        ids, names = extract_tagged_member_ids(self.REAL)
+        assert ids == {"54"}
+        assert names == set()
+
+    def test_absolute_url_and_multiple_tags(self):
+        html = (
+            "<a href='https://therewasanidea.jcink.net/index.php?showuser=129' "
+            "class='user-tagged mgroup-6'>Kimberly Parson</a>"
+            "<a href='index.php?showuser=347&foo=1' class='mgroup-7 user-tagged'>"
+            "John Doe</a>"
+        )
+        ids, _ = extract_tagged_member_ids(html)
+        assert ids == {"129", "347"}
+
+    def test_ignores_profile_links_without_user_tagged_class(self):
+        # Face-claim / dossier card link — must NOT be treated as a thread tag.
+        html = (
+            '<a href="https://therewasanidea.jcink.net/index.php?showuser=4" '
+            'title="Jessica Jones" id="enhanced">Kristen Ritter</a>'
+        )
+        ids, names = extract_tagged_member_ids(html)
+        assert ids == set()
+        assert names == set()
+
+    def test_literal_tag_fallback_returns_names(self):
+        ids, names = extract_tagged_member_ids(
+            "Starting a thread with @[Kimberly Parson] and @[ John Doe ]!"
+        )
+        assert ids == set()
+        assert names == {"Kimberly Parson", "John Doe"}
+
+    def test_user_tagged_and_literal_together(self):
+        html = (
+            "<a href='index.php?showuser=54' class='user-tagged mgroup-7'>"
+            "Devyn Shaw</a> also @[Unconverted Name]"
+        )
+        ids, names = extract_tagged_member_ids(html)
+        assert ids == {"54"}
+        assert names == {"Unconverted Name"}
+
+    def test_empty_and_garbage_input(self):
+        assert extract_tagged_member_ids("") == (set(), set())
+        assert extract_tagged_member_ids(None) == (set(), set())
+        assert extract_tagged_member_ids("<a class='foo'>no href</a>") == (set(), set())
 
 
 class TestParseAvatar:

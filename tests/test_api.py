@@ -140,6 +140,60 @@ class TestCrawlTriggerEndpoint:
         assert response.status_code == 422
 
 
+class TestTaggedOnlyThreads:
+    """Threads a character is @-tagged in (OP) but hasn't posted in yet."""
+
+    async def _seed(self):
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await upsert_character(db, "42", "Kimberly Parson",
+                                   "https://example.com/42")
+            await upsert_thread(db, "200", "Tagged Thread",
+                                "https://example.com/t/200", None, None, "ongoing")
+            await upsert_thread(db, "201", "Posted Thread",
+                                "https://example.com/t/201", None, None, "ongoing")
+            await db.commit()
+
+    def _find(self, data, thread_id):
+        for t in data["ongoing"]:
+            if t["id"] == thread_id:
+                return t
+        raise AssertionError(f"thread {thread_id} not in ongoing {data['ongoing']}")
+
+    async def test_tagged_only_thread_appears_with_flag(self, client):
+        await self._seed()
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            await link_character_thread(db, "42", "200", "ongoing",
+                                        is_tagged_only=True)
+            await link_character_thread(db, "42", "201", "ongoing",
+                                        post_count=2)
+            await db.commit()
+
+        response = await client.get("/api/character/42/threads")
+        assert response.status_code == 200
+        data = response.json()
+        assert self._find(data, "200")["is_tagged_only"] is True
+        assert self._find(data, "201")["is_tagged_only"] is False
+        # It still counts toward the category total so it's visible.
+        assert data["counts"]["ongoing"] == 2
+
+    async def test_posting_clears_tagged_only_flag(self, client):
+        await self._seed()
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            # Tagged first…
+            await link_character_thread(db, "42", "200", "ongoing",
+                                        is_tagged_only=True)
+            # …then they actually post (poster path, default flag False).
+            await link_character_thread(db, "42", "200", "ongoing",
+                                        post_count=1)
+            await db.commit()
+
+        response = await client.get("/api/character/42/threads")
+        assert self._find(response.json(), "200")["is_tagged_only"] is False
+
+
 class TestClaimsEndpoint:
     async def _seed_character(self, fields=None):
         """Helper: insert a character with profile fields."""

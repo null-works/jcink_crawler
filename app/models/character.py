@@ -44,6 +44,7 @@ class ThreadInfo(BaseModel):
     last_poster_name: str | None = None
     last_poster_avatar: str | None = None
     is_user_last_poster: bool = False
+    is_tagged_only: bool = False
     last_post_date: str | None = None
     last_post_excerpt: str | None = None
 

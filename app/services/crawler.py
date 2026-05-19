@@ -1047,8 +1047,16 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         # Load tracked character IDs (now includes auto-registered members)
         async with connect_db(db_path) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT id FROM characters")
-            tracked_chars = {row["id"] for row in await cursor.fetchall()}
+            cursor = await db.execute("SELECT id, name FROM characters")
+            char_rows = await cursor.fetchall()
+        tracked_chars = {r["id"] for r in char_rows}
+        # display-name → id (lowercased), for resolving any raw "@[Name]"
+        # text that wasn't converted to a user-tagged anchor (defensive).
+        name_to_id = {
+            r["name"].strip().lower(): r["id"]
+            for r in char_rows
+            if r["name"] and r["name"].strip()
+        }
 
         log_debug(f"── Phase 3: Match ── {len(tracked_chars)} characters, {len(topics)} topics")
         set_activity(f"Matching {len(posts)} posts to {len(tracked_chars)} characters")
@@ -1102,6 +1110,49 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
         for tid, char_ids in chars_in_thread.items():
             if char_ids & tracked_chars:
                 relevant_thread_ids.add(tid)
+
+        # ── Phase 2.5: Link characters @-tagged in a thread's opening post ──
+        # Players tag the cast for a new thread in its first post; until
+        # someone replies, those characters wouldn't otherwise appear in the
+        # tracker. Parse the OP's tag list and link tagged-but-not-yet-posted
+        # tracked characters so the thread surfaces immediately.
+        from app.services.parser import extract_tagged_member_ids
+
+        tagged_by_thread: dict[str, set[str]] = {}
+        for tid, thread_posts in posts_by_thread.items():
+            if tid not in topic_map:
+                continue  # excluded forum or no topic record
+            # Opening post = earliest by post_date; prefer one with a body.
+            with_body = [
+                p for p in thread_posts
+                if isinstance(p.get("post_body"), str) and p["post_body"]
+            ]
+            pool = with_body or thread_posts
+            dated = [p for p in pool if p.get("post_date")]
+            op = min(dated, key=lambda p: p["post_date"]) if dated else pool[0]
+            op_body = op.get("post_body")
+            if not isinstance(op_body, str) or not op_body:
+                continue
+
+            ids, names = extract_tagged_member_ids(op_body)
+            for nm in names:
+                rid = name_to_id.get(nm.lower())
+                if rid:
+                    ids.add(rid)
+            # Keep only tracked characters who haven't posted in this thread
+            # (actual posters are linked by the normal poster path).
+            posters = chars_in_thread.get(tid, set())
+            tagged = {c for c in ids if c in tracked_chars and c not in posters}
+            if tagged:
+                tagged_by_thread[tid] = tagged
+                relevant_thread_ids.add(tid)
+
+        if tagged_by_thread:
+            total_tag_links = sum(len(v) for v in tagged_by_thread.values())
+            log_debug(
+                f"ACP sync: {len(tagged_by_thread)} threads have tagged-only "
+                f"characters ({total_tag_links} tag links)"
+            )
 
         log_debug(
             f"ACP sync: {len(tracked_chars)} tracked chars, "
@@ -1252,6 +1303,23 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                         category=category,
                         is_user_last_poster=is_last,
                         post_count=count,
+                    )
+                    links_created += 1
+
+                # Link characters @-tagged in the OP who haven't posted yet.
+                # Skip any who are also posters (already linked above with the
+                # flag cleared); the poster path always wins.
+                for cid in tagged_by_thread.get(tid, set()):
+                    if cid not in tracked_chars or cid in thread_chars:
+                        continue
+                    await link_character_thread(
+                        db,
+                        character_id=cid,
+                        thread_id=tid,
+                        category=category,
+                        is_user_last_poster=False,
+                        post_count=0,
+                        is_tagged_only=True,
                     )
                     links_created += 1
 
