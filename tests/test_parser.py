@@ -136,6 +136,25 @@ class TestExtractTaggedMembers:
         ids, _ = extract_tagged_member_ids(html)
         assert ids == {"129", "347"}
 
+    def test_bbcode_user_tags_real_example(self):
+        # Exact source form the editor produces (confirmed from the forum).
+        html = "[user=277,6]Yelena Belova[/user] [user=238,15]Bucky Barnes[/user]"
+        ids, names = extract_tagged_member_ids(html)
+        assert ids == {"277", "238"}
+        assert names == set()
+
+    def test_bbcode_user_tag_without_group(self):
+        ids, _ = extract_tagged_member_ids("[user=42]Solo Muse[/user]")
+        assert ids == {"42"}
+
+    def test_anchor_and_bbcode_mixed(self):
+        html = (
+            "<a href='index.php?showuser=54' class='user-tagged mgroup-7'>"
+            "Devyn Shaw</a> and [user=277,6]Yelena Belova[/user]"
+        )
+        ids, _ = extract_tagged_member_ids(html)
+        assert ids == {"54", "277"}
+
     def test_ignores_profile_links_without_user_tagged_class(self):
         # Face-claim / dossier card link — must NOT be treated as a thread tag.
         html = (

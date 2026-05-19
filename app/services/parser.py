@@ -840,6 +840,9 @@ _ANCHOR_RE = re.compile(r"<a\b([^>]*)>", re.IGNORECASE)
 _CLASS_RE = re.compile(r"""class\s*=\s*["']([^"']*)["']""", re.IGNORECASE)
 # showuser=<digits> anywhere in an href (relative or absolute, with or without &).
 _SHOWUSER_RE = re.compile(r"showuser=(\d+)", re.IGNORECASE)
+# Source-form member tag the editor produces, e.g. "[user=277,6]Yelena Belova[/user]"
+# (group id after the comma is optional). Some dump rows keep this unconverted.
+_BBCODE_USER_RE = re.compile(r"\[user=(\d+)(?:\s*,\s*\d+)?\s*\]", re.IGNORECASE)
 # Defensive: literal "@[Display Name]" if a tag was ever typed raw, not converted.
 _LITERAL_TAG_RE = re.compile(r"@\[\s*([^\]\r\n]{1,80}?)\s*\]")
 
@@ -858,10 +861,16 @@ def extract_tagged_member_ids(post_html: str) -> tuple[set[str], set[str]]:
     cards, dossier blocks — must NOT count. ``showuser=`` gives the member ID
     directly, so no name matching is needed for the common case.
 
+    The pre-conversion source form is the IPB-style bbcode the editor
+    produces, e.g. ``[user=277,6]Yelena Belova[/user]`` (the number after the
+    comma is the member group); some dump rows keep it unconverted, so the
+    leading member ID is read from those too.
+
     Returns ``(member_ids, literal_names)``:
-      * ``member_ids`` — IDs from ``user-tagged`` anchors (authoritative).
+      * ``member_ids`` — IDs from ``user-tagged`` anchors and ``[user=ID,..]``
+        bbcode tags (authoritative; both resolve to the showuser ID).
       * ``literal_names`` — any raw ``@[Name]`` text that wasn't converted to
-        an anchor; the caller resolves these against character display names.
+        a tag; the caller resolves these against character display names.
 
     A regex (not BeautifulSoup) is used because ~80% of SQL-dump post bodies
     are mis-parsed (unescaped quotes, comma-joined fragments); the clean
@@ -882,6 +891,10 @@ def extract_tagged_member_ids(post_html: str) -> tuple[set[str], set[str]]:
         su = _SHOWUSER_RE.search(attrs)
         if su:
             member_ids.add(su.group(1))
+
+    # Source-form [user=ID,GROUP]Name[/user] tags (unconverted bbcode).
+    for uid in _BBCODE_USER_RE.findall(post_html):
+        member_ids.add(uid)
 
     literal_names = {
         n.strip() for n in _LITERAL_TAG_RE.findall(post_html) if n.strip()
