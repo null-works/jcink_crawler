@@ -103,6 +103,48 @@ Get all threads for a character, grouped by category.
 
 **Response:** `200 OK` — `CharacterThreads`
 
+```json
+{
+  "character_id": "72",
+  "character_name": "Amora",
+  "ongoing":    [ /* ThreadInfo */ ],
+  "comms":      [ /* ThreadInfo */ ],
+  "complete":   [ /* ThreadInfo */ ],
+  "incomplete": [ /* ThreadInfo */ ],
+  "counts": { "ongoing": 5, "comms": 0, "complete": 1, "incomplete": 4, "total": 10 }
+}
+```
+
+Each array holds `ThreadInfo` objects:
+
+| Field | Type | Notes |
+|---|---|---|
+| id | string | Thread ID |
+| title | string | Thread title |
+| url | string | Full forum thread URL |
+| forum_id | string\|null | |
+| forum_name | string\|null | |
+| category | string | ongoing \| comms \| complete \| incomplete |
+| last_poster_id | string\|null | |
+| last_poster_name | string\|null | |
+| last_poster_avatar | string\|null | |
+| is_user_last_poster | bool | This character posted last (→ "replied") |
+| **is_tagged_only** | bool | **This character was @-tagged in the opening post but has not posted in the thread yet.** Auto-clears to `false` once they post. Defaults `false` for all normal threads. |
+| last_post_date | string\|null | |
+| last_post_excerpt | string\|null | Dialog excerpt from the last post |
+
+**Status is tri-state** (theme renders an icon per row): check `is_tagged_only`
+first, then `is_user_last_poster`:
+
+| Condition | Meaning |
+|---|---|
+| `is_tagged_only === true` | Tagged in OP, awaiting first post (new — skin distinctly) |
+| `is_tagged_only === false && is_user_last_poster === true` | Replied (they posted last) |
+| `is_tagged_only === false && is_user_last_poster === false` | Owed (someone else posted last) |
+
+> Note: the batch endpoint `GET /api/threads?ids=…` returns a different
+> (thread + participants) shape and does **not** carry `is_tagged_only`.
+
 ---
 
 ### GET /api/character/{character_id}/thread-counts
