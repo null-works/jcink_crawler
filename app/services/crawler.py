@@ -1028,18 +1028,25 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                 for m in members:
                     mid = m["member_id"]
                     mname = m["name"]
-                    if mid in existing_ids:
-                        continue
                     if mname == "Unknown" or not mname:
                         continue
-                    await upsert_character(
-                        db,
-                        character_id=mid,
-                        name=mname,
-                        profile_url=f"{base_url}/index.php?showuser={mid}",
+                    if mid not in existing_ids:
+                        await upsert_character(
+                            db,
+                            character_id=mid,
+                            name=mname,
+                            profile_url=f"{base_url}/index.php?showuser={mid}",
+                        )
+                        existing_ids.add(mid)
+                        new_chars += 1
+                    # Always refresh JCink's lifetime post count, even for
+                    # already-registered characters — this is the authoritative
+                    # "POSTS" number shown in the forum theme.
+                    await db.execute(
+                        "UPDATE characters SET post_count = ? WHERE id = ?",
+                        (m.get("post_count", 0), mid),
                     )
-                    existing_ids.add(mid)
-                    new_chars += 1
+                await db.commit()
 
                 if new_chars:
                     log_debug(f"ACP sync: auto-registered {new_chars} characters from member dump")
@@ -1280,6 +1287,7 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                         last_poster_id=last_poster_id,
                         last_poster_name=topic.get("last_poster_name"),
                         last_poster_avatar=last_poster_avatar,
+                        last_post_date=topic.get("last_post_date"),
                     )
                     threads_upserted += 1
 

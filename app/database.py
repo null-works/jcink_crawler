@@ -281,6 +281,24 @@ async def init_db():
         except Exception:
             pass  # Column already exists
 
+        # JCink's official lifetime post count from the ACP member dump.
+        # Sourced from member.posts (column 9). Authoritative for "POSTS"
+        # displays; do not derive from character_threads.post_count, which
+        # only counts posts in tracked, non-excluded threads.
+        try:
+            await db.execute("ALTER TABLE characters ADD COLUMN post_count INTEGER DEFAULT 0")
+        except Exception:
+            pass  # Column already exists
+
+        # Denormalized last-post timestamp from the ACP topics dump.
+        # JCink updates topic.last_post atomically with last_poster_id, so
+        # this is consistent with threads.last_poster_* even when our posts
+        # table is missing the very newest row.
+        try:
+            await db.execute("ALTER TABLE threads ADD COLUMN last_post_date TEXT")
+        except Exception:
+            pass  # Column already exists
+
         # Clean up posts with NULL dates — these are stale records from before
         # the date parser fix. Deleting them forces the next crawl to re-populate
         # with proper dates, which is needed for activity check queries.

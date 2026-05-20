@@ -206,14 +206,15 @@ async def upsert_thread(
     last_poster_id: str | None = None,
     last_poster_name: str | None = None,
     last_poster_avatar: str | None = None,
+    last_post_date: str | None = None,
 ) -> None:
     """Create or update a thread."""
     stamp = now_et_stamp()
     await db.execute("""
         INSERT INTO threads (id, title, url, forum_id, forum_name, category,
                            last_poster_id, last_poster_name, last_poster_avatar,
-                           last_crawled)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                           last_post_date, last_crawled)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
             title = excluded.title,
             url = excluded.url,
@@ -223,10 +224,12 @@ async def upsert_thread(
             last_poster_id = COALESCE(excluded.last_poster_id, threads.last_poster_id),
             last_poster_name = COALESCE(excluded.last_poster_name, threads.last_poster_name),
             last_poster_avatar = COALESCE(excluded.last_poster_avatar, threads.last_poster_avatar),
+            last_post_date = COALESCE(excluded.last_post_date, threads.last_post_date),
             last_crawled = ?,
             updated_at = ?
     """, (thread_id, title, url, forum_id, forum_name, category,
-          last_poster_id, last_poster_name, last_poster_avatar, stamp, stamp, stamp))
+          last_poster_id, last_poster_name, last_poster_avatar,
+          last_post_date, stamp, stamp, stamp))
 
 
 async def link_character_thread(
@@ -274,7 +277,8 @@ async def get_character_threads(
                ct.category as char_category, ct.is_user_last_poster,
                ct.is_tagged_only,
                COALESCE(c_poster.avatar_url, pf_sq.field_value, t.last_poster_avatar) AS resolved_avatar,
-               p_last.last_post_date,
+               NULLIF(MAX(COALESCE(t.last_post_date, ''),
+                          COALESCE(p_last.last_post_date, '')), '') AS last_post_date,
                q_dialog.quote_text AS last_post_excerpt
         FROM threads t
         JOIN character_threads ct ON t.id = ct.thread_id
@@ -557,9 +561,11 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     excluded = settings.excluded_name_set
     excluded_ids = settings.excluded_id_set
 
-    # 1. All characters (include approval_date)
+    # 1. All characters (include approval_date + JCink's post_count)
     cursor = await db.execute(
-        "SELECT id, name, profile_url, group_name, avatar_url, approval_date FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
+        "SELECT id, name, profile_url, group_name, avatar_url, approval_date, "
+        "COALESCE(post_count, 0) AS post_count "
+        "FROM characters WHERE COALESCE(hidden, 0) = 0 ORDER BY name"
     )
     char_rows = await cursor.fetchall()
 
@@ -602,20 +608,9 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
     for row in count_rows:
         counts_map.setdefault(row["character_id"], {})[row["category"]] = row["count"]
 
-    # 3b. Batch-load total post counts
-    cursor = await db.execute(
-        f"""SELECT character_id, SUM(post_count) as total_posts
-            FROM character_threads
-            WHERE character_id IN ({placeholders_ids})
-            GROUP BY character_id""",
-        char_ids,
-    )
-    post_count_rows = await cursor.fetchall()
-    post_counts_map: dict[str, int] = {
-        row["character_id"]: row["total_posts"] or 0 for row in post_count_rows
-    }
-
-    # 4. Assemble results
+    # 4. Assemble results — post_count comes from characters.post_count
+    # (JCink's authoritative member.posts from the ACP dump), not from
+    # SUM(character_threads.post_count) which only counts tracked threads.
     results = []
     for row in char_rows:
         char = dict(row)
@@ -651,7 +646,7 @@ async def get_all_claims(db: aiosqlite.Connection) -> list[ClaimsSummary]:
             connections=fields.get("connections"),
             thread_counts=thread_counts,
             approval_date=char.get("approval_date"),
-            post_count=post_counts_map.get(cid, 0),
+            post_count=char.get("post_count", 0) or 0,
         ))
 
     return results

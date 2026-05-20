@@ -498,9 +498,15 @@ async def get_player_detail(
         char["quote_count"] = qc_row["cnt"] if qc_row else 0
         total_quotes += char["quote_count"]
 
-        # Total post count (all time) from character_threads.post_count
+        # Lifetime post count from JCink's authoritative member.posts
+        # (populated by ACP sync into characters.post_count). Falls back to
+        # SUM(character_threads.post_count) for characters whose member row
+        # hasn't been ingested yet.
         pc = await db.execute(
-            "SELECT COALESCE(SUM(post_count), 0) as cnt FROM character_threads WHERE character_id = ?",
+            "SELECT COALESCE(c.post_count, "
+            "       (SELECT SUM(post_count) FROM character_threads WHERE character_id = c.id), "
+            "       0) AS cnt "
+            "FROM characters c WHERE c.id = ?",
             (cid,),
         )
         pc_row = await pc.fetchone()
