@@ -299,6 +299,14 @@ async def init_db():
         except Exception:
             pass  # Column already exists
 
+        # The date of the post a quote was extracted from. Lets the thread
+        # tracker pick the excerpt from the actual latest post rather than
+        # falling through to an older one via id-based ordering.
+        try:
+            await db.execute("ALTER TABLE quotes ADD COLUMN post_date TEXT")
+        except Exception:
+            pass  # Column already exists
+
         # Clean up posts with NULL dates — these are stale records from before
         # the date parser fix. Deleting them forces the next crawl to re-populate
         # with proper dates, which is needed for activity check queries.

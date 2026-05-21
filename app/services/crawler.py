@@ -1389,8 +1389,9 @@ async def process_acp_raw_data(raw: dict[str, list[list]], db_path: str) -> dict
                 thread_title = topic_map.get(tid, {}).get("title") if tid else None
 
                 found = extract_quotes_from_post_body(body)
+                post_date = p.get("post_date")
                 for q in found:
-                    added = await add_quote(db, cid, q["text"], tid, thread_title)
+                    added = await add_quote(db, cid, q["text"], tid, thread_title, post_date)
                     if added:
                         quotes_added += 1
 

@@ -732,7 +732,15 @@ def _extract_from_post_body(post_body, min_words: int) -> list[dict]:
 
     Italic/em tags are intentionally excluded — on RP forums those denote
     narrative/action text, not spoken dialog.
+
+    Embedded quote blocks (IPB 1.3's [quote]...[/quote] BBCode renders as
+    div.quotetop + div.quotemain, plus the theme styles <blockquote> as a
+    quoted-content callout) are stripped first so dialog inside someone
+    else's quoted reply isn't credited to the replier.
     """
+    for q in post_body.select("div.quotemain, div.quotetop, blockquote"):
+        q.decompose()
+
     quotes = []
     seen: set[str] = set()
 

@@ -293,7 +293,10 @@ async def get_character_threads(
         ) p_last ON p_last.thread_id = t.id
         LEFT JOIN (
             SELECT source_thread_id, character_id, quote_text,
-                   ROW_NUMBER() OVER (PARTITION BY source_thread_id, character_id ORDER BY id DESC) AS rn
+                   ROW_NUMBER() OVER (
+                       PARTITION BY source_thread_id, character_id
+                       ORDER BY post_date DESC NULLS LAST, id DESC
+                   ) AS rn
             FROM quotes
             WHERE source_thread_id IS NOT NULL
         ) q_dialog ON q_dialog.source_thread_id = t.id
@@ -374,15 +377,36 @@ async def add_quote(
     quote_text: str,
     source_thread_id: str | None = None,
     source_thread_title: str | None = None,
+    post_date: str | None = None,
 ) -> bool:
-    """Add a quote if it doesn't already exist. Returns True if inserted."""
+    """Add a quote, or refresh source/post_date if a later post repeats it.
+
+    UNIQUE(character_id, quote_text) means a character's catchphrase only
+    has one row even if they say it in multiple threads/posts. On conflict
+    we re-point the row at the newer post so the tracker excerpt reflects
+    the most recent use rather than the first ingest.
+
+    Returns True if a new row was inserted (not when refreshed).
+    """
     try:
         cursor = await db.execute("""
             INSERT OR IGNORE INTO quotes
-                (character_id, quote_text, source_thread_id, source_thread_title)
-            VALUES (?, ?, ?, ?)
-        """, (character_id, quote_text, source_thread_id, source_thread_title))
-        return cursor.rowcount > 0
+                (character_id, quote_text, source_thread_id, source_thread_title, post_date)
+            VALUES (?, ?, ?, ?, ?)
+        """, (character_id, quote_text, source_thread_id, source_thread_title, post_date))
+        inserted = cursor.rowcount > 0
+        if not inserted and post_date is not None:
+            # Existing row — re-point at the newer post if this one is later.
+            await db.execute("""
+                UPDATE quotes
+                SET post_date = ?,
+                    source_thread_id = ?,
+                    source_thread_title = ?
+                WHERE character_id = ? AND quote_text = ?
+                  AND (post_date IS NULL OR post_date < ?)
+            """, (post_date, source_thread_id, source_thread_title,
+                  character_id, quote_text, post_date))
+        return inserted
     except Exception as e:
         print(f"[DB] Failed to add quote for character {character_id}: {e}")
         return False
