@@ -890,6 +890,10 @@ async def get_top_posters_by_player(
     char_rows = await cursor.fetchall()
 
     players: dict[str, dict] = {}
+    # All eligible char IDs per player (incl. those with zero posts in window),
+    # used to look up ooc_avatar — a player-level field that may live on any of
+    # a player's characters' profiles.
+    player_char_ids: dict[str, list[str]] = {}
     for r in char_rows:
         cid = r["id"]
         name = r["name"]
@@ -904,9 +908,12 @@ async def get_top_posters_by_player(
                 "alias": player_name,
                 "post_count": 0,
                 "character_count": 0,
+                "ooc_avatar": None,
                 "characters": [],
             }
+            player_char_ids[player_name] = []
         bucket["character_count"] += 1
+        player_char_ids[player_name].append(cid)
         char_post_count = char_posts.get(cid, 0)
         if char_post_count > 0:
             bucket["post_count"] += char_post_count
@@ -930,6 +937,32 @@ async def get_top_posters_by_player(
     for p in ranked:
         p["characters"].sort(key=lambda c: (-c["post_count"], (c["name"] or "").lower()))
         p["characters"] = p["characters"][:10]
+
+    # Look up ooc_avatar across every eligible char of every top player in
+    # one batched query, then assign per player. Same value is expected for
+    # all of a player's characters; pick any non-empty one.
+    all_ids: list[str] = []
+    for p in ranked:
+        all_ids.extend(player_char_ids.get(p["alias"], []))
+    if all_ids:
+        placeholders = ",".join("?" * len(all_ids))
+        cursor = await db.execute(
+            f"""SELECT character_id, field_value
+                FROM profile_fields
+                WHERE field_key = 'ooc_avatar' AND character_id IN ({placeholders})""",
+            all_ids,
+        )
+        ooc_by_cid: dict[str, str] = {}
+        for r in await cursor.fetchall():
+            val = (r["field_value"] or "").strip()
+            if val:
+                ooc_by_cid[r["character_id"]] = val
+        for p in ranked:
+            for cid in player_char_ids.get(p["alias"], []):
+                if cid in ooc_by_cid:
+                    p["ooc_avatar"] = ooc_by_cid[cid]
+                    break
+
     return ranked
 
 

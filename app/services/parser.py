@@ -508,6 +508,7 @@ def parse_profile_page(html: str, user_id: str) -> ParsedProfile:
         ([".hero-sq-top", ".pf-c"], "square_image"),
         ([".hero-sq-bot", ".pf-p"], "secondary_square_image"),
         ([".hero-rect", ".pf-w"], "rectangle_gif"),
+        ([".profile-ooc-avatar"], "ooc_avatar"),
     ]
     for selectors, key in _IMAGE_SELECTORS:
         for selector in selectors:
