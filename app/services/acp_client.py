@@ -649,7 +649,7 @@ def extract_post_records(raw: dict[str, list[list]], include_body: bool = False,
         record = {
             "character_id": str(author_id),
             "thread_id": str(topic_val) if topic_val is not None else None,
-            "post_date": _unix_to_iso(row[col_date]),
+            "post_date": _unix_to_iso_datetime(row[col_date]),
             "forum_id": str(forum_val) if forum_val is not None else None,
             "author_name": row[col_author_name] if col_author_name < len(row) else None,
         }

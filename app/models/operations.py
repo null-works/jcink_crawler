@@ -277,7 +277,8 @@ async def get_character_threads(
                ct.category as char_category, ct.is_user_last_poster,
                ct.is_tagged_only,
                COALESCE(c_poster.avatar_url, pf_sq.field_value, t.last_poster_avatar) AS resolved_avatar,
-               COALESCE(t.last_post_date, p_last.last_post_date) AS last_post_date,
+               NULLIF(MAX(COALESCE(t.last_post_date, ''),
+                          COALESCE(p_last.last_post_date, '')), '') AS last_post_date,
                q_dialog.quote_text AS last_post_excerpt
         FROM threads t
         JOIN character_threads ct ON t.id = ct.thread_id

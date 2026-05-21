@@ -822,11 +822,13 @@ async def get_dashboard_chart_data(db: aiosqlite.Connection) -> dict:
     posts_by_month = [{"label": r["month"], "count": r["cnt"]} for r in rows if r["month"]]
 
     # Posts over last 30 days — grouped by day, capped at Eastern "today"
+    # substr(post_date, 1, 10) tolerates both legacy date-only ('YYYY-MM-DD')
+    # and current full-ISO ('YYYY-MM-DDTHH:MM:SS±ZZ:ZZ') rows.
     thirty_days_ago = (eastern_now - timedelta(days=30)).strftime("%Y-%m-%d")
     cursor = await db.execute(
-        """SELECT post_date AS day, COUNT(*) AS cnt
+        """SELECT substr(post_date, 1, 10) AS day, COUNT(*) AS cnt
            FROM posts
-           WHERE post_date >= ? AND post_date <= ?
+           WHERE substr(post_date, 1, 10) >= ? AND substr(post_date, 1, 10) <= ?
            GROUP BY day
            ORDER BY day""",
         (thirty_days_ago, today_eastern),

@@ -169,7 +169,8 @@ class TestExtractPostRecords:
         assert post["author_name"] == "Tony Stark"
         assert post["thread_id"] == "100"
         assert post["forum_id"] == "5"
-        assert post["post_date"] == "2023-11-14"
+        # Full ISO datetime with TZ offset — see _unix_to_iso_datetime.
+        assert post["post_date"] == "2023-11-14T17:13:20-05:00"
 
     def test_includes_body_when_requested(self):
         raw = parse_sql_dump(SAMPLE_SQL)
