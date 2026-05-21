@@ -153,6 +153,26 @@ def _unix_to_iso(ts) -> str | None:
         return None
 
 
+def _unix_to_iso_datetime(ts) -> str | None:
+    """Convert Unix timestamp to full ISO datetime with offset, in the configured timezone.
+
+    Used for thread tracker timestamps where 'X hours ago' display needs sub-day
+    granularity. The posts table keeps the date-only form (_unix_to_iso) because
+    activity-check queries group by day.
+    """
+    if ts is None:
+        return None
+    try:
+        ts_int = int(ts)
+        if ts_int <= 0:
+            return None
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(settings.activity_timezone)
+        return datetime.fromtimestamp(ts_int, tz=tz).isoformat()
+    except (ValueError, TypeError, OSError):
+        return None
+
+
 def parse_sql_dump(sql_text: str) -> dict[str, list[list]]:
     """Parse a JCink SQL dump file into structured data.
 
@@ -716,7 +736,7 @@ def extract_topic_records(raw: dict[str, list[list]], schema: dict | None = None
             "state": row[3] if len(row) > 3 else None,
             "last_poster_id": str(poster_id) if poster_id else None,
             "last_poster_name": poster_name if isinstance(poster_name, str) else None,
-            "last_post_date": _unix_to_iso(last_post),
+            "last_post_date": _unix_to_iso_datetime(last_post),
         })
 
     return records

@@ -199,7 +199,10 @@ class TestExtractTopicRecords:
         assert topic["state"] == "open"
         assert topic["last_poster_id"] == "42"
         assert topic["last_poster_name"] == "Tony Stark"
-        assert topic["last_post_date"] == "2023-11-15"  # 1700100000 = Nov 15 8:20pm ET
+        # Full ISO datetime in configured TZ — needed for "Xh ago" granularity
+        # on the thread tracker (date-only would parse as midnight UTC and lose
+        # sub-day precision). 1700100000 = Nov 15 2023 21:00 ET.
+        assert topic["last_post_date"] == "2023-11-15T21:00:00-05:00"
 
 
 # ---------------------------------------------------------------------------
