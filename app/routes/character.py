@@ -121,11 +121,17 @@ async def top_posters(
     today = now.date()
     if period == "today":
         start = today
+        end = today + timedelta(days=1)
     elif period == "week":
         start = today - timedelta(days=7)
-    else:  # month
-        start = today - timedelta(days=30)
-    end = today + timedelta(days=1)
+        end = today + timedelta(days=1)
+    else:  # month — current calendar month
+        start = today.replace(day=1)
+        # First day of next month (handle Dec→Jan rollover)
+        if start.month == 12:
+            end = start.replace(year=start.year + 1, month=1)
+        else:
+            end = start.replace(month=start.month + 1)
     return {
         "period": period,
         "start": start.isoformat(),
