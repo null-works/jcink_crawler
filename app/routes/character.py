@@ -32,6 +32,7 @@ from app.models import (
     get_all_quotes,
     get_quote_count,
     get_thread_counts,
+    get_top_posters,
 )
 from app.services import (
     crawl_character_threads,
@@ -98,6 +99,39 @@ async def get_batch_fields(
         else None
     )
     return await get_characters_fields_batch(db, character_ids, field_keys)
+
+
+@router.get("/top-posters")
+async def top_posters(
+    period: str = Query("today", pattern="^(today|week|month)$"),
+    limit: int = Query(10, ge=1, le=50),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Top posters in the given period (today | week | month).
+
+    Date range uses the board's configured activity timezone
+    (settings.activity_timezone), half-open: [start, end). Returns enriched
+    list with name, codename, group, avatar, etc.
+    """
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(settings.activity_timezone)
+    now = datetime.now(tz)
+    today = now.date()
+    if period == "today":
+        start = today
+    elif period == "week":
+        start = today - timedelta(days=7)
+    else:  # month
+        start = today - timedelta(days=30)
+    end = today + timedelta(days=1)
+    return {
+        "period": period,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "posters": await get_top_posters(db, start.isoformat(), end.isoformat(), limit),
+    }
 
 
 @router.get("/character/{character_id}", response_model=CharacterProfile)

@@ -775,6 +775,70 @@ async def get_crawl_status(
 
 # --- Post Operations ---
 
+async def get_top_posters(
+    db: aiosqlite.Connection,
+    start_date: str,
+    end_date: str,
+    limit: int = 10,
+) -> list[dict]:
+    """Top N posters in a half-open date range [start_date, end_date), YYYY-MM-DD.
+
+    Joins posts → characters → profile_fields(codename) for enriched display.
+    Excludes hidden characters and the global excluded name/id sets.
+
+    Lexicographic string compare on post_date works for both legacy
+    date-only ('YYYY-MM-DD') and current full-ISO ('YYYY-MM-DDTHH:MM:SS±ZZ:ZZ')
+    rows — any post with date prefix in [start, end) matches.
+    """
+    excluded_names = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
+
+    cursor = await db.execute(
+        """
+        SELECT p.character_id,
+               COUNT(*)             AS posts_in_range,
+               c.name               AS name,
+               c.profile_url        AS profile_url,
+               c.group_name         AS group_name,
+               c.avatar_url         AS avatar_url,
+               pf.field_value       AS codename
+        FROM posts p
+        JOIN characters c ON c.id = p.character_id
+        LEFT JOIN profile_fields pf
+               ON pf.character_id = c.id AND pf.field_key = 'codename'
+        WHERE p.post_date >= ? AND p.post_date < ?
+          AND COALESCE(c.hidden, 0) = 0
+        GROUP BY p.character_id
+        ORDER BY posts_in_range DESC, c.name ASC
+        LIMIT ?
+        """,
+        (start_date, end_date, limit * 2),
+    )
+    rows = await cursor.fetchall()
+
+    results: list[dict] = []
+    for row in rows:
+        d = dict(row)
+        if d["name"] and d["name"].lower() in excluded_names:
+            continue
+        if d["character_id"] in excluded_ids:
+            continue
+        group_id = _GROUP_NAME_TO_ID.get(d.get("group_name")) if d.get("group_name") else None
+        results.append({
+            "character_id":   d["character_id"],
+            "name":           d["name"],
+            "codename":       d.get("codename"),
+            "profile_url":    d["profile_url"],
+            "group_id":       group_id,
+            "group_name":     d.get("group_name"),
+            "avatar_url":     d.get("avatar_url"),
+            "post_count":     d["posts_in_range"],
+        })
+        if len(results) >= limit:
+            break
+    return results
+
+
 async def replace_thread_posts(
     db: aiosqlite.Connection,
     thread_id: str,

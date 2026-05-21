@@ -39,6 +39,7 @@ from app.models.operations import (
     set_crawl_status,
     get_crawl_status,
     replace_thread_posts,
+    get_top_posters,
     record_user_activity,
     get_recent_users,
     get_recent_profile_changes,
