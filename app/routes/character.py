@@ -33,6 +33,7 @@ from app.models import (
     get_quote_count,
     get_thread_counts,
     get_top_posters,
+    get_top_posters_by_player,
 )
 from app.services import (
     crawl_character_threads,
@@ -105,13 +106,19 @@ async def get_batch_fields(
 async def top_posters(
     period: str = Query("today", pattern="^(today|week|month)$"),
     limit: int = Query(10, ge=1, le=50),
+    group_by: str | None = Query(None, pattern="^player$"),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """Top posters in the given period (today | week | month).
 
     Date range uses the board's configured activity timezone
-    (settings.activity_timezone), half-open: [start, end). Returns enriched
-    list with name, codename, group, avatar, etc.
+    (settings.activity_timezone), half-open: [start, end).
+
+    Default mode returns top characters in the response's `posters` key.
+    Pass ``group_by=player`` to get per-player aggregation in `players`
+    instead — totals match the Activity Check dashboard exactly because
+    quiet characters are summed server-side rather than dropped by the
+    top-N limit.
     """
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
@@ -132,11 +139,21 @@ async def top_posters(
             end = start.replace(year=start.year + 1, month=1)
         else:
             end = start.replace(month=start.month + 1)
+    start_iso = start.isoformat()
+    end_iso = end.isoformat()
+    if group_by == "player":
+        return {
+            "period": period,
+            "start": start_iso,
+            "end": end_iso,
+            "group_by": "player",
+            "players": await get_top_posters_by_player(db, start_iso, end_iso, limit),
+        }
     return {
         "period": period,
-        "start": start.isoformat(),
-        "end": end.isoformat(),
-        "posters": await get_top_posters(db, start.isoformat(), end.isoformat(), limit),
+        "start": start_iso,
+        "end": end_iso,
+        "posters": await get_top_posters(db, start_iso, end_iso, limit),
     }
 
 

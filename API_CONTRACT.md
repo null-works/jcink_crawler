@@ -295,6 +295,88 @@ Get banner image URLs.
 
 ---
 
+## Top Posters
+
+### GET /api/top-posters
+
+Top characters (default) or top players (with `group_by=player`) in a date
+range. Date math is in `settings.activity_timezone`, half-open `[start, end)`.
+
+**Query params:**
+
+| Param | Default | Constraint |
+|---|---|---|
+| `period`   | `today` | `today` \| `week` \| `month` |
+| `limit`    | `10`    | 1 ≤ n ≤ 50 |
+| `group_by` | _(none)_ | `player` to switch to per-player aggregation |
+
+**Period windows:**
+
+| Period | Window |
+|---|---|
+| today | midnight (board TZ) today → midnight tomorrow |
+| week  | T-7 days → midnight tomorrow |
+| month | first of current calendar month → first of next month |
+
+**Default response (top characters):**
+
+```json
+{
+  "period": "today",
+  "start":  "2026-05-21",
+  "end":    "2026-05-22",
+  "posters": [
+    {
+      "character_id": "129",
+      "name":         "Kimberly Parson",
+      "codename":     "Aqua",
+      "profile_url":  "https://therewasanidea.jcink.net/index.php?showuser=129",
+      "group_id":     "14",
+      "group_name":   "Pink",
+      "avatar_url":   "https://...",
+      "post_count":   2
+    }
+  ]
+}
+```
+
+**`group_by=player` response (per-player aggregation; totals match the
+Activity Check dashboard's Top 10 Players):**
+
+```json
+{
+  "period": "month",
+  "start":  "2026-05-01",
+  "end":    "2026-06-01",
+  "group_by": "player",
+  "players": [
+    {
+      "alias":           "Spider",
+      "post_count":      87,
+      "character_count": 19,
+      "characters": [
+        {
+          "character_id": "...", "name": "Novi", "codename": "Whisper",
+          "profile_url": "...", "group_id": "6", "group_name": "Red",
+          "avatar_url": "...", "post_count": 20
+        }
+      ]
+    }
+  ]
+}
+```
+
+- `character_count` counts every eligible character with this player's
+  `player` profile field, regardless of post activity in the window.
+- `post_count` is the sum of all those characters' posts in the window.
+- `characters` is capped at the top 10 active characters per player, sorted
+  by `post_count DESC`.
+
+Both modes exclude hidden characters and `settings.excluded_name_set` /
+`excluded_id_set`. Sort is `post_count DESC`, secondary by name / alias.
+
+---
+
 ## Crawl Cadence
 
 | Data | Auto Interval | Manual Trigger |

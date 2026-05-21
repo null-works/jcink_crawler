@@ -40,6 +40,7 @@ from app.models.operations import (
     get_crawl_status,
     replace_thread_posts,
     get_top_posters,
+    get_top_posters_by_player,
     record_user_activity,
     get_recent_users,
     get_recent_profile_changes,

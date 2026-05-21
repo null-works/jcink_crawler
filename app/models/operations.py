@@ -839,6 +839,100 @@ async def get_top_posters(
     return results
 
 
+async def get_top_posters_by_player(
+    db: aiosqlite.Connection,
+    start_date: str,
+    end_date: str,
+    limit: int = 10,
+) -> list[dict]:
+    """Top N players in a half-open date range [start_date, end_date), YYYY-MM-DD.
+
+    Mirrors the dashboard's `get_activity_check_data` per-player aggregation
+    so this endpoint returns the same totals as the Activity Check page's
+    "Top 10 Players" column. Sums every eligible character's posts per
+    player — quiet characters still count, unlike client-side aggregation
+    of the top-characters response.
+    """
+    excluded_names = settings.excluded_name_set
+    excluded_ids = settings.excluded_id_set
+
+    # Per-character post counts in the window.
+    cursor = await db.execute(
+        """
+        SELECT character_id, COUNT(*) AS posts_in_range
+        FROM posts
+        WHERE post_date >= ? AND post_date < ?
+        GROUP BY character_id
+        """,
+        (start_date, end_date),
+    )
+    char_posts: dict[str, int] = {
+        row["character_id"]: row["posts_in_range"] for row in await cursor.fetchall()
+    }
+
+    # Every eligible character with a non-empty player field, joined to
+    # codename for the per-character entries the theme renders.
+    cursor = await db.execute(
+        """
+        SELECT c.id, c.name, c.profile_url, c.group_name, c.avatar_url,
+               pf_player.field_value AS player_name,
+               pf_code.field_value   AS codename
+        FROM characters c
+        JOIN profile_fields pf_player
+          ON pf_player.character_id = c.id AND pf_player.field_key = ?
+        LEFT JOIN profile_fields pf_code
+          ON pf_code.character_id = c.id AND pf_code.field_key = 'codename'
+        WHERE pf_player.field_value IS NOT NULL AND pf_player.field_value != ''
+          AND COALESCE(c.hidden, 0) = 0
+        """,
+        (settings.player_field_key,),
+    )
+    char_rows = await cursor.fetchall()
+
+    players: dict[str, dict] = {}
+    for r in char_rows:
+        cid = r["id"]
+        name = r["name"]
+        if name and name.lower() in excluded_names:
+            continue
+        if cid in excluded_ids:
+            continue
+        player_name = r["player_name"]
+        bucket = players.get(player_name)
+        if bucket is None:
+            bucket = players[player_name] = {
+                "alias": player_name,
+                "post_count": 0,
+                "character_count": 0,
+                "characters": [],
+            }
+        bucket["character_count"] += 1
+        char_post_count = char_posts.get(cid, 0)
+        if char_post_count > 0:
+            bucket["post_count"] += char_post_count
+            group_id = _GROUP_NAME_TO_ID.get(r["group_name"]) if r["group_name"] else None
+            bucket["characters"].append({
+                "character_id": cid,
+                "name": name,
+                "codename": r["codename"],
+                "profile_url": r["profile_url"],
+                "group_id": group_id,
+                "group_name": r["group_name"],
+                "avatar_url": r["avatar_url"],
+                "post_count": char_post_count,
+            })
+
+    # Sort players by post_count DESC then alias ASC; cap characters per player.
+    ranked = sorted(
+        players.values(),
+        key=lambda p: (-p["post_count"], (p["alias"] or "").lower()),
+    )[:limit]
+    for p in ranked:
+        p["characters"].sort(key=lambda c: (-c["post_count"], (c["name"] or "").lower()))
+        p["characters"] = p["characters"][:10]
+    return ranked
+
+
 async def replace_thread_posts(
     db: aiosqlite.Connection,
     thread_id: str,
