@@ -270,7 +270,19 @@ async def get_character_threads(
     row = await cursor.fetchone()
     char_name = row["name"] if row else "Unknown"
 
-    cursor = await db.execute("""
+    # Filter out threads in excluded forums at query time so configuration
+    # changes take effect without needing a re-sync. character_threads can
+    # still contain stale links to formerly-tracked threads whose forum was
+    # later added to FORUMS_EXCLUDED.
+    excluded_forums = list(settings.excluded_forum_ids)
+    forum_filter = ""
+    params: list = [character_id]
+    if excluded_forums:
+        placeholders = ",".join("?" * len(excluded_forums))
+        forum_filter = f" AND (t.forum_id IS NULL OR t.forum_id NOT IN ({placeholders}))"
+        params.extend(excluded_forums)
+
+    cursor = await db.execute(f"""
         SELECT t.id, t.title, t.url, t.forum_id, t.forum_name,
                t.last_poster_id,
                COALESCE(c_poster.name, t.last_poster_name) AS last_poster_name,
@@ -302,9 +314,9 @@ async def get_character_threads(
         ) q_dialog ON q_dialog.source_thread_id = t.id
                   AND q_dialog.character_id = t.last_poster_id
                   AND q_dialog.rn = 1
-        WHERE ct.character_id = ?
+        WHERE ct.character_id = ?{forum_filter}
         ORDER BY t.updated_at DESC
-    """, (character_id,))
+    """, params)
     rows = await cursor.fetchall()
 
     threads = CharacterThreads(
@@ -356,13 +368,25 @@ async def get_character_threads(
 async def get_thread_counts(
     db: aiosqlite.Connection, character_id: str
 ) -> dict[str, int]:
-    """Get thread counts by category for a character."""
-    cursor = await db.execute("""
-        SELECT category, COUNT(*) as count
-        FROM character_threads
-        WHERE character_id = ?
-        GROUP BY category
-    """, (character_id,))
+    """Get thread counts by category for a character.
+
+    Matches get_character_threads' exclusion behavior so badge counts agree
+    with the listed threads when FORUMS_EXCLUDED is changed without resync.
+    """
+    excluded_forums = list(settings.excluded_forum_ids)
+    forum_filter = ""
+    params: list = [character_id]
+    if excluded_forums:
+        placeholders = ",".join("?" * len(excluded_forums))
+        forum_filter = f" AND (t.forum_id IS NULL OR t.forum_id NOT IN ({placeholders}))"
+        params.extend(excluded_forums)
+    cursor = await db.execute(f"""
+        SELECT ct.category, COUNT(*) as count
+        FROM character_threads ct
+        JOIN threads t ON t.id = ct.thread_id
+        WHERE ct.character_id = ?{forum_filter}
+        GROUP BY ct.category
+    """, params)
     rows = await cursor.fetchall()
     counts = {r["category"]: r["count"] for r in rows}
     counts["total"] = sum(counts.values())
