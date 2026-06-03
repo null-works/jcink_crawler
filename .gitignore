@@ -13,3 +13,6 @@ build/
 debug_snapshot.html
 chr4.html
 *.zip
+
+# Claude Code local config
+.claude/

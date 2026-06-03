@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Handoff: Thread-Tracker HTML Escaping (theme-side fix)</title>
+<style>
+  body{font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:900px;margin:2rem auto;padding:0 1.25rem;color:#1c2530}
+  h1{font-size:1.6rem;border-bottom:2px solid #d0405b;padding-bottom:.3rem}
+  h2{font-size:1.2rem;margin-top:2rem;border-bottom:1px solid #dde3ea;padding-bottom:.2rem}
+  h3{font-size:1.02rem;margin-top:1.4rem}
+  code{background:#f1f3f6;padding:.1em .35em;border-radius:3px;font-size:.92em}
+  pre{background:#0f1722;color:#e6edf3;padding:1rem;border-radius:6px;overflow:auto;font-size:.86rem;line-height:1.45}
+  pre code{background:none;padding:0;color:inherit}
+  table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.92rem}
+  th,td{border:1px solid #d4dae2;padding:.45rem .6rem;text-align:left;vertical-align:top}
+  th{background:#f4f6f9}
+  .tldr{background:#fff8e1;border:1px solid #f0d999;border-radius:6px;padding:1rem 1.2rem}
+  .danger{background:#fdecef;border:1px solid #f0a9b7;border-radius:6px;padding:.8rem 1.1rem}
+  .ok{background:#e8f6ec;border:1px solid #a9d8b8;border-radius:6px;padding:.8rem 1.1rem}
+  .meta{color:#5a6b7b;font-size:.86rem}
+  .tag{display:inline-block;background:#d0405b;color:#fff;font-size:.7rem;padding:.12em .5em;border-radius:3px;vertical-align:middle}
+  .no{color:#b3261e;font-weight:600}.yes{color:#1a7f37;font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>Handoff &mdash; Thread-Tracker HTML Escaping <span class="tag">THEME-SIDE</span></h1>
+<p class="meta">
+  <strong>For:</strong> the agent scoped to the JCink forum theme / wrapper code &nbsp;&middot;&nbsp;
+  <strong>From:</strong> Watcher (JCink Analytics API) side &nbsp;&middot;&nbsp;
+  <strong>Date:</strong> 2026-05-16 &nbsp;&middot;&nbsp;
+  <strong>Scope:</strong> theme JavaScript only &mdash; <em>no Watcher/API changes required for this task</em>
+</p>
+
+<div class="tldr">
+<strong>TL;DR.</strong> The theme&rsquo;s thread-tracker builds its tab markup by interpolating raw
+string values from the Watcher API (forum names, thread titles, last-poster names, post
+excerpts) into HTML. None of it is HTML-escaped. When any of those strings contains
+<code>"</code>, <code>'</code>, <code>&lt;</code>, <code>&gt;</code>, or <code>&amp;</code>,
+the generated markup breaks and the entire threads tab renders empty for that user. This
+was first hit by member <strong>263 (Xu Xialing)</strong>. <strong>The fix is to treat every
+API string as untrusted and escape it (or build the DOM via <code>createElement</code>/
+<code>textContent</code>) before it touches the page.</strong> This is independent
+defense-in-depth and must be done even though a related data-cleanup is shipping on the
+Watcher side &mdash; see &ldquo;Scope &amp; coordination&rdquo; at the end.
+</div>
+
+<h2>1. Background &mdash; what breaks and who sees it</h2>
+<p>
+The theme renders a per-character &ldquo;threads&rdquo; tracker by calling the Watcher REST
+API and building tab content from the JSON response. For member <strong>263 (Xu Xialing,
+<code>showuser=263</code>)</strong> the tab shows up <strong>completely empty</strong>, even
+though the API returns 5 valid threads for her. Only this user (and any user whose data
+contains a triggering character) is affected, which is what is currently blocking broad
+rollout of the new theme. The forum&rsquo;s legitimate data is fine; the breakage is purely
+in how the theme JS turns the JSON into HTML.
+</p>
+
+<h2>2. Root cause (theme-side)</h2>
+<p>
+The tracker JS builds an HTML string (or sets <code>innerHTML</code>) by concatenating API
+field values directly into attributes and element bodies, e.g. something equivalent to:
+</p>
+<pre><code>html += '&lt;span class="forum" title="' + t.forum_name + '"&gt;' + t.forum_name + '&lt;/span&gt;';
+// or an inline handler: onclick="open('" + t.url + "')"</code></pre>
+<p>
+When a value contains the same quote character used to delimit the attribute (or
+<code>&lt;</code>/<code>&amp;</code> in element text, or a quote inside an inline JS
+handler), the parser desynchronizes:
+</p>
+<ul>
+  <li>A double quote in a <code>"</code>-delimited attribute terminates the attribute early
+      and corrupts the rest of the tag &mdash; if the whole tab is one concatenated
+      <code>innerHTML</code> string, the mis-nesting swallows or hides the following rows
+      and the tab collapses to empty.</li>
+  <li>A quote inside an inline <code>on*</code> handler / template literal is a JavaScript
+      syntax error that aborts the entire render &mdash; nothing draws at all.</li>
+</ul>
+
+<h2>3. Why only some users trip it</h2>
+<table>
+  <tr><th>Trigger character</th><th>Appears in</th><th>Breaks</th></tr>
+  <tr><td><code>"</code> (double quote)</td><td>forum names, thread titles</td>
+      <td>double-quoted HTML attributes (the common build pattern)</td></tr>
+  <tr><td><code>'</code> (apostrophe)</td><td>post excerpts (&ldquo;don&rsquo;t&rdquo;,
+      &ldquo;you&rsquo;ve&rdquo;, &ldquo;let&rsquo;s&rdquo;), titles, names</td>
+      <td>single-quoted attributes / inline JS string literals</td></tr>
+  <tr><td><code>&lt;</code> <code>&gt;</code> <code>&amp;</code></td>
+      <td>any free-text field (titles, excerpts, names)</td>
+      <td>element text / starts a bogus tag / mangled entity</td></tr>
+</table>
+<p>
+Most characters happen to have only &ldquo;clean&rdquo; data, so they render. Xu Xialing
+has a thread in a forum whose name contains <code>"</code> characters, so her tab is the
+first to break. Apostrophe-laden excerpts are extremely common, so a single-quote build
+pattern would break almost everyone &mdash; meaning the current pattern is double-quote
+based and any <code>"</code> in the data is the immediate poison. <strong>The correct fix
+is general:</strong> treat <em>all</em> of these characters in <em>all</em> string fields.
+</p>
+
+<h2>4. Data contract you must defend against</h2>
+<p><strong>Endpoint:</strong> <code>GET https://imagehut.ch:8943/api/character/{member_id}/threads</code>
+&nbsp;(public, JSON, no auth). <code>200 OK</code> with the shape below; <code>404</code> if
+the character is not tracked.</p>
+
+<p>Real response for member 263 (abridged &mdash; note the literal quote characters inside
+<code>forum_name</code> for forum 94):</p>
+<pre><code>{
+  "character_id": "263",
+  "character_name": "Xu Xialing",
+  "ongoing": [
+    {
+      "id": "1583",
+      "title": "Teamwork is Expensive",
+      "url": "https://therewasanidea.jcink.net/index.php?showtopic=1583",
+      "forum_id": "94",
+      "forum_name": "\"The Third Ring\"",          &lt;-- contains literal " characters
+      "category": "ongoing",
+      "last_poster_id": "263",
+      "last_poster_name": "Xu Xialing",
+      "last_poster_avatar": "https://.../avatar.gif",
+      "is_user_last_poster": false,
+      "last_post_date": "2026-03-16",
+      "last_post_excerpt": "And tell me about yourself. How has your life been..."
+    }
+    /* ... */
+  ],
+  "comms": [],
+  "complete": [],
+  "incomplete": [ /* same thread shape */ ],
+  "counts": { "ongoing": 3, "comms": 0, "complete": 0, "incomplete": 2, "total": 5 }
+}</code></pre>
+
+<h3>Trust level of each field (treat &ldquo;untrusted&rdquo; as hostile HTML)</h3>
+<table>
+  <tr><th>Field</th><th>Type</th><th>Trust</th><th>Safe sink</th></tr>
+  <tr><td><code>character_name</code></td><td>string</td><td class="no">UNTRUSTED</td><td>element text / escaped attr</td></tr>
+  <tr><td><code>title</code></td><td>string</td><td class="no">UNTRUSTED</td><td>element text / escaped attr</td></tr>
+  <tr><td><code>forum_name</code></td><td>string</td><td class="no">UNTRUSTED</td><td>element text / escaped attr</td></tr>
+  <tr><td><code>last_poster_name</code></td><td>string</td><td class="no">UNTRUSTED</td><td>element text / escaped attr</td></tr>
+  <tr><td><code>last_post_excerpt</code></td><td>string</td><td class="no">UNTRUSTED</td><td>element text only</td></tr>
+  <tr><td><code>url</code>, <code>last_poster_avatar</code></td><td>URL string</td><td class="no">UNTRUSTED</td><td><code>href</code>/<code>src</code> via <code>setAttribute</code>; verify <code>https:</code> scheme</td></tr>
+  <tr><td><code>id</code>, <code>forum_id</code>, <code>last_poster_id</code></td><td>numeric string</td><td>low risk</td><td>escape anyway &mdash; never trust the type</td></tr>
+  <tr><td><code>is_user_last_poster</code></td><td>boolean</td><td>safe</td><td>&mdash;</td></tr>
+  <tr><td><code>category</code>, <code>last_post_date</code></td><td>enum / ISO date</td><td>low risk</td><td>escape anyway</td></tr>
+  <tr><td><code>counts.*</code></td><td>integers</td><td>safe</td><td>&mdash;</td></tr>
+</table>
+
+<h2>5. The required fix</h2>
+
+<div class="ok"><strong>Option A (preferred): build the DOM, never concatenate HTML.</strong>
+The DOM API escapes for you &mdash; <code>textContent</code> and <code>setAttribute</code>
+cannot break out of their context. This eliminates the entire bug class permanently.</div>
+
+<pre><code>function buildThreadRow(t) {
+  var row = document.createElement('div');
+  row.className = 'wt-thread';
+
+  var a = document.createElement('a');
+  a.textContent = t.title;                 // safe: text node, no parsing
+  if (/^https:\/\//.test(t.url)) a.href = t.url;   // scheme-checked
+  a.target = '_blank';
+  a.rel = 'noopener';
+  row.appendChild(a);
+
+  var forum = document.createElement('span');
+  forum.className = 'wt-forum';
+  forum.textContent = t.forum_name;        // safe even if it contains " ' &lt; &amp;
+  row.appendChild(forum);
+
+  var poster = document.createElement('span');
+  poster.className = 'wt-last';
+  poster.textContent = (t.last_poster_name || '') + ' — ' + (t.last_post_date || '');
+  row.appendChild(poster);
+
+  return row;                              // append to the tab container
+}
+
+// Render:
+['ongoing','comms','complete','incomplete'].forEach(function(cat){
+  var container = document.getElementById('wt-' + cat);
+  container.textContent = '';              // clear without innerHTML
+  (data[cat] || []).forEach(function(t){ container.appendChild(buildThreadRow(t)); });
+});</code></pre>
+
+<div class="danger"><strong>Option B (only if a string-template approach is mandatory):</strong>
+route <em>every</em> interpolated value through an escaper. This is more fragile &mdash;
+prefer Option A.</div>
+
+<pre><code>function esc(s){
+  return String(s == null ? '' : s).replace(/[&&lt;&gt;"']/g, function(c){
+    return {'&':'&amp;amp;','&lt;':'&amp;lt;','&gt;':'&amp;gt;','"':'&amp;quot;',"'":'&amp;#39;'}[c];
+  });
+}
+// Every field, every time. Quote ALL attributes. Never put data in
+// an unquoted attribute, in an inline on* handler, in &lt;script&gt;, or in a
+// javascript:/data: URL.
+html += '&lt;a class="wt-t" href="' + esc(t.url) + '"&gt;' + esc(t.title) + '&lt;/a&gt;'
+      + '&lt;span class="wt-f"&gt;' + esc(t.forum_name) + '&lt;/span&gt;';</code></pre>
+
+<h3>Hard rules (apply regardless of option)</h3>
+<ul>
+  <li>No untrusted value in an <strong>inline event handler</strong>
+      (<code>onclick="&hellip;"</code>) &mdash; attach listeners with
+      <code>addEventListener</code> and read data from
+      <code>dataset</code> instead.</li>
+  <li>No untrusted value in a <strong>URL attribute</strong> without verifying it begins
+      with <code>https://</code> (or your allowed host) &mdash; blocks
+      <code>javascript:</code> injection.</li>
+  <li>Quote <strong>all</strong> HTML attributes if you do build strings.</li>
+  <li>Wrap the whole render in <code>try/catch</code> and, on error, show a small
+      &ldquo;tracker failed to load&rdquo; message rather than letting one bad row blank
+      the tab silently &mdash; fail visible, not empty.</li>
+</ul>
+
+<h2>6. Acceptance criteria / how to verify</h2>
+<ol>
+  <li><strong>Locate the code:</strong> in the wrapper, find the JS that does
+      <code>fetch(&hellip;/api/character/&hellip;/threads)</code> (or
+      <code>WatcherAPI</code>) and builds the threads tab. For orientation, the
+      Watcher webhook integration JS lives in the same wrapper around
+      lines&nbsp;~22297&ndash;22328; the tracker render is a separate block &mdash;
+      search for <code>/threads</code>, <code>ongoing</code>, or the tab container IDs.</li>
+  <li><strong>Repro before fix:</strong> as the logged-in <code>WATCHER</code> account
+      (only it sees the new theme), open
+      <code>therewasanidea.jcink.net/index.php?showuser=263</code> with DevTools open.
+      Console shows an HTML-parse-mangled tracker or a JS error at the row build; the
+      threads tab is empty.</li>
+  <li><strong>After fix, the tab populates</strong> for member 263 with all 5 threads
+      (3 ongoing, 2 incomplete), and the forum label renders literally as
+      <code>"The Third Ring"</code> (quotes shown as text, not breaking layout).</li>
+  <li><strong>Adversarial check:</strong> confirm a thread whose
+      <code>last_post_excerpt</code> contains apostrophes (&ldquo;don&rsquo;t&rdquo;,
+      &ldquo;let&rsquo;s&rdquo;) and one whose title/forum contains <code>"</code>,
+      <code>&lt;</code>, or <code>&amp;</code> all render as plain visible text with no
+      layout break and no console error.</li>
+  <li><strong>Regression:</strong> spot-check 2&ndash;3 other members&rsquo; trackers still
+      render identically.</li>
+</ol>
+
+<h2>7. Scope &amp; coordination (read this)</h2>
+<div class="danger">
+A separate Watcher-side Merge Request
+(<code>fix/acp-double-quoted-forum-names</code>, bumps APP_VERSION&nbsp;2.6.6) fixes the
+<em>specific</em> reason forum 94&rsquo;s name arrived with literal quotes (a SQL-dump
+parsing bug). <strong>Do not treat that as a substitute for this theme fix.</strong>
+The API will always be able to return <code>"</code>, <code>'</code>, <code>&lt;</code>,
+<code>&gt;</code>, <code>&amp;</code> in titles, names, and excerpts because members type
+those characters. The theme must be robust to any string. The two fixes are independent:
+the Watcher MR removes one current trigger; this task removes the entire vulnerability
+class. Ship this regardless of MR status, and do not assume the payload is pre-sanitized.
+</div>
+
+<h3>Out of scope for this handoff</h3>
+<ul>
+  <li>Any change to the Watcher API, parser, or database (handled separately).</li>
+  <li>The webhook/activity JS (covered by a different handoff).</li>
+  <li>Styling/visual design of the tracker &mdash; only the escaping/build mechanism.</li>
+</ul>
+
+<hr>
+<p class="meta">Self-contained handoff &mdash; no access to the Watcher repository is needed
+to complete this task. Everything required (endpoint, payload shape, failure mechanism,
+fix, acceptance tests) is above.</p>
+
+</body>
+</html>
