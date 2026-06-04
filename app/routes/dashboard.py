@@ -29,6 +29,7 @@ from app.models import (
     get_dashboard_stats,
     get_dashboard_chart_data,
     get_activity_check_data,
+    get_character_activity_level,
     get_all_relationships,
     get_relationships_for_character,
     create_relationship,
@@ -270,10 +271,12 @@ async def character_detail_page(
 
     total_quotes = len(quotes)
     character_relationships = await get_relationships_for_character(db, character_id)
+    activity_tier_info = await get_character_activity_level(db, character_id)
     return templates.TemplateResponse(request, "pages/character_detail.html", {
         "character": char,
         "fields": fields,
         "threads": threads,
+        "activity_tier": activity_tier_info,
         "quotes": quotes[:20],
         "total_quotes": total_quotes,
         "total": total_quotes,

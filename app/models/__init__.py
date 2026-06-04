@@ -65,4 +65,5 @@ from app.models.dashboard_queries import (
     get_dashboard_stats,
     get_dashboard_chart_data,
     get_activity_check_data,
+    get_character_activity_level,
 )

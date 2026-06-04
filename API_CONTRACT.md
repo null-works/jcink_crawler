@@ -103,6 +103,46 @@ keyed by hand-set JCink user IDs.
 
 ---
 
+### GET /api/character/{character_id}/activity-level
+
+Computed **activity tier** for a single character, derived from the average
+posts per month over the **last 3 complete calendar months** (the in-progress
+current month is excluded so the value stays stable). Date math uses the
+board's activity timezone, half-open `[start, end)`.
+
+Tier scale (rounded average posts/month):
+
+| tier | avg posts/month |
+|---|---|
+| `inactive` | 0 (no posts in window) |
+| `low` | 1–5 |
+| `medium` | 6–10 |
+| `high` | 11+ |
+
+Any non-zero posting rounds up to at least `low`, so a slow-but-present
+character never reads as `inactive`.
+
+**Response:** `200 OK`
+
+```json
+{
+  "character_id": "129",
+  "name": "Gamora",
+  "tier": "medium",
+  "label": "Medium Activity",
+  "avg_posts_per_month": 7.3,
+  "window": { "start": "2026-03-01", "end": "2026-06-01", "months": 3 }
+}
+```
+
+- `404 Not Found` — unknown character.
+- Backed by the existing `posts` table — no schema change, no sync trigger.
+
+**Used by:** the theme's Activity Level profile box. See
+`THEME_ACTIVITY_LEVEL_HANDOFF.md`.
+
+---
+
 ### POST /api/character/register
 
 Register a new character for tracking.

@@ -21,6 +21,10 @@
             {% endif %}
             {% set char_al = threads.counts.ongoing|activity_level %}
             <span class="activity-badge {{ char_al.css }}">{{ char_al.label }}</span>
+            {% if activity_tier %}
+            <span class="activity-badge {{ activity_tier.css }}"
+                  title="{{ activity_tier.avg_posts_per_month }} posts/month avg over the last {{ activity_tier.months }} months ({{ activity_tier.label }})">{{ activity_tier.avg_posts_per_month }}/mo posts · {{ activity_tier.tier|capitalize }}</span>
+            {% endif %}
 
             <div class="char-counts">
                 <div class="count-item">

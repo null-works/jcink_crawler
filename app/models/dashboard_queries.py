@@ -6,6 +6,41 @@ ALLOWED_THREAD_SORTS = {"title", "category", "last_poster_name", "forum_name", "
 ALLOWED_QUOTE_SORTS = {"created_at", "quote_text"}
 ALLOWED_PLAYER_SORTS = {"player", "character_count", "total_threads", "awaiting_threads", "ongoing_threads", "last_active"}
 
+# --- Activity level (computed posting tier) ---
+
+# Default window for the activity tier: average over this many complete
+# calendar months (the in-progress current month is excluded so the badge
+# does not read artificially low for the first days of each month).
+ACTIVITY_LEVEL_MONTHS = 3
+
+# Tier presentation reuses the existing activity-badge CSS classes.
+ACTIVITY_TIER_BADGES = {
+    "high":     {"label": "High Activity",   "css": "badge-very-active",  "color": "purple"},
+    "medium":   {"label": "Medium Activity", "css": "badge-active",       "color": "green"},
+    "low":      {"label": "Low Activity",    "css": "badge-low-activity", "color": "yellow"},
+    "inactive": {"label": "Inactive",        "css": "badge-inactive",     "color": "red"},
+}
+
+
+def activity_tier(avg_posts_per_month: float) -> str:
+    """Map an average monthly post count to an activity tier.
+
+    Tiers follow the member-facing scale: low 1-5, medium 6-10, high 11+.
+    The average is rounded half-up to the nearest whole post before
+    bucketing (deterministic, unlike Python's banker's ``round``). A true
+    zero (no posts in the window) is the only ``inactive`` case — any
+    posting at all rounds up to at least ``low`` so a slow-but-present
+    character never reads as inactive.
+    """
+    if avg_posts_per_month <= 0:
+        return "inactive"
+    n = max(1, int(avg_posts_per_month + 0.5))
+    if n <= 5:
+        return "low"
+    if n <= 10:
+        return "medium"
+    return "high"
+
 
 async def search_characters(
     db: aiosqlite.Connection,
@@ -567,6 +602,61 @@ async def get_player_detail(
         "month_start": month_start,
         "month_end": month_end,
         "awaiting_threads": awaiting_threads,
+    }
+
+
+async def get_character_activity_level(
+    db: aiosqlite.Connection,
+    character_id: str,
+    months: int = ACTIVITY_LEVEL_MONTHS,
+    now: "datetime | None" = None,
+) -> dict:
+    """Compute a character's activity tier from average posts per month.
+
+    Averages the character's posts over the last ``months`` complete
+    calendar months (the in-progress current month is excluded), then
+    buckets via :func:`activity_tier` (low 1-5, medium 6-10, high 11+,
+    inactive when the window is empty). Date math uses the board's
+    configured activity timezone, half-open ``[start, end)``.
+
+    Returns a dict with the tier key, its badge label/css/color, the
+    rounded average, the raw window post count, and the window bounds —
+    suitable for both the dashboard badge and the theme's API box.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    if now is None:
+        now = datetime.now(ZoneInfo(settings.activity_timezone))
+
+    # Window end = first day of the current month (exclude partial month).
+    window_end = now.strftime("%Y-%m-01")
+    # Window start = first day of the month `months` months earlier.
+    month_index = now.year * 12 + (now.month - 1) - months
+    start_year, start_month = divmod(month_index, 12)
+    window_start = f"{start_year:04d}-{start_month + 1:02d}-01"
+
+    cur = await db.execute(
+        "SELECT COUNT(*) AS cnt FROM posts "
+        "WHERE character_id = ? AND post_date >= ? AND post_date < ?",
+        (character_id, window_start, window_end),
+    )
+    row = await cur.fetchone()
+    window_posts = row["cnt"] if row else 0
+    avg = window_posts / months if months else 0
+    tier = activity_tier(avg)
+    badge = ACTIVITY_TIER_BADGES[tier]
+
+    return {
+        "tier": tier,
+        "label": badge["label"],
+        "css": badge["css"],
+        "color": badge["color"],
+        "avg_posts_per_month": round(avg, 1),
+        "window_posts": window_posts,
+        "months": months,
+        "window_start": window_start,
+        "window_end": window_end,
     }
 
 

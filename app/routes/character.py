@@ -34,6 +34,7 @@ from app.models import (
     get_thread_counts,
     get_top_posters,
     get_top_posters_by_player,
+    get_character_activity_level,
 )
 from app.services import (
     crawl_character_threads,
@@ -175,6 +176,40 @@ async def get_character_detail(
         fields=fields,
         threads=threads,
     )
+
+
+@router.get("/character/{character_id}/activity-level")
+async def get_activity_level(
+    character_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Computed activity tier for a single character.
+
+    The tier is derived from the character's average posts per month over
+    the last 3 complete calendar months: ``low`` 1-5, ``medium`` 6-10,
+    ``high`` 11+, ``inactive`` when there are no posts in the window. The
+    in-progress current month is excluded so the value stays stable.
+
+    Intended for the forum theme's Activity Level box. Returns 404 for an
+    unknown character (consistent with the other character endpoints).
+    """
+    char = await get_character(db, character_id)
+    if not char:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    al = await get_character_activity_level(db, character_id)
+    return {
+        "character_id": character_id,
+        "name": char.name,
+        "tier": al["tier"],
+        "label": al["label"],
+        "avg_posts_per_month": al["avg_posts_per_month"],
+        "window": {
+            "start": al["window_start"],
+            "end": al["window_end"],
+            "months": al["months"],
+        },
+    }
 
 
 @router.get("/character/{character_id}/square-image")
