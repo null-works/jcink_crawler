@@ -1,4 +1,5 @@
 import pathlib
+import re
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -42,7 +43,7 @@ from app.models import (
 )
 from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden, set_approval_date, set_approval_dates, unlink_character_thread
 from app.services import crawl_character_threads, crawl_character_profile, register_character
-from app.services.crawler import sync_posts_from_acp, crawl_quotes_only, crawl_all_profile_fields
+from app.services.crawler import sync_posts_from_acp, crawl_quotes_only, crawl_all_profile_fields, crawl_single_thread
 from app.services.scheduler import _crawl_all_characters
 from app.services.activity import get_activity, get_debug_log, clear_debug_log
 
@@ -1219,6 +1220,69 @@ async def htmx_unlink_thread(
 
     await unlink_character_thread(db, character_id, thread_id)
     return HTMLResponse("")
+
+
+def _extract_topic_id(raw: str) -> str | None:
+    """Pull a JCink topic id out of a raw id or thread URL.
+
+    Accepts a bare numeric id, or a URL using either of JCink's thread
+    forms: ``index.php?showtopic=123`` or ``index.php?act=ST&f=4&t=123``.
+    Returns the digits, or None if nothing usable is found.
+    """
+    raw = (raw or "").strip()
+    if raw.isdigit():
+        return raw
+    m = re.search(r"[?&](?:showtopic|t)=(\d+)", raw)
+    return m.group(1) if m else None
+
+
+@router.post("/htmx/character/{character_id}/add-thread", response_class=HTMLResponse)
+async def htmx_add_thread(
+    request: Request,
+    character_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Manually pull a thread into a character's tracker by topic id or URL.
+
+    Crawls the thread (creating it if untracked) and links every character
+    who actually posted — so this character is added iff they have posts in
+    it. On success fires the ``threads-updated`` HX-Trigger so the topic
+    list refreshes.
+    """
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    char = await get_character(db, character_id)
+    if not char:
+        return HTMLResponse(status_code=404, content="Character not found")
+
+    form = await request.form()
+    thread_id = _extract_topic_id(form.get("thread_ref", ""))
+    if not thread_id:
+        return HTMLResponse('<span class="text-red">Enter a topic ID or a jcink thread URL.</span>')
+
+    result = await crawl_single_thread(thread_id, settings.database_path)
+    if result.get("error"):
+        return HTMLResponse(
+            f'<span class="text-red">Couldn\'t add #{thread_id}: {result["error"]}</span>'
+        )
+
+    title = result.get("title") or f"#{thread_id}"
+    cur = await db.execute(
+        "SELECT 1 FROM character_threads WHERE character_id = ? AND thread_id = ?",
+        (character_id, thread_id),
+    )
+    linked = await cur.fetchone() is not None
+
+    if linked:
+        resp = HTMLResponse(f'<span class="text-green">Added &ldquo;{title}&rdquo; (#{thread_id}).</span>')
+        resp.headers["HX-Trigger"] = "threads-updated"
+        return resp
+    return HTMLResponse(
+        f'<span class="text-yellow">Crawled &ldquo;{title}&rdquo; (#{thread_id}), but {char.name} '
+        f'has no posts in it — nothing added to their tracker.</span>'
+    )
 
 
 @router.get("/htmx/character/{character_id}/quotes", response_class=HTMLResponse)

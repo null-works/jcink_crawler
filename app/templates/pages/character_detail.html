@@ -288,7 +288,21 @@
                     onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); this.classList.add('active')">Incomplete ({{ threads.counts.incomplete }})</button>
         </div>
     </div>
-    <div id="thread-section">
+    <div class="add-thread-row" style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
+        <form hx-post="/htmx/character/{{ character.id }}/add-thread"
+              hx-target="#add-thread-result" hx-swap="innerHTML"
+              hx-disabled-elt="find button"
+              style="display: inline-flex; align-items: center; gap: 0.4rem;">
+            <input type="text" name="thread_ref" placeholder="Topic ID or jcink thread URL"
+                   class="form-input" style="width: 22rem; max-width: 60vw; padding: 0.2rem 0.5rem; font-size: 0.85rem;">
+            <button type="submit" class="btn btn-purple btn-sm" style="padding: 0.2rem 0.6rem;">Add Thread</button>
+        </form>
+        <span id="add-thread-result" style="font-size: 0.85rem;"></span>
+    </div>
+    <div id="thread-section"
+         hx-get="/htmx/character/{{ character.id }}/threads"
+         hx-trigger="threads-updated from:body"
+         hx-swap="innerHTML">
         {% include "partials/character_threads_section.html" %}
     </div>
 </div>
