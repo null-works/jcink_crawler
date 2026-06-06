@@ -25,6 +25,7 @@ from app.models.operations import (
     update_character_crawl_time,
     upsert_thread,
     link_character_thread,
+    unlink_character_thread,
     get_character_threads,
     get_thread_counts,
     add_quote,

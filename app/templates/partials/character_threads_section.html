@@ -20,6 +20,7 @@
             <th>Category</th>
             <th>Last Poster</th>
             <th>Status</th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
@@ -55,10 +56,20 @@
                 <span class="status-awaiting" title="Owed">&#9711; Owed</span>
                 {% endif %}
             </td>
+            <td>
+                {% if character_id %}
+                <button class="btn btn-ghost btn-sm"
+                        title="Remove this topic from this character's tracker (use when a post was made under the wrong character)"
+                        hx-post="/htmx/character/{{ character_id }}/thread/{{ t.id }}/unlink"
+                        hx-confirm="Remove &quot;{{ t.title }}&quot; from this character's tracker? This deletes the link plus any posts and quotes attributed to them in this topic. The shared topic and other characters are unaffected."
+                        hx-target="closest tr"
+                        hx-swap="outerHTML">&#10005;</button>
+                {% endif %}
+            </td>
         </tr>
     {% endfor %}
     {% if not all_threads %}
-        <tr><td colspan="4" class="empty-state">No topics in this category</td></tr>
+        <tr><td colspan="5" class="empty-state">No topics in this category</td></tr>
     {% endif %}
     </tbody>
 </table>

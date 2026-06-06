@@ -259,6 +259,42 @@ async def link_character_thread(
     """, (character_id, thread_id, category, int(is_user_last_poster), post_count, int(is_tagged_only)))
 
 
+async def unlink_character_thread(
+    db: aiosqlite.Connection, character_id: str, thread_id: str
+) -> bool:
+    """Remove a thread from a single character's tracker.
+
+    Used when a post was made under the wrong character (an alt the player
+    also plays) and later reassigned on JCink — the ACP sync is additive and
+    never drops the stale link, so the wrong character keeps the thread.
+
+    Deletes the character↔thread link plus the posts and quotes wrongly
+    attributed to *this* character in *this* thread (so post counts and the
+    computed Activity Level tier are corrected). The shared ``threads`` row
+    and every other character's data are left untouched. Returns True if a
+    link existed.
+    """
+    cur = await db.execute(
+        "DELETE FROM character_threads WHERE character_id = ? AND thread_id = ?",
+        (character_id, thread_id),
+    )
+    removed = cur.rowcount > 0
+    await db.execute(
+        "DELETE FROM posts WHERE character_id = ? AND thread_id = ?",
+        (character_id, thread_id),
+    )
+    await db.execute(
+        "DELETE FROM quotes WHERE character_id = ? AND source_thread_id = ?",
+        (character_id, thread_id),
+    )
+    await db.execute(
+        "DELETE FROM quote_crawl_log WHERE character_id = ? AND thread_id = ?",
+        (character_id, thread_id),
+    )
+    await db.commit()
+    return removed
+
+
 async def get_character_threads(
     db: aiosqlite.Connection, character_id: str
 ) -> CharacterThreads:

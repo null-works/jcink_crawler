@@ -40,7 +40,7 @@ from app.models import (
     dismiss_profile_changes,
     RELATIONSHIP_TYPES,
 )
-from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden, set_approval_date, set_approval_dates
+from app.models.operations import set_crawl_status, get_crawl_status, toggle_character_hidden, set_approval_date, set_approval_dates, unlink_character_thread
 from app.services import crawl_character_threads, crawl_character_profile, register_character
 from app.services.crawler import sync_posts_from_acp, crawl_quotes_only, crawl_all_profile_fields
 from app.services.scheduler import _crawl_all_characters
@@ -1196,7 +1196,29 @@ async def htmx_character_threads(
     return templates.TemplateResponse(request, "partials/character_threads_section.html", {
         "threads": threads,
         "category": category,
+        "character_id": character_id,
     })
+
+
+@router.post("/htmx/character/{character_id}/thread/{thread_id}/unlink", response_class=HTMLResponse)
+async def htmx_unlink_thread(
+    request: Request,
+    character_id: str,
+    thread_id: str,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Remove a thread from this character's tracker (wrong-character cleanup).
+
+    Returns an empty body so the HTMX caller (hx-target="closest tr",
+    hx-swap="outerHTML") drops just that row. The thread/topic counts in the
+    card header refresh on the next full page load.
+    """
+    auth_err = _require_auth_htmx(request)
+    if auth_err:
+        return auth_err
+
+    await unlink_character_thread(db, character_id, thread_id)
+    return HTMLResponse("")
 
 
 @router.get("/htmx/character/{character_id}/quotes", response_class=HTMLResponse)
